@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agenda · Turnos</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+  <div id="cargando" class="cargando">Cargando la agenda…</div>
+
+  <div id="contenido" hidden>
+    <header class="barra">
+      <p class="barra__marca">Agenda</p>
+      <nav class="barra__nav">
+        <a href="inicio.html">Inicio</a>
+        <a href="agenda.html" aria-current="page">Agenda</a>
+        <a href="perfil.html">Perfil</a>
+        <a href="admin.html" id="nav-admin" hidden>Plataforma</a>
+      </nav>
+      <div class="barra__derecha">
+        <label class="visualmente-oculto" for="selector-empresa">Empresa activa</label>
+        <select id="selector-empresa" class="selector"></select>
+        <button type="button" class="boton boton--texto" id="btn-salir">Salir</button>
+      </div>
+    </header>
+
+    <main class="tablero tablero--ancho">
+
+      <!-- Pestañas principales: Turnos / Casos -->
+      <div class="pestanas pestanas--grandes" role="tablist">
+        <button type="button" class="pestana" role="tab" data-panel="p-turnos" aria-selected="true">Turnos</button>
+        <button type="button" class="pestana" role="tab" data-panel="p-casos" aria-selected="false" id="tab-casos">Casos</button>
+      </div>
+
+      <div id="aviso-agenda" class="aviso aviso--con-acciones" role="alert" hidden>
+        <span id="aviso-texto"></span>
+        <span id="aviso-acciones" class="fila-botones"></span>
+      </div>
+
+      <!-- ============ TURNOS ============ -->
+      <div id="p-turnos" class="contenido-pestana">
+
+        <!-- Sub-pestañas dentro de turnos -->
+        <div class="pestanas" role="tablist">
+          <button type="button" class="pestana" role="tab" data-panel="t-calendario" aria-selected="true">Calendario</button>
+          <button type="button" class="pestana" role="tab" data-panel="t-prestadores" aria-selected="false" hidden>Prestadores</button>
+          <button type="button" class="pestana" role="tab" data-panel="t-servicios" aria-selected="false" hidden>Servicios</button>
+          <button type="button" class="pestana" role="tab" data-panel="t-personas" aria-selected="false" hidden>Personas</button>
+        </div>
+
+        <!-- Calendario semanal -->
+        <section class="tarjeta contenido-pestana" id="t-calendario">
+          <div class="encabezado-seccion">
+            <div>
+              <h2 id="titulo-semana">Semana</h2>
+              <p class="apoyo" id="subtitulo-agenda"></p>
+            </div>
+            <div class="fila-botones">
+              <button type="button" class="boton boton--borde boton--mini" id="btn-semana-anterior">←</button>
+              <button type="button" class="boton boton--borde boton--mini" id="btn-hoy">Hoy</button>
+              <button type="button" class="boton boton--borde boton--mini" id="btn-semana-siguiente">→</button>
+            </div>
+          </div>
+
+          <div class="calendario-envoltura">
+            <div class="calendario" id="calendario"></div>
+          </div>
+
+          <!-- Detalle del turno seleccionado: acciones y observaciones -->
+          <div id="detalle-turno" class="detalle-turno" hidden>
+            <div class="detalle-turno__cabecera">
+              <div>
+                <strong id="dt-servicio"></strong>
+                <span class="apoyo" id="dt-info"></span>
+              </div>
+              <button type="button" class="boton boton--texto" id="dt-cerrar">Cerrar</button>
+            </div>
+
+            <div class="fila-botones" id="dt-acciones"></div>
+
+            <div id="dt-reprogramar" class="fila-form" hidden>
+              <div class="campo">
+                <label for="dt-fecha">Nueva fecha y hora</label>
+                <input id="dt-fecha" type="datetime-local">
+              </div>
+              <button type="button" class="boton boton--mini" id="dt-guardar-fecha">Reprogramar</button>
+            </div>
+
+            <div id="dt-observaciones-caja" hidden>
+              <h3 class="subtitulo">Observaciones</h3>
+              <ul id="dt-observaciones" class="observaciones"></ul>
+              <div class="fila-form">
+                <div class="campo">
+                  <label for="dt-nota">Nueva observación</label>
+                  <input id="dt-nota" type="text" maxlength="1000">
+                </div>
+                <button type="button" class="boton boton--mini" id="dt-guardar-nota">Agregar</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Reservar en tres pasos: servicio, día, hora libre -->
+          <div id="reservar" class="reservar" hidden>
+            <h3 class="subtitulo">Reservar un turno</h3>
+
+            <div class="fila-form">
+              <div class="campo">
+                <label for="r-servicio">1. Servicio</label>
+                <select id="r-servicio" class="entrada"></select>
+              </div>
+              <div class="campo">
+                <label for="r-dia">2. Día</label>
+                <input id="r-dia" type="date" class="entrada">
+              </div>
+              <div class="campo" id="campo-cliente" hidden>
+                <label for="r-cliente">Cliente</label>
+                <select id="r-cliente" class="entrada"></select>
+              </div>
+            </div>
+
+            <p class="apoyo" id="r-paso3">3. Elige una hora disponible</p>
+            <div id="r-horas" class="horas"></div>
+          </div>
+
+        </section>
+
+        <section class="tarjeta contenido-pestana" id="t-prestadores" hidden>
+          <h2>Prestadores</h2>
+          <p class="apoyo">Sedes o profesionales cuya agenda administra esta empresa.</p>
+          <ul id="lista-prestadores" class="items"></ul>
+          <form id="form-prestador" class="fila-form" novalidate>
+            <div class="campo"><label for="p-nombre">Nombre</label><input id="p-nombre" type="text" maxlength="150" required></div>
+            <div class="campo"><label for="p-direccion">Dirección</label><input id="p-direccion" type="text" maxlength="200"></div>
+            <button type="submit" class="boton">Agregar</button>
+          </form>
+        </section>
+
+        <section class="tarjeta contenido-pestana" id="t-servicios" hidden>
+          <h2>Servicios</h2>
+          <p class="apoyo">Cada servicio pertenece a un prestador y define su duración.</p>
+          <ul id="lista-servicios" class="items"></ul>
+          <form id="form-servicio" class="fila-form" novalidate>
+            <div class="campo"><label for="s-prestador">Prestador</label><select id="s-prestador" class="entrada" required></select></div>
+            <div class="campo"><label for="s-nombre">Servicio</label><input id="s-nombre" type="text" maxlength="120" required></div>
+            <div class="campo"><label for="s-duracion">Minutos</label><input id="s-duracion" type="number" min="5" max="1440" value="60" required></div>
+            <div class="campo"><label for="s-precio">Precio</label><input id="s-precio" type="number" min="0" step="1000" value="0" required></div>
+            <button type="submit" class="boton">Agregar</button>
+          </form>
+        </section>
+
+        <section class="tarjeta contenido-pestana" id="t-personas" hidden>
+          <h2>Personas</h2>
+          <p class="apoyo">Empleados que atienden y clientes a los que se les agenda.</p>
+          <ul id="lista-miembros" class="items"></ul>
+          <form id="form-miembro" class="fila-form" novalidate>
+            <div class="campo"><label for="m-email">Correo</label><input id="m-email" type="email" required></div>
+            <div class="campo"><label for="m-nombres">Nombres</label><input id="m-nombres" type="text" maxlength="100" required></div>
+            <div class="campo"><label for="m-apellidos">Apellidos</label><input id="m-apellidos" type="text" maxlength="100" required></div>
+            <div class="campo"><label for="m-rol">Rol</label>
+              <select id="m-rol" class="entrada">
+                <option value="CLIENTE">Cliente</option>
+                <option value="EMPLEADO">Empleado</option>
+                <option value="PRESTADOR">Responsable de prestador</option>
+                <option value="ADMIN_EMPRESA">Administrador</option>
+              </select>
+            </div>
+            <div class="campo" id="campo-prestadores" hidden>
+              <label for="m-prestadores">Prestadores asignados</label>
+              <select id="m-prestadores" class="entrada" multiple size="3"></select>
+              <p class="pista">Ctrl+clic para elegir varios.</p>
+            </div>
+            <button type="submit" class="boton">Vincular</button>
+          </form>
+        </section>
+      </div>
+
+      <!-- ============ CASOS ============ -->
+      <div id="p-casos" class="contenido-pestana" hidden>
+        <section class="tarjeta">
+          <h2>Casos de servicio</h2>
+          <p class="apoyo" id="mensaje-casos">El módulo CRM está en construcción.</p>
+        </section>
+      </div>
+
+    </main>
+  </div>
+
+  <script type="module" src="js/agenda.js"></script>
+</body>
+</html>

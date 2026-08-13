@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Plataforma · Agenda</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+  <div id="cargando" class="cargando">Verificando permisos…</div>
+
+  <div id="contenido" hidden>
+    <header class="barra">
+      <p class="barra__marca">Agenda</p>
+      <nav class="barra__nav">
+        <a href="inicio.html">Inicio</a>
+        <a href="perfil.html">Perfil</a>
+        <a href="agenda.html">Agenda</a>
+        <a href="admin.html" aria-current="page">Plataforma</a>
+      </nav>
+      <div class="barra__derecha">
+        <span id="barra-usuario" class="barra__usuario"></span>
+        <button type="button" class="boton boton--texto" id="btn-salir">Salir</button>
+      </div>
+    </header>
+
+    <main class="tablero tablero--ancho">
+
+      <!-- ============ VISTA LISTA ============ -->
+      <div id="vista-lista">
+        <div class="encabezado-seccion">
+          <div>
+            <h1>Empresas</h1>
+            <p class="apoyo">Cada empresa es un tenant aislado con sus propios datos.</p>
+          </div>
+          <button type="button" class="boton" id="btn-nueva">Nueva empresa</button>
+        </div>
+
+        <ul id="lista-empresas" class="fichas-empresa"></ul>
+
+        <!-- Formulario de creación, oculto hasta pulsar "Nueva empresa" -->
+        <section class="tarjeta" id="panel-crear" hidden>
+          <h2>Crear empresa</h2>
+          <form id="form-empresa" novalidate>
+            <div class="rejilla">
+              <div class="campo">
+                <label for="razonSocial">Razón social</label>
+                <input id="razonSocial" type="text" maxlength="150" required>
+              </div>
+              <div class="campo">
+                <label for="slug">Identificador</label>
+                <input id="slug" type="text" maxlength="60" placeholder="clinica-norte" required>
+                <p class="pista">Minúsculas, números y guiones.</p>
+              </div>
+              <div class="campo">
+                <label for="emailContacto">Correo de contacto</label>
+                <input id="emailContacto" type="email" required>
+              </div>
+              <div class="campo">
+                <label for="nit">NIT</label>
+                <input id="nit" type="text" maxlength="30">
+              </div>
+            </div>
+
+            <fieldset class="grupo">
+              <legend>Módulos</legend>
+              <label class="casilla"><input type="checkbox" id="mod-agenda" checked> Agenda de turnos</label>
+              <label class="casilla"><input type="checkbox" id="mod-crm"> CRM</label>
+            </fieldset>
+
+            <fieldset class="grupo">
+              <legend>Administrador inicial (opcional)</legend>
+              <div class="rejilla">
+                <div class="campo"><label for="adminEmail">Correo</label><input id="adminEmail" type="email"></div>
+                <div class="campo"><label for="adminNombres">Nombres</label><input id="adminNombres" type="text" maxlength="100"></div>
+                <div class="campo"><label for="adminApellidos">Apellidos</label><input id="adminApellidos" type="text" maxlength="100"></div>
+              </div>
+            </fieldset>
+
+            <p id="aviso-empresa" class="aviso" role="alert" hidden></p>
+            <div class="fila-botones">
+              <button type="submit" class="boton" id="btn-crear-empresa">Crear</button>
+              <button type="button" class="boton boton--texto" id="btn-cancelar-crear">Cancelar</button>
+            </div>
+          </form>
+        </section>
+      </div>
+
+      <!-- ============ VISTA DETALLE ============ -->
+      <div id="vista-detalle" hidden>
+        <button type="button" class="volver" id="btn-volver">← Empresas</button>
+
+        <div class="encabezado-seccion">
+          <div>
+            <h1 id="detalle-nombre"></h1>
+            <p class="apoyo mono" id="detalle-slug"></p>
+          </div>
+          <span class="ficha" id="detalle-estado"></span>
+        </div>
+
+        <p id="aviso-detalle" class="aviso" role="alert" hidden></p>
+
+        <!-- Pestañas dentro del detalle -->
+        <div class="pestanas" role="tablist">
+          <button type="button" class="pestana" role="tab" data-panel="p-datos" aria-selected="true">Datos</button>
+          <button type="button" class="pestana" role="tab" data-panel="p-modulos" aria-selected="false">Módulos</button>
+          <button type="button" class="pestana" role="tab" data-panel="p-miembros" aria-selected="false">Miembros</button>
+        </div>
+
+        <section class="tarjeta contenido-pestana" id="p-datos">
+          <form id="form-editar" novalidate>
+            <div class="rejilla">
+              <div class="campo"><label for="e-razonSocial">Razón social</label><input id="e-razonSocial" type="text" maxlength="150" required></div>
+              <div class="campo"><label for="e-emailContacto">Correo de contacto</label><input id="e-emailContacto" type="email" required></div>
+              <div class="campo"><label for="e-nit">NIT</label><input id="e-nit" type="text" maxlength="30"></div>
+              <div class="campo"><label for="e-telefono">Teléfono</label><input id="e-telefono" type="tel" maxlength="30"></div>
+            </div>
+            <p class="pista">El identificador no se puede cambiar: rompería los enlaces ya en circulación.</p>
+            <div class="acciones"><button type="submit" class="boton">Guardar datos</button></div>
+          </form>
+        </section>
+
+        <section class="tarjeta contenido-pestana" id="p-modulos" hidden>
+          <p class="apoyo">Quitar un módulo no borra sus datos: solo deja de ser alcanzable desde la API.</p>
+          <form id="form-modulos" novalidate>
+            <label class="casilla"><input type="checkbox" id="e-mod-agenda"> Agenda de turnos</label>
+            <label class="casilla"><input type="checkbox" id="e-mod-crm"> CRM</label>
+            <div class="acciones"><button type="submit" class="boton">Actualizar módulos</button></div>
+          </form>
+        </section>
+
+        <section class="tarjeta contenido-pestana" id="p-miembros" hidden>
+          <div class="tabla-envoltura">
+            <table class="tabla">
+              <thead><tr><th>Persona</th><th>Correo</th><th>Cargo</th><th>Rol</th><th>Estado</th><th></th></tr></thead>
+              <tbody id="tabla-miembros"></tbody>
+            </table>
+          </div>
+
+          <form id="form-miembro" class="fila-form" novalidate>
+            <div class="campo"><label for="m-email">Correo</label><input id="m-email" type="email" required></div>
+            <div class="campo"><label for="m-nombres">Nombres</label><input id="m-nombres" type="text" maxlength="100" required></div>
+            <div class="campo"><label for="m-apellidos">Apellidos</label><input id="m-apellidos" type="text" maxlength="100" required></div>
+            <div class="campo"><label for="m-cargo">Cargo</label><input id="m-cargo" type="text" maxlength="80"></div>
+            <div class="campo"><label for="m-rol">Rol</label>
+              <select id="m-rol" class="entrada">
+                <option value="CLIENTE">Cliente</option>
+                <option value="EMPLEADO">Empleado</option>
+                <option value="PRESTADOR">Responsable de prestador</option>
+                <option value="ADMIN_EMPRESA">Administrador</option>
+              </select>
+            </div>
+            <button type="submit" class="boton">Vincular</button>
+          </form>
+        </section>
+      </div>
+
+    </main>
+  </div>
+
+  <script type="module" src="js/admin.js"></script>
+</body>
+</html>

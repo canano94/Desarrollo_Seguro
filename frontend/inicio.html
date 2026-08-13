@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inicio · Agenda</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+  <div id="cargando" class="cargando">Cargando…</div>
+
+  <div id="contenido" hidden>
+    <header class="barra">
+      <p class="barra__marca">Agenda</p>
+      <nav class="barra__nav">
+        <a href="inicio.html" aria-current="page">Inicio</a>
+        <a href="agenda.html" id="nav-agenda" hidden>Agenda</a>
+        <a href="admin.html" id="nav-admin" hidden>Plataforma</a>
+        <a href="perfil.html">Perfil</a>
+      </nav>
+      <div class="barra__derecha">
+        <label class="visualmente-oculto" for="selector-empresa">Empresa activa</label>
+        <select id="selector-empresa" class="selector"></select>
+        <button type="button" class="boton boton--texto" id="btn-salir">Salir</button>
+      </div>
+    </header>
+
+    <main class="tablero">
+
+      <section class="tarjeta tarjeta--identidad">
+        <h1 id="saludo">Hola</h1>
+        <p class="apoyo" id="contexto"></p>
+        <dl class="datos">
+          <div><dt>Tus roles aquí</dt><dd id="dato-roles" class="fichas"></dd></div>
+          <div><dt>Módulos activos</dt><dd id="dato-modulos" class="fichas"></dd></div>
+        </dl>
+      </section>
+
+      <!-- Cada acceso aparece solo si el token trae el permiso que lo habilita -->
+      <ul id="accesos" class="accesos"></ul>
+
+    </main>
+  </div>
+
+  <script type="module" src="js/inicio.js"></script>
+</body>
+</html>

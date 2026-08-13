@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mi perfil · Agenda</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+
+  <div id="cargando" class="cargando">Restaurando tu sesión…</div>
+
+  <div id="contenido" hidden>
+
+    <header class="barra">
+      <p class="barra__marca">Agenda</p>
+      <nav class="barra__nav">
+        <a href="inicio.html">Inicio</a>
+        <a href="agenda.html">Agenda</a>
+        <a href="admin.html" id="nav-admin" hidden>Plataforma</a>
+        <a href="perfil.html" aria-current="page">Perfil</a>
+      </nav>
+      <div class="barra__derecha">
+        <label class="visualmente-oculto" for="selector-empresa">Empresa activa</label>
+        <select id="selector-empresa" class="selector"></select>
+        <span id="barra-usuario" class="barra__usuario"></span>
+        <button type="button" class="boton boton--texto" id="btn-salir">Salir</button>
+      </div>
+    </header>
+
+    <main class="tablero">
+
+      <section class="tarjeta tarjeta--identidad">
+        <h1 id="titulo-nombre">Mi perfil</h1>
+        <p class="apoyo" id="linea-correo"></p>
+
+        <dl class="datos">
+          <div>
+            <dt>Empresa activa</dt>
+            <dd id="dato-empresa"></dd>
+          </div>
+          <div>
+            <dt>Tus roles aquí</dt>
+            <dd id="dato-roles" class="fichas"></dd>
+          </div>
+          <div>
+            <dt>Módulos contratados</dt>
+            <dd id="dato-modulos" class="fichas"></dd>
+          </div>
+        </dl>
+
+        <details class="permisos">
+          <summary>Ver permisos activos en esta empresa</summary>
+          <ul id="lista-permisos" class="mono"></ul>
+        </details>
+      </section>
+
+      <section class="tarjeta">
+        <h2>Datos personales</h2>
+        <p class="apoyo">Son los mismos en todas tus empresas: tu cuenta es una sola.</p>
+
+        <form id="form-perfil" novalidate>
+          <div class="rejilla">
+            <div class="campo">
+              <label for="nombres">Nombres</label>
+              <input id="nombres" name="nombres" type="text" maxlength="100" required>
+            </div>
+            <div class="campo">
+              <label for="apellidos">Apellidos</label>
+              <input id="apellidos" name="apellidos" type="text" maxlength="100" required>
+            </div>
+            <div class="campo">
+              <label for="telefono">Teléfono</label>
+              <input id="telefono" name="telefono" type="tel" maxlength="30" autocomplete="tel">
+            </div>
+            <div class="campo">
+              <label for="documento">Documento</label>
+              <input id="documento" name="documento" type="text" maxlength="30">
+            </div>
+          </div>
+
+          <p id="aviso-perfil" class="aviso" role="alert" hidden></p>
+
+          <div class="acciones">
+            <button type="submit" class="boton" id="btn-guardar">Guardar cambios</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="tarjeta">
+        <h2>Contraseña</h2>
+        <p class="apoyo">Al cambiarla se cierran todas tus sesiones, incluida esta.</p>
+
+        <form id="form-password" novalidate>
+          <div class="rejilla">
+            <div class="campo">
+              <label for="passwordActual">Contraseña actual</label>
+              <input id="passwordActual" name="passwordActual" type="password" autocomplete="current-password" required>
+            </div>
+            <div class="campo">
+              <label for="passwordNueva">Contraseña nueva</label>
+              <input id="passwordNueva" name="passwordNueva" type="password" autocomplete="new-password" required>
+              <p class="pista">Mínimo 12 caracteres, con mayúscula, minúscula y número.</p>
+            </div>
+          </div>
+
+          <p id="aviso-password" class="aviso" role="alert" hidden></p>
+
+          <div class="acciones">
+            <button type="submit" class="boton boton--borde" id="btn-password">Cambiar contraseña</button>
+          </div>
+        </form>
+      </section>
+
+    </main>
+  </div>
+
+  <script type="module" src="js/perfil.js"></script>
+</body>
+</html>
