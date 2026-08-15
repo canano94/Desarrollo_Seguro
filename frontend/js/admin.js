@@ -1,5 +1,7 @@
+// Importa las funciones del API wrapper y utilidades de sesión //
 import { restaurarSesion, sesionActual, pedir, salir } from './api.js';
 
+// Referencias al DOM //
 const cargando = document.getElementById('cargando');
 const contenido = document.getElementById('contenido');
 const vistaLista = document.getElementById('vista-lista');
@@ -10,20 +12,28 @@ const panelCrear = document.getElementById('panel-crear');
 const avisoDetalle = document.getElementById('aviso-detalle');
 const avisoEmpresa = document.getElementById('aviso-empresa');
 
-// Empresa abierta en el detalle. null = estamos en la lista.
+// Control de estado: Empresa abierta en el detalle. null = estamos en la vista de lista general.
 let empresaActual = null;
 
-/* ------------------------------------------------------------------ */
-/* Utilidades                                                          */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Utilidades                                                         //
+// ------------------------------------------------------------------ //
 
 function avisar(elemento, mensaje, bien = false) {
   elemento.textContent = mensaje;
+  // Añade o quita la clase de "éxito" (verde) dependiendo del booleano `bien`
   elemento.classList.toggle('aviso--bien', bien);
   elemento.hidden = false;
 }
 
-/** Junta los detalles campo por campo que devuelve zod en un 422. */
+/** 
+ * ¿Qué hace esta función?
+ * Traduce el error 422 de validación que envía Zod desde el backend.
+ * Zod envía un array 'detalles' con todos los campos que fallaron en el 
+ * formulario. Esta función los une con un '·' para que el usuario pueda 
+ * corregir todos sus errores a la vez sin tener que enviar el formulario 
+ * 5 veces seguidas. 
+ */
 function mensajeError(error) {
   return error.detalles?.map((d) => `${d.campo}: ${d.mensaje}`).join(' · ') || error.mensaje;
 }
@@ -34,14 +44,19 @@ function celda(texto) {
   return td;
 }
 
-/** Botón de acción con un icono SVG. Los iconos van inline porque son
- *  cuatro trazos: una librería entera para esto no se justifica. */
+/** 
+ * APUNTE: Optimización de recursos (Iconos).
+ * Botón de acción con un icono SVG. Los iconos van "inline" (su código exacto) 
+ * porque son apenas cuatro trazos. Traer una librería entera de iconos (como 
+ * FontAwesome) que pesa cientos de kilobytes solo para usar 3 iconos es una mala 
+ * práctica de rendimiento web.
+ */
 function botonIcono(titulo, pathD, alPulsar, clase = '') {
   const boton = document.createElement('button');
   boton.type = 'button';
   boton.className = `icono ${clase}`;
   boton.title = titulo;
-  boton.setAttribute('aria-label', titulo);   // lectores de pantalla
+  boton.setAttribute('aria-label', titulo);   // Accesibilidad para lectores de pantalla
 
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
@@ -52,7 +67,9 @@ function botonIcono(titulo, pathD, alPulsar, clase = '') {
 
   boton.append(svg);
   boton.addEventListener('click', (evento) => {
-    evento.stopPropagation();   // que el clic no abra también la ficha
+    // stopPropagation() evita que el clic en el botón se propague hacia arriba 
+    // y active también el evento de "abrir ficha" de la fila contenedora.
+    evento.stopPropagation();   
     alPulsar();
   });
   return boton;
@@ -64,9 +81,9 @@ const ICONO_PLAY = 'M7 5l12 7-12 7V5z';
 // Llave: restablecer contraseña.
 const ICONO_LLAVE = 'M14 7a4 4 0 1 1-3.9 5H8v2H6v2H3v-3l7.1-7.1A4 4 0 0 1 14 7z';
 
-/* ------------------------------------------------------------------ */
-/* Lista de empresas                                                   */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Lista de empresas                                                  //
+// ------------------------------------------------------------------ //
 
 async function cargarEmpresas() {
   const { empresas } = await pedir('/admin/empresas');
@@ -77,7 +94,7 @@ async function cargarEmpresas() {
     li.className = 'ficha-empresa';
     if (e.estado !== 'ACTIVA') li.classList.add('ficha-empresa--inactiva');
 
-    // --- Zona clicable que abre el detalle ---
+    // --- Zona clicable que abre el detalle --- //
     const cuerpo = document.createElement('button');
     cuerpo.type = 'button';
     cuerpo.className = 'ficha-empresa__cuerpo';
@@ -109,7 +126,7 @@ async function cargarEmpresas() {
 
     cuerpo.append(nombre, meta, modulos);
 
-    // --- Acciones a la derecha ---
+    // --- Acciones a la derecha --- //
     const acciones = document.createElement('div');
     acciones.className = 'ficha-empresa__acciones';
 
@@ -130,7 +147,10 @@ async function cargarEmpresas() {
   }
 }
 
-/** Suspender o reactivar desde la lista, sin abrir el detalle. */
+/** 
+ * Suspende o reactiva un tenant directamente desde la lista, 
+ * ahorrándole clics al super administrador. 
+ */
 async function cambiarEstado(empresa, estado) {
   try {
     await pedir(`/admin/empresas/${empresa.idEmpresa}/estado`, {
@@ -143,14 +163,15 @@ async function cambiarEstado(empresa, estado) {
   }
 }
 
-/* ------------------------------------------------------------------ */
-/* Detalle                                                             */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Detalle                                                            //
+// ------------------------------------------------------------------ //
 
 async function abrirDetalle(empresa) {
   empresaActual = empresa;
   avisoDetalle.hidden = true;
 
+  // Poblar la vista con los datos del objeto
   document.getElementById('detalle-nombre').textContent = empresa.razonSocial;
   document.getElementById('detalle-slug').textContent = empresa.slug;
   document.getElementById('detalle-estado').textContent = empresa.estado;
@@ -163,9 +184,10 @@ async function abrirDetalle(empresa) {
   document.getElementById('e-mod-agenda').checked = empresa.modulos.includes('AGENDA');
   document.getElementById('e-mod-crm').checked = empresa.modulos.includes('CRM');
 
+  // Intercambio de vistas
   vistaLista.hidden = true;
   vistaDetalle.hidden = false;
-  // Las pestañas Empresas/Roles no aplican dentro del detalle.
+  // Ocultar pestañas globales porque estamos en el contexto de UNA sola empresa
   document.getElementById('pestanas-plataforma').hidden = true;
   activarPestana('p-datos');
   window.scrollTo({ top: 0 });
@@ -181,7 +203,11 @@ function volverALista() {
   cargarEmpresas();
 }
 
-/** Muestra un panel y oculta los demás. Las pestañas son solo eso. */
+/** 
+ * Lógica de pestañas sencilla. 
+ * Muestra el panel correspondiente y oculta los demás modificando los 
+ * atributos de accesibilidad ('aria-selected') y visuales ('hidden').
+ */
 function activarPestana(idPanel) {
   for (const pestana of document.querySelectorAll('.pestana')) {
     const activa = pestana.dataset.panel === idPanel;
@@ -190,13 +216,14 @@ function activarPestana(idPanel) {
   }
 }
 
+// Asigna los eventos de clic a todas las pestañas una sola vez al cargar el archivo
 for (const pestana of document.querySelectorAll('.pestana')) {
   pestana.addEventListener('click', () => activarPestana(pestana.dataset.panel));
 }
 
-/* ------------------------------------------------------------------ */
-/* Miembros                                                            */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Miembros                                                           //
+// ------------------------------------------------------------------ //
 
 async function cargarMiembros() {
   const { miembros } = await pedir(`/admin/empresas/${empresaActual.idEmpresa}/miembros`);
@@ -212,7 +239,7 @@ async function cargarMiembros() {
     fila.append(correo);
     fila.append(celda(m.cargo));
 
-    // El rol se cambia con un desplegable en la misma fila.
+    // El rol se cambia con un desplegable (<select>) interactivo en la misma fila.
     const tdRol = document.createElement('td');
     const selectRol = document.createElement('select');
     selectRol.className = 'entrada entrada--mini';
@@ -228,6 +255,7 @@ async function cargarMiembros() {
       o.selected = m.roles.includes(valor);
       selectRol.append(o);
     }
+    // Lanza la petición HTTP automáticamente al cambiar de opción
     selectRol.addEventListener('change', () =>
       actualizarMiembro(m.idMembresia, { rol: selectRol.value }));
     tdRol.append(selectRol);
@@ -262,8 +290,10 @@ async function cargarMiembros() {
 /**
  * Genera una contraseña temporal para otra persona.
  *
- * Se pide confirmación porque la acción cierra todas las sesiones de esa
- * persona y la obliga a cambiarla al entrar. No es reversible.
+ * ¿Por qué el confirm() es tan importante aquí?
+ * Se pide confirmación porque la acción cierra todas las sesiones actuales 
+ * de esa persona y la obliga a cambiarla al intentar entrar de nuevo. Es 
+ * una acción destructiva que no es reversible.
  */
 async function restablecerPassword(idUsuario, email) {
   const seguro = confirm(
@@ -276,7 +306,9 @@ async function restablecerPassword(idUsuario, email) {
     const resultado = await pedir(`/admin/usuarios/${idUsuario}/password-temporal`, {
       metodo: 'POST',
     });
-    // Se muestra UNA sola vez: en la base solo queda su hash.
+    // MUY IMPORTANTE DE CIBERSEGURIDAD: 
+    // Se muestra UNA sola vez. Si el admin no la copia, no hay forma de volverla a ver 
+    // porque en la base de datos solo quedó guardado el hash matemático de bcrypt.
     avisar(
       avisoDetalle,
       `Contraseña temporal de ${resultado.email}: ${resultado.passwordTemporal}`,
@@ -287,8 +319,12 @@ async function restablecerPassword(idUsuario, email) {
   }
 }
 
-/** Aquí es donde puede llegar el 409 ULTIMO_ADMIN: el servidor se niega
- *  a dejar la empresa sin ningún administrador. */
+/** 
+ * Actualizador genérico de la membresía. 
+ * Aquí es donde puede llegar el error 409 'ULTIMO_ADMIN'. Si el usuario intenta 
+ * degradarse a sí mismo quitándose el rol de administrador, el servidor backend 
+ * se negará para no dejar la empresa "huérfana" sin gestores.
+ */
 async function actualizarMiembro(idMembresia, cambios) {
   avisoDetalle.hidden = true;
   try {
@@ -300,15 +336,16 @@ async function actualizarMiembro(idMembresia, cambios) {
     avisar(avisoDetalle, 'Miembro actualizado.', true);
   } catch (error) {
     avisar(avisoDetalle, mensajeError(error));
-    // El <select> ya se movió visualmente aunque el servidor dijera que
-    // no. Recargar es lo que lo devuelve a la verdad.
+    // ¿Por qué recargamos la lista si hubo error?
+    // Porque el <select> en HTML ya cambió visualmente a la opción que el usuario pulsó. 
+    // Recargar la tabla con los datos del servidor es lo que lo devuelve a "la verdad".
     await cargarMiembros();
   }
 }
 
-/* ------------------------------------------------------------------ */
-/* Formularios                                                         */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Formularios                                                        //
+// ------------------------------------------------------------------ //
 
 document.getElementById('form-editar').addEventListener('submit', async (evento) => {
   evento.preventDefault();
@@ -323,6 +360,7 @@ document.getElementById('form-editar').addEventListener('submit', async (evento)
         telefono: document.getElementById('e-telefono').value.trim(),
       },
     });
+    // Actualizamos la variable local fusionando el objeto viejo con el nuevo
     empresaActual = { ...empresaActual, ...empresa };
     document.getElementById('detalle-nombre').textContent = empresa.razonSocial;
     avisar(avisoDetalle, 'Datos guardados.', true);
@@ -367,7 +405,9 @@ document.getElementById('form-miembro').addEventListener('submit', async (evento
     });
     evento.target.reset();
     await cargarMiembros();
-    // La contraseña temporal solo aparece si la persona no tenía cuenta.
+    
+    // Si la persona era nueva en todo el sistema, el backend crea el usuario 
+    // y devuelve una clave temporal. Si ya existía, solo la vincula al Tenant.
     avisar(
       avisoDetalle,
       miembro.passwordTemporal
@@ -380,7 +420,7 @@ document.getElementById('form-miembro').addEventListener('submit', async (evento
   }
 });
 
-/* --- Crear empresa --- */
+// --- Crear empresa --- //
 
 document.getElementById('btn-nueva').addEventListener('click', () => {
   panelCrear.hidden = false;
@@ -440,7 +480,7 @@ document.getElementById('form-empresa').addEventListener('submit', async (evento
 });
 
 // ------------------------------------------------------------------ //
-// Editor de roles y permisos                                          //
+// Editor de roles y permisos (RBAC Visual)                           //
 // ------------------------------------------------------------------ //
 
 const listaRoles = document.getElementById('lista-roles');
@@ -449,30 +489,24 @@ const panelNuevoRol = document.getElementById('panel-nuevo-rol');
 
 /**
  * ¿Qué hace esta función?
- * Dibuja una tarjeta por rol con TODAS las casillas de permiso, marcando
- * las que ese rol ya tiene.
+ * Dibuja una tarjeta por cada Rol creado, pintando dentro TODAS las casillas 
+ * de permisos disponibles, y dejando marcadas ("checked") solo aquellas que el 
+ * rol ya posee.
  *
- * ¿Por qué agrupa por módulo?
- * Porque un permiso de CRM solo sirve si la empresa contrató ese módulo.
- * fn_membresias_de_usuario ya filtra por eso al armar el token, así que
- * agruparlos visualmente refleja cómo funcionan de verdad.
+ * ¿Por qué agrupa por área y no por módulo?
+ * El módulo (CRM o AGENDA) dice si la empresa PAGÓ por esa funcionalidad.
+ * El área dice sobre QUÉ ACTÚA el permiso dentro del rol. Editar un perfil de 
+ * cliente y cerrar un ticket técnico son cosas distintas aunque ambas vivan en el CRM.
+ * Separarlas permite a Recursos Humanos diseñar puestos de trabajo con criterio de 
+ * "Menor Privilegio Posible".
  */
 async function cargarRoles() {
   const { roles, permisos } = await pedir('/admin/roles');
 
-  // Map conserva el orden de inserción, a diferencia de un objeto suelto.
   /**
-   * Los permisos se agrupan por ÁREA, no por módulo.
-   *
-   * El módulo dice si la empresa contrató esa funcionalidad; el área
-   * dice sobre QUÉ actúa el permiso. Editar un cliente y cerrar un caso
-   * son cosas distintas aunque ambas se hagan desde el CRM, y separarlas
-   * ayuda a repartir responsabilidades con criterio.
-   *
-   * El área sale del prefijo del código: 'clientes.password' → clientes.
-   * Cuando el permiso pertenece a un módulo se indica entre paréntesis,
-   * porque ese dato importa: sin el módulo contratado, ese permiso no
-   * llega al token aunque el rol lo tenga marcado.
+   * Diccionario humano para las áreas del sistema.
+   * El área sale del prefijo del código del permiso. Ejemplo: 
+   * Si el permiso es 'clientes.password', el área es 'clientes'.
    */
   const NOMBRES_AREA = {
     empresas: 'Empresas',
@@ -488,10 +522,11 @@ async function cargarRoles() {
     crm: 'Interacciones e historial',
   };
 
-  // El orden de las áreas es fijo para que la pantalla no cambie de
-  // forma cada vez que se agrega un permiso nuevo.
+  // Se usa el orden de declaración del diccionario para ordenar visualmente.
   const ORDEN = Object.keys(NOMBRES_AREA);
 
+  // Un objeto Map() es excelente aquí porque, a diferencia de los objetos normales {}, 
+  // conserva estrictamente el orden en el que se insertaron las llaves.
   const grupos = new Map();
   for (const p of [...permisos].sort((a, b) => {
     const ia = ORDEN.indexOf(a.codigo.split('.')[0]);
@@ -501,6 +536,7 @@ async function cargarRoles() {
   })) {
     const area = p.codigo.split('.')[0];
     const titulo = NOMBRES_AREA[area] ?? area;
+    // Si el permiso depende de un módulo pago, se avisa en la pantalla.
     const clave = p.modulo ? `${titulo} · módulo ${p.modulo}` : titulo;
     if (!grupos.has(clave)) grupos.set(clave, []);
     grupos.get(clave).push(p);
@@ -527,8 +563,10 @@ async function cargarRoles() {
     const acciones = document.createElement('div');
     acciones.className = 'fila-botones';
 
-    // SUPER_ADMIN no se edita ni desde aquí ni desde la API: si se
-    // quitara a sí mismo 'empresas.gestionar', nadie podría arreglarlo.
+    // Medida de seguridad pasiva:
+    // El rol SUPER_ADMIN no se edita visualmente. Si se dejara editar y el administrador 
+    // se quitara a sí mismo el permiso de 'empresas.gestionar' por accidente, nadie 
+    // más en todo el sistema podría devolverle ese acceso.
     const editable = rol.codigo !== 'SUPER_ADMIN';
 
     if (editable) {
@@ -540,7 +578,8 @@ async function cargarRoles() {
       acciones.append(btnGuardar);
     }
 
-    // Solo se borran roles creados aquí y sin nadie asignado.
+    // Regla de integridad de BD: Solo se pueden borrar roles creados a mano 
+    // y que actualmente tengan cero (0) miembros asignados a ellos.
     if (!rol.esSistema && rol.asignaciones === 0) {
       const btnBorrar = document.createElement('button');
       btnBorrar.type = 'button';
@@ -561,9 +600,7 @@ async function cargarRoles() {
       tarjeta.append(nota);
     }
 
-    // 'nombreGrupo' y no 'titulo': esa variable ya la usa el <h2> del
-    // nombre del rol más arriba, y reutilizarla pintaba el elemento
-    // completo en vez de su texto.
+    // Renderizado de los Fieldsets con los Checkboxes
     for (const [nombreGrupo, lista] of grupos) {
       const grupo = document.createElement('fieldset');
       grupo.className = 'grupo';
@@ -579,6 +616,7 @@ async function cargarRoles() {
         const casilla = document.createElement('input');
         casilla.type = 'checkbox';
         casilla.value = permiso.codigo;
+        // La marca (check) viene directa del servidor si el array `rol.permisos` la incluye
         casilla.checked = rol.permisos.includes(permiso.codigo);
         casilla.disabled = !editable;
 
@@ -599,9 +637,12 @@ async function cargarRoles() {
 }
 
 /**
- * Envía la lista COMPLETA de permisos marcados.
- * No se manda "agrega este / quita aquel": se manda el estado final y
- * el servidor reemplaza. Menos casos que razonar, menos bugs.
+ * ¿Por qué usa PUT y envía la lista completa de checkboxes?
+ * En lugar de enviar comandos al servidor tipo "Agregó el permiso X" o "Quitó el Y", 
+ * escaneamos el DOM buscando las casillas marcadas (`input:checked`) y enviamos 
+ * el nuevo estado final. 
+ * Esto es diseño "Idempotente": menos lógica condicional y menos posibilidad de 
+ * desincronización por red.
  */
 async function guardarPermisos(idRol, tarjeta, boton) {
   avisoRoles.hidden = true;
@@ -662,7 +703,7 @@ document.getElementById('form-rol').addEventListener('submit', async (evento) =>
   }
 });
 
-/* --- Pestañas Empresas / Roles --- */
+// --- Pestañas Empresas / Roles --- //
 
 const grupoPestanas = document.getElementById('pestanas-plataforma');
 for (const pestana of grupoPestanas.querySelectorAll('.pestana')) {
@@ -672,17 +713,17 @@ for (const pestana of grupoPestanas.querySelectorAll('.pestana')) {
       otra.setAttribute('aria-selected', String(activa));
       document.getElementById(otra.dataset.panel).hidden = !activa;
     }
+    // Optimización: Solo pide los roles a la API si el contenedor está vacío.
     if (pestana.dataset.panel === 'vista-roles') {
       vistaDetalle.hidden = true;
-      // Solo se carga la primera vez: después ya está pintado.
       if (listaRoles.children.length === 0) await cargarRoles();
     }
   });
 }
 
-/* ------------------------------------------------------------------ */
-/* Arranque                                                            */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Arranque                                                           //
+// ------------------------------------------------------------------ //
 
 document.getElementById('btn-volver').addEventListener('click', volverALista);
 
@@ -691,15 +732,20 @@ document.getElementById('btn-salir').addEventListener('click', async () => {
   location.replace('index.html');
 });
 
+/**
+ * Función de inicialización de la página (Bootstrap Frontend).
+ */
 async function iniciar() {
   const datos = await restaurarSesion();
+  // Si no hay token de sesión válido, lo expulsa.
   if (!datos) return location.replace('index.html');
-  // Con contraseña temporal la API rechaza todo: no tiene sentido
-  // cargar esta pantalla.
+  // Si requiere cambio de clave, lo manda a la vista correspondiente.
   if (datos.debeCambiarPassword) return location.replace('cambiar-password.html');
 
-  // Puerta del lado del cliente: es comodidad, no seguridad. Aunque
-  // alguien fuerce esta pantalla, la API responde 403 sin el rol.
+  // PUERTA FRONTAL DEL CLIENTE:
+  // Si un usuario malintencionado edita el JavaScript para saltar este `if`, 
+  // no logrará nada, porque los middlewares del API backend le responderán 
+  // 403 Forbidden al intentar ejecutar `cargarEmpresas()`. Esta puerta es solo UX.
   if (!sesionActual().rolesPlataforma?.includes('SUPER_ADMIN')) {
     cargando.textContent = 'Esta sección es solo para el administrador de la plataforma.';
     return;
@@ -715,14 +761,17 @@ iniciar().catch((error) => {
   if (error?.codigo === 'DEBE_CAMBIAR_PASSWORD') {
     return location.replace('cambiar-password.html');
   }
-  // Solo se vuelve al login si el problema es de SESIÓN. Cualquier otro
-  // error (un elemento que no existe, un fallo de red) se muestra en
-  // pantalla: redirigir siempre esconde la causa y genera bucles.
+  
+  // Apunte de Experiencia de Usuario (UX) ante caídas:
+  // Redirigir SIEMPRE al login ante cualquier error esconde el verdadero problema y 
+  // genera bucles de redirección ('redirect loops'). 
+  // Solo devolvemos al login si confirmamos que fue un error explícito de sesión.
   const esSesion = ['SIN_TOKEN', 'TOKEN_INVALIDO', 'REFRESH_INVALIDO',
                     'REFRESH_EXPIRADO', 'SIN_REFRESH_TOKEN'].includes(error?.codigo);
   if (esSesion) return location.replace('index.html');
 
   console.error(error);
+  // Si fue un fallo de servidor o red, lo pinta en pantalla
   cargando.textContent = `No se pudo cargar la pantalla: ${error?.message ?? error}`;
   return undefined;
 });

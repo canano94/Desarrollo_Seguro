@@ -1,5 +1,6 @@
 import { restaurarSesion, sesionActual, elegirEmpresa, pedir, salir } from './api.js';
 
+// Referencias al DOM //
 const cargando = document.getElementById('cargando');
 const contenido = document.getElementById('contenido');
 const aviso = document.getElementById('aviso');
@@ -8,6 +9,7 @@ const vistaBusqueda = document.getElementById('vista-busqueda');
 const vistaPerfil = document.getElementById('vista-perfil');
 const resultados = document.getElementById('resultados');
 
+// Estado de la RAM //
 let permisos = [];
 let clienteActual = null;
 
@@ -35,17 +37,18 @@ function opcion(valor, texto) {
   return o;
 }
 
-/* ------------------------------------------------------------------ */
-/* Buscador                                                            */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Buscador y Patrón "Debounce"                                       //
+// ------------------------------------------------------------------ //
 
 /**
- * Espera 300 ms tras la última tecla antes de consultar.
+ * APUNTE DE RENDIMIENTO (El Patrón "Debounce"):
+ * Espera 300 ms tras la ÚLTIMA tecla presionada antes de lanzar la consulta HTTP.
+ * Si el usuario escribe "Daniel" rápido, no hacemos 6 peticiones al backend (D, Da, Dan...), 
+ * solo hacemos 1 al terminar.
  *
  * ¿Por qué el servidor filtra y no el navegador?
- * Porque los clientes pueden ser miles. Traerlos todos sería lento y
- * además expondría datos de gente que quien busca quizá no necesita
- * ver. El servidor filtra, limita a 20 y devuelve solo eso.
+ * El manejo de grandes volúmenes de datos mediante filtros dinámicos en el servidor evita sobrecargar la memoria del cliente. Traer miles de registros de clientes al navegador expondría datos sensibles innecesariamente. El backend filtra, limita la paginación a 20 y devuelve solo lo esencial.
  */
 let temporizador;
 document.getElementById('buscar').addEventListener('input', (e) => {
@@ -58,6 +61,8 @@ async function buscar(termino) {
   resultados.replaceChildren();
 
   try {
+    // Si escribió 2 o más letras, envía el Query Param `?q=...`
+    // encodeURIComponent protege contra inyecciones y caracteres especiales en la URL
    const ruta = termino.length >= 2
       ? `/clientes?q=${encodeURIComponent(termino)}`
       : '/clientes';
@@ -75,6 +80,7 @@ async function buscar(termino) {
       nombre.className = 'ficha-empresa__nombre';
       nombre.textContent = `${c.nombres} ${c.apellidos}`;
 
+      // Pinta la metadata uniendo los elementos con un punto '·' ignorando los vacíos (Boolean)
       const meta = document.createElement('span');
       meta.className = 'ficha-empresa__meta';
       meta.textContent = [c.email, c.telefono, c.documento].filter(Boolean).join(' · ');
@@ -96,14 +102,15 @@ async function buscar(termino) {
   }
 }
 
-/* ------------------------------------------------------------------ */
-/* Perfil del cliente                                                  */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Perfil del cliente (Vista CRM)                                     //
+// ------------------------------------------------------------------ //
 
 /**
- * Carga el historial 360: turnos, casos e interacciones de una persona.
- * Es lo que diferencia un CRM de una lista de tickets — quien atiende
- * ve el contexto completo sin saltar entre pantallas.
+ * APUNTE CRM:
+ * Carga el historial 360: turnos, casos e interacciones de una persona. Una visión unificada facilita la gestión de casos de atención en la nube sin saltar entre pantallas.
+ * Esto es lo que diferencia a un sistema multitenant integrado de un montón de 
+ * tablas de Excel aisladas.
  */
 async function abrirPerfil(idMembresia) {
   aviso.hidden = true;
@@ -125,18 +132,22 @@ async function abrirPerfil(idMembresia) {
     ficha.textContent = c.estadoMembresia;
     cajaEstado.append(ficha);
 
+    // Métricas
     document.getElementById('p-turnos').textContent = c.totalTurnos;
     document.getElementById('p-inasistencias').textContent = c.inasistencias;
     document.getElementById('p-casos').textContent = c.casosAbiertos;
-    // Los dos botones tienen permisos distintos: editar datos es una
-    // corrección menor, restablecer la contraseña es tomar el control
-    // de una cuenta. Por eso se muestran por separado.
+    
+    // RBAC a nivel de botones:
+    // Los dos botones tienen permisos distintos en la base de datos. Editar datos básicos 
+    // es una corrección menor, mientras que restablecer la contraseña es tomar el control
+    // directo de una cuenta. Por eso se muestran y gestionan por separado.
     const puedeEditar = puede('clientes.gestionar');
     const puedeClave = puede('clientes.password');
     document.getElementById('acciones-cliente').hidden = !puedeEditar && !puedeClave;
     document.getElementById('btn-editar-cliente').hidden = !puedeEditar;
     document.getElementById('btn-clave-cliente').hidden = !puedeClave;
 
+    // Poblar las listas delegando la inyección HTML a la función reutilizable
     pintarLista('lista-turnos', datos.turnos,
       (t) => `${fecha(t.fecha)} · ${t.servicio} · ${t.prestador}`,
       (t) => t.estado);
@@ -148,17 +159,20 @@ async function abrirPerfil(idMembresia) {
       (i) => `${i.autor} · ${fecha(i.fecha)}`);
 
     /**
-     * Cada pestaña depende de su módulo: turnos de AGENDA, casos e
-     * interacciones de CRM. La ficha del cliente en sí no depende de
-     * ninguno — por eso la pantalla funciona con cualquiera de los dos.
+     * CONDICIONAL DE MÓDULOS SAAS:
+     * Cada pestaña depende de su módulo: turnos requieren pago por AGENDA, casos e
+     * interacciones requieren CRM. La ficha básica del cliente en sí no depende de
+     * ninguno, por eso la pantalla sobrevive parcialmente aunque desactives un módulo.
      */
     const modulos = sesionActual().empresaActiva?.modulos ?? [];
     document.querySelector('[data-panel="pf-turnos"]').hidden = !modulos.includes('AGENDA');
     document.querySelector('[data-panel="pf-casos"]').hidden = !modulos.includes('CRM');
     document.querySelector('[data-panel="pf-interacciones"]').hidden = !modulos.includes('CRM');
 
-    // Si la pestaña activa quedó oculta, se salta a la primera visible
-    // para no dejar la pantalla en blanco.
+    // Auto-corrección de UX:
+    // Si al cambiar de cliente la pestaña que quedó activa visualmente resulta estar 
+    // oculta (porque la empresa apagó el módulo CRM, por ejemplo), buscamos la 
+    // primera pestaña disponible visible y le hacemos clic automáticamente.
     const visible = [...document.querySelectorAll('#pestanas-perfil .pestana')]
       .find((p) => !p.hidden);
     if (visible && document.querySelector('.pestana[aria-selected="true"]')?.hidden) {
@@ -175,8 +189,11 @@ async function abrirPerfil(idMembresia) {
   }
 }
 
-/** Pinta una lista con textContent. Las funciones que recibe deciden
- *  qué texto va en cada línea, así sirve para las tres pestañas. */
+/** 
+ * Función reutilizable que pinta una lista. 
+ * Aplica el principio DRY (Don't Repeat Yourself) recibiendo funciones flecha (callbacks) 
+ * que deciden qué propiedad del objeto imprimir en cada línea. 
+ */
 function pintarLista(id, lista, linea, meta) {
   const ul = document.getElementById(id);
   ul.replaceChildren();
@@ -206,6 +223,7 @@ document.getElementById('btn-volver').addEventListener('click', () => {
   vistaBusqueda.hidden = false;
 });
 
+// Guardado de interacciones (Llamadas, WhatsApps) en el CRM
 document.getElementById('form-interaccion').addEventListener('submit', async (e) => {
   e.preventDefault();
   const asunto = document.getElementById('i-asunto').value.trim();
@@ -254,9 +272,13 @@ document.getElementById('ec-cancelar').addEventListener('click', () => {
 });
 
 /**
- * Los datos personales (teléfono, documento) pertenecen a la IDENTIDAD
- * global, así que se cambian por la ruta de perfil. El cargo pertenece
- * a la MEMBRESÍA — es propio de esta empresa. Por eso son dos llamadas.
+ * APUNTE ARQUITECTÓNICO CLAVE (Aislamiento de Identidad Multitenant):
+ * Los datos personales globales (teléfono, documento de identidad) le pertenecen 
+ * a la IDENTIDAD (El Usuario Plataforma), así que en el backend se actualizarán en 
+ * la tabla Usuarios.
+ * El "cargo" pertenece a la MEMBRESÍA (la relación entre la Empresa y el Usuario) — 
+ * es decir, es un dato encapsulado localmente. Por eso es vital que el controlador 
+ * backend diferencie estas entidades, y el frontend envíe ambas peticiones mapeadas.
  */
 document.getElementById('form-editar-cliente').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -271,9 +293,9 @@ document.getElementById('form-editar-cliente').addEventListener('submit', async 
   } catch (error) { avisar(mensajeError(error)); }
 });
 
-/* ------------------------------------------------------------------ */
-/* Arranque                                                            */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Arranque                                                           //
+// ------------------------------------------------------------------ //
 
 function aplicarPermisos() {
   const datos = sesionActual();
@@ -302,8 +324,8 @@ async function cargarTodo() {
   permisos = sesionActual().empresaActiva?.permisos ?? [];
   aplicarPermisos();
   pintarSelectorEmpresa();
-  // Muestra los primeros 20 sin filtro, para que la pantalla no
-  // arranque vacía. Al escribir, el servidor filtra.
+  // Muestra los primeros 20 clientes sin aplicar filtro en la API, para que 
+  // la pantalla no arranque totalmente vacía. Al escribir, el servidor filtrará.
   await buscar('');
 }
 
@@ -312,7 +334,8 @@ selectorEmpresa.addEventListener('change', async () => {
   try {
     await elegirEmpresa(selectorEmpresa.value);
     await cargarTodo();
-    // Al cambiar de empresa, el cliente anterior ya no aplica.
+    // Al cambiar de tenant (empresa), el perfil del cliente abierto de la empresa 
+    // anterior ya no aplica. Reseteamos la vista a modo búsqueda.
     vistaPerfil.hidden = true;
     vistaBusqueda.hidden = false;
     resultados.replaceChildren();
@@ -349,6 +372,7 @@ iniciar().catch((error) => {
   return undefined;
 });
 
+// Reseteo de contraseña de usuario cliente por parte del administrador de la empresa //
 document.getElementById('btn-clave-cliente').addEventListener('click', async () => {
   const seguro = confirm(
     `¿Generar una contraseña temporal para ${clienteActual.email}?\n\n` +
@@ -361,7 +385,7 @@ document.getElementById('btn-clave-cliente').addEventListener('click', async () 
       `/admin/mi-empresa/usuarios/${clienteActual.idUsuario}/password-temporal`,
       { metodo: 'POST' },
     );
-    // Se muestra UNA sola vez: en la base solo queda su hash.
+    // Se muestra UNA sola vez. Por seguridad la base de datos no la retiene en texto plano.
     avisar(`Contraseña temporal: ${resultado.passwordTemporal}`, true);
   } catch (error) {
     avisar(mensajeError(error));

@@ -38,17 +38,21 @@ function opcion(valor, texto) {
 }
 
 /**
- * Pinta la tabla filtrando en el navegador.
+ * APUNTE ARQUITECTÓNICO (Filtrado Local vs Servidor):
+ * Pinta la tabla filtrando directamente en la memoria RAM del navegador.
  *
- * ¿Por qué aquí sí filtro local y en clientes será en el servidor?
- * Porque los miembros de una empresa son decenas, no miles: traerlos
- * todos es barato. Los clientes pueden ser miles, y ahí sí hace falta
- * que el servidor filtre y limite.
+ * ¿Por qué aquí se hace filtro local y en "clientes.js" lo hace el servidor backend?
+ * Escalabilidad. Los miembros del personal interno de una empresa (Membresías) 
+ * suelen ser decenas, a lo sumo un par de cientos: traerlos todos en un solo JSON es 
+ * barato y rápido. Los clientes finales, en cambio, pueden ser cientos de miles. 
+ * Traer 100,000 registros al DOM colapsaría el navegador, por eso allí se delega 
+ * el peso del filtrado a PostgreSQL.
  */
 function pintarMiembros(filtro = '') {
   const texto = filtro.toLowerCase();
   tablaMiembros.replaceChildren();
 
+  // Array.prototype.filter() se ejecuta instantáneamente en RAM
   const visibles = miembros.filter((m) =>
     !texto
     || `${m.nombres} ${m.apellidos}`.toLowerCase().includes(texto)
@@ -66,7 +70,7 @@ function pintarMiembros(filtro = '') {
     fila.append(celda(m.cargo));
     fila.append(celda(m.roles.join(', ') || 'sin rol'));
 
-    // Nombres de los prestadores asignados, no sus uuid.
+    // Cruce relacional local: Busca el nombre real del prestador usando el ID
     const nombresPrestadores = (m.prestadores ?? [])
       .map((id) => prestadores.find((p) => p.idPrestador === id)?.nombre)
       .filter(Boolean);
@@ -105,9 +109,11 @@ function pintarMiembros(filtro = '') {
 }
 
 /**
- * Genera una contraseña temporal.
- * El servidor decide el alcance: un PRESTADOR solo alcanza a la gente
- * de sus sedes, y nadie puede tocar a otro administrador de empresa.
+ * Genera una contraseña temporal forzada.
+ * 
+ * Dinámica Backend: El servidor es quien decide el alcance de esta acción.
+ * Un rol de 'PRESTADOR' solo alcanza a resetear a los empleados limitados a su 
+ * sede asignada. Además, el backend prohíbe tocar la clave de otro administrador de la empresa.
  */
 async function restablecerPassword(idUsuario, email) {
   const seguro = confirm(
@@ -120,7 +126,7 @@ async function restablecerPassword(idUsuario, email) {
     const resultado = await pedir(`/admin/mi-empresa/usuarios/${idUsuario}/password-temporal`, {
       metodo: 'POST',
     });
-    // Se muestra UNA sola vez: en la base solo queda su hash.
+    // Se muestra UNA sola vez: en la base solo queda su hash //
     avisar(`Contraseña temporal de ${resultado.email}: ${resultado.passwordTemporal}`, true);
   } catch (error) {
     avisar(mensajeError(error));
@@ -129,9 +135,12 @@ async function restablecerPassword(idUsuario, email) {
 
 async function cargarMiembros() {
   const respuesta = await pedir('/agenda/miembros');
-  // Los clientes tienen su propia pantalla con perfil 360. Aquí solo
-  // va el personal: empleados, responsables y administradores.
+  
+  // Exclusión explícita de clientes.
+  // Los clientes tienen su propia pantalla avanzada con perfil CRM (clientes.js). 
+  // Esta vista es exclusivamente administrativa para el "staff" interno.
   miembros = respuesta.miembros.filter((m) => !m.roles.includes('CLIENTE'));
+  
   pintarMiembros(document.getElementById('buscar').value.trim());
 }
 
@@ -142,12 +151,18 @@ async function cargarPrestadores() {
   for (const p of prestadores) select.append(opcion(p.idPrestador, p.nombre));
 }
 
+// Reactividad del input para el filtrado en vivo //
 document.getElementById('buscar').addEventListener('input', (e) => {
   pintarMiembros(e.target.value.trim());
 });
 
-// El campo de prestadores solo aplica a empleados y responsables:
-// clientes y administradores no están atados a ninguna sede.
+/**
+ * APUNTE UX DINÁMICA (Jerarquía de Roles):
+ * El selector geográfico o de sede ('campo-prestadores') solo tiene sentido y se 
+ * muestra si el rol es operativo ('EMPLEADO', 'PRESTADOR'). 
+ * Un cliente externo o un 'ADMIN_EMPRESA' no están atados geográficamente a ninguna 
+ * sede específica; su nivel de acceso es corporativo o global.
+ */
 document.getElementById('m-rol').addEventListener('change', (e) => {
   document.getElementById('campo-prestadores').hidden =
     !['EMPLEADO', 'PRESTADOR'].includes(e.target.value);
@@ -157,8 +172,8 @@ document.getElementById('form-miembro').addEventListener('submit', async (e) => 
   e.preventDefault();
   const rol = document.getElementById('m-rol').value;
 
-  // Al editar solo se mandan los campos que sí se pueden cambiar; al
-  // crear hace falta además la identidad de la persona.
+  // Almacena la carga útil (payload). Al editar solo se mandan los campos mutables; 
+  // al crear desde cero hace falta definir la identidad completa.
   const cuerpo = {
     rol,
     cargo: document.getElementById('m-cargo').value.trim(),
@@ -167,12 +182,14 @@ document.getElementById('form-miembro').addEventListener('submit', async (e) => 
   if (['EMPLEADO', 'PRESTADOR'].includes(rol)) {
     cuerpo.prestadores = [...document.getElementById('m-prestadores').selectedOptions]
       .map((o) => o.value);
+    
+    // Bloqueo de consistencia local
     if (cuerpo.prestadores.length === 0) {
       return avisar('Elige al menos un prestador para esa persona.');
     }
   } else {
-    // Un cliente o un administrador no están atados a ninguna sede:
-    // se limpia el ámbito por si antes era empleado.
+    // Sanatización local: Si a un empleado lo ascienden a Administrador, 
+    // vaciamos su arreglo de sedes para que su ámbito quede global (sin restricciones).
     cuerpo.prestadores = [];
   }
 
@@ -185,6 +202,7 @@ document.getElementById('form-miembro').addEventListener('submit', async (e) => 
       cuerpo.nombres = document.getElementById('m-nombres').value.trim();
       cuerpo.apellidos = document.getElementById('m-apellidos').value.trim();
       const { miembro } = await pedir('/agenda/miembros', { metodo: 'POST', cuerpo });
+      
       avisar(
         miembro.passwordTemporal
           ? `Vinculado. Contraseña temporal: ${miembro.passwordTemporal}`
@@ -198,6 +216,10 @@ document.getElementById('form-miembro').addEventListener('submit', async (e) => 
   return undefined;
 });
 
+// ------------------------------------------------------------------ //
+// Arranque y Contexto                                                //
+// ------------------------------------------------------------------ //
+
 function aplicarPermisos() {
   const datos = sesionActual();
   const modulos = datos.empresaActiva?.modulos ?? [];
@@ -205,8 +227,6 @@ function aplicarPermisos() {
   document.getElementById('nav-agenda').hidden = !modulos.includes('AGENDA');
   document.getElementById('nav-crm').hidden = !modulos.includes('CRM');
   document.getElementById('nav-servicios').hidden = !puede('servicios.gestionar');
-  // Los clientes no dependen de ningún módulo: basta con poder
-  // administrarlos, manejar la agenda o atender casos.
   document.getElementById('nav-clientes').hidden =
     !puede('clientes.gestionar') && !puede('reservas.aprobar') && !puede('casos.gestionar');
   document.getElementById('nav-admin').hidden =
@@ -233,9 +253,12 @@ async function cargarTodo() {
 }
 
 /**
- * Carga los datos de la persona en el formulario de abajo.
- * El correo no se edita: es el identificador global de la cuenta y
- * cambiarlo tendría que pasar por verificación, no por este formulario.
+ * Configura el formulario para actualizar un miembro.
+ * 
+ * VITAL: El correo, nombres y apellidos se deshabilitan (`disabled = true`). 
+ * Estos datos pertenecen a la Identidad Base de la plataforma, no a la Membresía 
+ * del Tenant. Alterar la identidad de una cuenta afectaría al usuario globalmente, 
+ * por lo que deben cambiarse desde el perfil de usuario, no desde el panel corporativo.
  */
 function editarMiembro(m) {
   editando = { idMembresia: m.idMembresia };
@@ -250,11 +273,13 @@ function editarMiembro(m) {
   document.getElementById('m-rol').value = m.roles[0] ?? 'CLIENTE';
   document.getElementById('m-cargo').value = m.cargo ?? '';
 
-  // Marca los prestadores que esa persona ya tiene asignados.
+  // Marca el multi-select HTML identificando qué prestadores ya están configurados
   const select = document.getElementById('m-prestadores');
   for (const opt of select.options) {
     opt.selected = (m.prestadores ?? []).includes(opt.value);
   }
+  
+  // Decide si debe mostrar o no el cuadro de prestadores en base al rol de origen
   document.getElementById('campo-prestadores').hidden =
     !['EMPLEADO', 'PRESTADOR'].includes(m.roles[0]);
 
@@ -268,9 +293,12 @@ function cancelarEdicion() {
   editando = null;
   const form = document.getElementById('form-miembro');
   form.reset();
+  
+  // Desbloquea los campos de identidad para permitir crear un nuevo perfil limpio
   for (const id of ['m-email', 'm-nombres', 'm-apellidos']) {
     document.getElementById(id).disabled = false;
   }
+  
   document.getElementById('campo-prestadores').hidden = true;
   document.getElementById('titulo-form').textContent = 'Vincular una persona';
   document.getElementById('btn-miembro').textContent = 'Vincular';
@@ -307,9 +335,6 @@ iniciar().catch((error) => {
   if (error?.codigo === 'DEBE_CAMBIAR_PASSWORD') {
     return location.replace('cambiar-password.html');
   }
-  // Solo se vuelve al login si el problema es de SESIÓN. Cualquier otro
-  // error (un elemento que no existe, un fallo de red) se muestra en
-  // pantalla: redirigir siempre esconde la causa y genera bucles.
   const esSesion = ['SIN_TOKEN', 'TOKEN_INVALIDO', 'REFRESH_INVALIDO',
                     'REFRESH_EXPIRADO', 'SIN_REFRESH_TOKEN'].includes(error?.codigo);
   if (esSesion) return location.replace('index.html');

@@ -1,5 +1,7 @@
+// Importa las dependencias de comunicación y sesión //
 import { restaurarSesion, sesionActual, elegirEmpresa, pedir, salir } from './api.js';
 
+// Referencias al DOM //
 const cargando = document.getElementById('cargando');
 const contenido = document.getElementById('contenido');
 const avisoCrm = document.getElementById('aviso-crm');
@@ -7,14 +9,15 @@ const selectorEmpresa = document.getElementById('selector-empresa');
 const tablaCasos = document.getElementById('tabla-casos');
 const detalleCaso = document.getElementById('detalle-caso');
 
+// Estado local //
 let permisos = [];
 let casoSeleccionado = null;
 
 const puede = (permiso) => permisos.includes(permiso);
 
-/* ------------------------------------------------------------------ */
-/* Utilidades                                                          */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Utilidades                                                         //
+// ------------------------------------------------------------------ //
 
 function avisar(mensaje, bien = false) {
   avisoCrm.textContent = mensaje;
@@ -44,16 +47,19 @@ function opcion(valor, texto) {
   return o;
 }
 
-/* ------------------------------------------------------------------ */
-/* Casos                                                               */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Casos                                                              //
+// ------------------------------------------------------------------ //
 
 /**
- * ¿Qué hace esta función?
- * Trae los casos que la persona puede ver. El servidor decide el
- * alcance con los permisos del token y lo devuelve en la respuesta:
- * un cliente ve los suyos, un empleado los que le asignaron, un
- * administrador todos los de la empresa.
+ * APUNTE ARQUITECTÓNICO (Dinámica de Vistas):
+ * Trae los casos que la persona puede ver.
+ * Es crucial notar que el frontend NO PIDE "mis casos" o "todos los casos". 
+ * Simplemente hace un `GET /crm/casos`. El servidor es quien decide el 
+ * alcance leyendo los permisos del token y lo devuelve en la respuesta 
+ * (`alcance`).
+ * Así, la misma función y la misma ruta le sirven a un cliente final, a un 
+ * técnico asignado o al gerente general.
  */
 async function cargarCasos() {
   const { casos, alcance } = await pedir('/crm/casos');
@@ -79,7 +85,8 @@ async function cargarCasos() {
     fila.append(celda(c.cliente));
     fila.append(celda(c.asignado));
 
-    // La prioridad se colorea: lo crítico tiene que saltar a la vista.
+    // UX: La prioridad se colorea con clases CSS (ej. .prioridad-alta).
+    // Lo crítico (ej. caída de servicio) tiene que saltar a la vista en la tabla.
     const tdPrioridad = document.createElement('td');
     const fichaP = document.createElement('span');
     fichaP.className = `ficha prioridad-${c.prioridad.toLowerCase()}`;
@@ -109,7 +116,10 @@ async function cargarCasos() {
   }
 }
 
-/** Abre el detalle con la descripción completa y las interacciones. */
+/** 
+ * Abre el panel de detalle lateral con la descripción completa, el origen 
+ * del turno y el hilo de interacciones. 
+ */
 async function abrirCaso(idCaso) {
   avisoCrm.hidden = true;
   try {
@@ -120,9 +130,10 @@ async function abrirCaso(idCaso) {
     document.getElementById('dc-meta').textContent =
       `${caso.numero} · ${caso.tipo} · ${caso.cliente} · radicado ${fecha(caso.creadoEn)}`;
     document.getElementById('dc-descripcion').textContent = caso.descripcion;
+    
     pintarReservaVinculada(caso.reserva);
 
-    // La gestión solo aparece para quien puede atender casos.
+    // Controles de Gestión: Solo aparecen para los empleados con permiso.
     const gestiona = puede('casos.gestionar');
     document.getElementById('dc-gestion').hidden = !gestiona;
     document.getElementById('dc-nueva-interaccion').hidden = !puede('crm.registrar');
@@ -142,9 +153,11 @@ async function abrirCaso(idCaso) {
 }
 
 /**
- * Muestra el turno del que nació el caso, con lo que anotó el empleado.
- * Es la conexión entre los dos módulos: el resolutor ve el contexto
- * del servicio sin salir del caso.
+ * APUNTE INTEGRACIÓN MULTI-MÓDULO:
+ * Muestra el turno del que nació el caso. Es la conexión entre la Agenda y el CRM.
+ * El resolutor técnico (ej. un administrador de casos) puede leer qué anotó el 
+ * empleado de mostrador durante la cita, sin tener que cerrar la ventana ni 
+ * buscar la reserva en el otro módulo.
  */
 function pintarReservaVinculada(reserva) {
   const caja = document.getElementById('dc-reserva');
@@ -185,8 +198,12 @@ function pintarReservaVinculada(reserva) {
   caja.append(ul);
 }
 
-/** Siempre con textContent: el detalle lo escribe un humano y podría
- *  contener etiquetas HTML que no deben ejecutarse. */
+/**
+ * APUNTE SEGURIDAD DOM:
+ * Siempre se inyectan los detalles con `textContent`. El cuerpo de una interacción
+ * lo escribe un humano libremente en un área de texto y podría intentar inyectar
+ * etiquetas `<script>` o `<img>` maliciosas. `textContent` neutraliza la amenaza.
+ */
 function pintarInteracciones(lista) {
   const caja = document.getElementById('dc-interacciones');
   caja.replaceChildren();
@@ -217,6 +234,7 @@ document.getElementById('dc-cerrar').addEventListener('click', () => {
   casoSeleccionado = null;
 });
 
+// Actualiza Estado y Prioridad //
 document.getElementById('dc-guardar').addEventListener('click', async () => {
   try {
     await pedir(`/crm/casos/${casoSeleccionado.idCaso}`, {
@@ -227,11 +245,13 @@ document.getElementById('dc-guardar').addEventListener('click', async () => {
       },
     });
     await cargarCasos();
+    // Re-abrimos el caso para forzar la recarga visual de los datos frescos //
     await abrirCaso(casoSeleccionado.idCaso);
     avisar('Caso actualizado.', true);
   } catch (error) { avisar(mensajeError(error)); }
 });
 
+// Radica un nuevo mensaje/interacción dentro del hilo del caso //
 document.getElementById('i-guardar').addEventListener('click', async () => {
   const asunto = document.getElementById('i-asunto').value.trim();
   const detalle = document.getElementById('i-detalle').value.trim();
@@ -256,7 +276,7 @@ document.getElementById('i-guardar').addEventListener('click', async () => {
   return undefined;
 });
 
-/* --- Radicar caso --- */
+// --- Radicar un Caso Nuevo --- //
 
 document.getElementById('btn-nuevo-caso').addEventListener('click', () => {
   document.getElementById('panel-nuevo-caso').hidden = false;
@@ -276,8 +296,10 @@ document.getElementById('form-caso').addEventListener('submit', async (evento) =
     descripcion: document.getElementById('c-descripcion').value.trim(),
   };
 
-  // Estos dos campos solo existen para el personal. Un cliente radica
-  // siempre a su propio nombre y con prioridad por defecto.
+  // Dinamismo de Permisos:
+  // Estos dos campos solo los ve el personal. Si un cliente final abre esta 
+  // vista, solo puede crear un caso para SÍ MISMO. La API ignoraría cualquier 
+  // `idCliente` manual que enviara un cliente intentando suplantar a otro.
   if (!document.getElementById('campo-cliente-caso').hidden) {
     if (!clienteElegido) return avisar('Busca y selecciona un cliente.');
     cuerpo.idCliente = clienteElegido.idMembresia;
@@ -286,9 +308,10 @@ document.getElementById('form-caso').addEventListener('submit', async (evento) =
     cuerpo.prioridad = document.getElementById('c-prioridad').value;
   }
 
-  // El turno sale del desplegable, que ya viene preseleccionado si
-  // llegamos desde la agenda. Antes se leía de un data- del formulario,
-  // pero ahora el usuario puede cambiarlo o quitarlo desde el select.
+  // Integración de Turnos (Agenda):
+  // El ID del turno sale del selector. Si el usuario llegó a esta vista 
+  // haciendo clic en "Radicar Caso" desde un turno en `agenda.js`, este `<select>` 
+  // ya vendrá pre-llenado gracias a la Query String.
   const idTurno = document.getElementById('c-turno').value;
   if (idTurno) cuerpo.idReserva = idTurno;
 
@@ -302,20 +325,17 @@ document.getElementById('form-caso').addEventListener('submit', async (evento) =
   } catch (error) { avisar(mensajeError(error)); }
 });
 
-/* ------------------------------------------------------------------ */
-/* Historial 360                                                       */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Historial 360                                                      //
+// ------------------------------------------------------------------ //
 
-// Cliente elegido en el buscador del formulario de caso.
 let clienteElegido = null;
 
 /**
- * Buscador con espera de 300 ms tras la última tecla.
- *
- * ¿Por qué buscar en el servidor y no filtrar una lista local?
- * Porque con mil clientes traerlos todos al navegador es lento y además
- * expone datos de gente que quien busca quizá no necesita ver. El
- * servidor filtra y devuelve máximo 20.
+ * APUNTE DE RENDIMIENTO (Buscador "Debounce"):
+ * Evita bombardear a la API mientras el usuario teclea el nombre del cliente.
+ * El backend filtra con un LIMIT de 20 para proteger la memoria, y solo 
+ * envía coincidencias relevantes.
  */
 let temporizadorBusqueda;
 document.getElementById('c-cliente-busca').addEventListener('input', (e) => {
@@ -328,10 +348,10 @@ async function buscarClientes(termino) {
   const caja = document.getElementById('c-cliente-resultados');
   caja.replaceChildren();
 
+  // No busca si hay menos de 2 letras
   if (termino.length < 2) return (caja.hidden = true);
 
   try {
-    // encodeURIComponent evita que un término con & o = rompa la URL.
     const { clientes } = await pedir(`/clientes?q=${encodeURIComponent(termino)}`);
 
     for (const c of clientes) {
@@ -349,9 +369,9 @@ async function buscarClientes(termino) {
       boton.append(nombre, datos);
       boton.addEventListener('click', () => {
         clienteElegido = c;
-        // Cambia el buscador por el campo de solo lectura con el nombre.
+        // UX: Cambia la caja de texto por una etiqueta estática con el nombre elegido
         mostrarClienteElegido(`${c.nombres} ${c.apellidos} — ${c.email}`);
-        // Y carga sus turnos por si quiere vincular uno al caso.
+        // Detona la carga de los turnos de ESA persona para el selector de 'Turno Vinculado'
         cargarTurnosDeCliente(c.idMembresia);
       });
 
@@ -372,8 +392,10 @@ async function buscarClientes(termino) {
   return undefined;
 }
 
-/** El selector del historial sí puede ser una lista: son menos y se
- *  navega distinto. Trae los primeros 20 sin filtro. */
+/** 
+ * En la vista de Historial general, sí cargamos un `<select>`.
+ * Son los primeros 20 clientes estáticos para navegar rápido.
+ */
 async function cargarClientesHistorial() {
   if (!puede('crm.ver_historial')) return;
   const { clientes } = await pedir('/clientes');
@@ -385,11 +407,10 @@ async function cargarClientesHistorial() {
 }
 
 /**
- * ¿Por qué esto es el corazón de un CRM?
- * Reúne turnos, casos e interacciones de una persona en una sola vista.
- * Quien atiende ve el contexto completo sin saltar entre pantallas: si
- * alguien llama a quejarse, en dos segundos sabes cuántas veces vino,
- * qué le pasó antes y quién habló con él la última vez.
+ * APUNTE CRM: Consolidación.
+ * Esto diferencia una lista de tickets de un verdadero CRM. Reúne todo el contexto 
+ * de la persona (turnos, casos, interacciones) extraídos en una sola petición a 
+ * la API. Ahorra tiempo crítico al asesor.
  */
 async function cargarHistorial(idCliente) {
   const caja = document.getElementById('h-resultado');
@@ -399,7 +420,7 @@ async function cargarHistorial(idCliente) {
   try {
     const datos = await pedir(`/clientes/${idCliente}/historial`);
 
-    // Ficha del cliente
+    // Ficha Resumen del Cliente
     const ficha = document.createElement('section');
     ficha.className = 'tarjeta tarjeta--identidad';
     const nombre = document.createElement('h2');
@@ -412,6 +433,7 @@ async function cargarHistorial(idCliente) {
     ficha.append(nombre, contacto);
     caja.append(ficha);
 
+    // Renderiza las tres secciones delegando el formato a la función helper
     caja.append(
       bloqueHistorial('Turnos', datos.turnos,
         (t) => `${fecha(t.fecha)} · ${t.servicio} · ${t.prestador}`,
@@ -428,8 +450,7 @@ async function cargarHistorial(idCliente) {
   }
 }
 
-/** Arma una tarjeta con una lista. Las funciones que recibe deciden
- *  qué texto va en cada línea, así el mismo bloque sirve para los tres. */
+/** Helper de UI para pintar un bloque completo de historial con su título y lista */
 function bloqueHistorial(titulo, lista, linea, meta) {
   const seccion = document.createElement('section');
   seccion.className = 'tarjeta';
@@ -462,13 +483,14 @@ function bloqueHistorial(titulo, lista, linea, meta) {
   return seccion;
 }
 
+// Disparador reactivo para el selector de la pestaña "Historial"
 document.getElementById('h-cliente').addEventListener('change', (e) => {
   cargarHistorial(e.target.value);
 });
 
-/* ------------------------------------------------------------------ */
-/* Pestañas, empresa y arranque                                        */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Pestañas, Empresa y Arranque                                       //
+// ------------------------------------------------------------------ //
 
 const grupoPestanas = document.getElementById('pestanas-crm');
 for (const pestana of grupoPestanas.querySelectorAll('.pestana')) {
@@ -484,7 +506,7 @@ for (const pestana of grupoPestanas.querySelectorAll('.pestana')) {
 function aplicarPermisos() {
   const datos = sesionActual();
 
-  // Solo el personal radica a nombre de otro y fija la prioridad.
+  // Controles de administrador vs cliente
   const gestiona = puede('casos.gestionar');
   document.getElementById('campo-cliente-caso').hidden = !gestiona;
   document.getElementById('campo-prioridad').hidden = !gestiona;
@@ -511,27 +533,30 @@ function pintarSelectorEmpresa() {
 }
 
 async function cargarTodo() {
-  // Los permisos salen del token y deciden qué se muestra. Va PRIMERO:
-  // si aplicarPermisos() corriera después de un await que falla, las
-  // pestañas quedarían ocultas para siempre.
+  // Los permisos deciden qué se pinta en pantalla. 
+  // Es vital que esto corra PRIMERO de forma síncrona, antes de los `await` HTTP.
   permisos = sesionActual().empresaActiva?.permisos ?? [];
   aplicarPermisos();
   pintarSelectorEmpresa();
+  
   await Promise.all([cargarCasos(), cargarClientesHistorial()]);
 
-  // Si venimos desde un turno de la agenda, abrimos el formulario con
-  // el cliente y el turno ya seleccionados.
+  // APUNTE (Cross-Site Linkage):
+  // Atrapa los parámetros de la URL si el usuario hizo clic en "Radicar Caso" 
+  // en la vista de la Agenda.
   const params = new URLSearchParams(location.search);
   const idReserva = params.get('reserva');
   const idCliente = params.get('cliente');
   const nombreCliente = params.get('nombre');
 
+  // Si trae el ID de un turno en la URL, abre el formulario pre-llenado automáticamente
   if (idReserva) {
     document.getElementById('panel-nuevo-caso').hidden = false;
 
     if (idCliente) {
       clienteElegido = { idMembresia: idCliente };
       mostrarClienteElegido(nombreCliente ?? 'Seleccionado desde el turno');
+      // Aseguramos que el turno específico se cargue en el `<select>` vinculado
       await cargarTurnosDeCliente(idCliente, idReserva);
     }
     avisar('Radicando un caso sobre el turno seleccionado.', true);
@@ -539,9 +564,8 @@ async function cargarTodo() {
 }
 
 /**
- * Carga los turnos del cliente elegido para poder vincular uno.
- * Se llama cuando se selecciona un cliente en el buscador y también
- * al abrir el formulario desde un turno de la agenda.
+ * Carga los turnos (AGENDA) de un cliente específico para rellenar 
+ * el desplegable "Turno Relacionado" al radicar un nuevo caso CRM.
  */
 async function cargarTurnosDeCliente(idCliente, idPreseleccionado = null) {
   const select = document.getElementById('c-turno');
@@ -561,7 +585,7 @@ async function cargarTurnosDeCliente(idCliente, idPreseleccionado = null) {
   }
 }
 
-/** Cambia entre "buscando" y "cliente ya elegido". */
+/** Helpers de UI para el buscador */
 function mostrarClienteElegido(texto) {
   const caja = document.getElementById('c-cliente-elegido-caja');
   const busca = document.getElementById('c-cliente-busca');
@@ -584,6 +608,7 @@ document.getElementById('c-cliente-cambiar').addEventListener('click', () => {
   document.getElementById('c-turno').replaceChildren(opcion('', 'Sin turno relacionado'));
 });
 
+// Selector global de Tenancy
 selectorEmpresa.addEventListener('change', async () => {
   selectorEmpresa.disabled = true;
   try {
@@ -622,9 +647,6 @@ iniciar().catch((error) => {
   if (error?.codigo === 'DEBE_CAMBIAR_PASSWORD') {
     return location.replace('cambiar-password.html');
   }
-  // Solo se vuelve al login si el problema es de SESIÓN. Cualquier otro
-  // error (un elemento que no existe, un fallo de red) se muestra en
-  // pantalla: redirigir siempre esconde la causa y genera bucles.
   const esSesion = ['SIN_TOKEN', 'TOKEN_INVALIDO', 'REFRESH_INVALIDO',
                     'REFRESH_EXPIRADO', 'SIN_REFRESH_TOKEN'].includes(error?.codigo);
   if (esSesion) return location.replace('index.html');

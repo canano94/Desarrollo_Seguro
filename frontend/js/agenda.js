@@ -1,5 +1,7 @@
+// Importa las funciones centralizadas de API //
 import { restaurarSesion, sesionActual, elegirEmpresa, pedir, salir } from './api.js';
 
+// Elementos visuales principales //
 const cargando = document.getElementById('cargando');
 const contenido = document.getElementById('contenido');
 const avisoAgenda = document.getElementById('aviso-agenda');
@@ -8,22 +10,27 @@ const calendario = document.getElementById('calendario');
 const avisoTexto = document.getElementById('aviso-texto');
 const avisoAcciones = document.getElementById('aviso-acciones');
 
-// Estado de la pantalla.
+// Estado local de la pantalla en la memoria RAM //
 let permisos = [];
 let servicios = [];
 let miembros = [];
 let reservas = [];
-// Lunes de la semana que se está mostrando.
+// Almacena el inicio exacto (Lunes a las 00:00) de la semana actual dibujada
 let inicioSemana = lunesDe(new Date());
 
+// Helper rápido para validar si el rol del usuario posee un permiso //
 const puede = (permiso) => permisos.includes(permiso);
 
-/* ------------------------------------------------------------------ */
-/* Utilidades de fecha                                                 */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Utilidades de fecha                                                //
+// ------------------------------------------------------------------ //
 
-/** Devuelve el lunes de la semana a la que pertenece una fecha, a las 00:00.
- *  getDay() da 0 para domingo y 1 para lunes; la resta lo normaliza. */
+/** 
+ * Devuelve el lunes exacto de la semana a la que pertenece una fecha dada, 
+ * fijando la hora a las 00:00:00.
+ * Truco: getDay() da 0 para domingo y 1 para lunes; la resta matemática lo normaliza 
+ * para siempre encontrar el inicio comercial de la semana. 
+ */
 function lunesDe(fecha) {
   const d = new Date(fecha);
   const dia = d.getDay();
@@ -49,14 +56,16 @@ function hora(iso) {
   return new Date(iso).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
 }
 
-/* ------------------------------------------------------------------ */
-/* Utilidades de pintado                                               */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Utilidades de pintado                                              //
+// ------------------------------------------------------------------ //
 
 /**
- * El aviso tiene DOS zonas: un span de texto y un contenedor de botones.
- * Mezclar textContent y replaceChildren sobre el mismo elemento hacía
- * que una forma borrara a la otra; separarlas resuelve el conflicto.
+ * ¿Por qué el aviso se separó en texto y acciones?
+ * El aviso visual (caja flotante) tiene un <span> de texto y un contenedor de botones.
+ * Si usaras `avisoAgenda.replaceChildren()` para borrar todo e insertar, borrarías también 
+ * tus propios botones dinámicos. Modificar explícitamente el nodo hijo (`avisoTexto` y `avisoAcciones`) 
+ * resuelve el conflicto de renderizado.
  */
 function avisar(mensaje, bien = false) {
   avisoTexto.textContent = mensaje;
@@ -65,7 +74,6 @@ function avisar(mensaje, bien = false) {
   avisoAgenda.hidden = false;
 }
 
-/** Junta los detalles campo por campo que devuelve zod en un 422. */
 function mensajeError(error) {
   const detalle = error?.detalles?.map((d) => d.mensaje).join(' · ');
   return detalle || error?.mensaje || 'Ocurrió un error inesperado.';
@@ -78,18 +86,23 @@ function opcion(valor, texto) {
   return o;
 }
 
-/* ------------------------------------------------------------------ */
-/* Calendario semanal                                                  */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Calendario semanal                                                 //
+// ------------------------------------------------------------------ //
 
 /**
- * Dibuja siete columnas, una por día, con los turnos de esa semana.
- * No usa ninguna librería: es una rejilla de CSS Grid y un filtro por
- * fecha. Menos código que aprender a configurar un calendario ajeno.
+ * Dibuja un calendario semanal sin usar librerías externas.
+ * 
+ * ¿Por qué hacer esto artesanalmente?
+ * En lugar de instalar un plugin pesado (tipo FullCalendar) que requiere configurar
+ * cientos de opciones de interfaz y pesa decenas de KB, un calendario semanal simple 
+ * se logra perfectamente renderizando 7 columnas (<div>) usando CSS Grid. 
+ * El filtrado de qué turno va en qué día se hace con JavaScript estándar (Date).
  */
 function pintarCalendario() {
   const finSemana = sumarDias(inicioSemana, 7);
 
+  // Arma el título central. Ejemplo: "12 de octubre — 18 de octubre de 2026"
   document.getElementById('titulo-semana').textContent =
     `${inicioSemana.toLocaleDateString('es-CO', { day: 'numeric', month: 'long' })} — ` +
     `${sumarDias(inicioSemana, 6).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })}`;
@@ -97,11 +110,13 @@ function pintarCalendario() {
   calendario.replaceChildren();
   const hoy = new Date();
 
+  // Bucle de los 7 días (0 a 6)
   for (let i = 0; i < 7; i += 1) {
     const dia = sumarDias(inicioSemana, i);
 
     const columna = document.createElement('div');
     columna.className = 'dia';
+    // Pinta la columna diferente si es el día actual del mes
     if (mismaFecha(dia, hoy)) columna.classList.add('dia--hoy');
 
     const cabecera = document.createElement('div');
@@ -115,17 +130,20 @@ function pintarCalendario() {
     cabecera.append(nombre, numero);
     columna.append(cabecera);
 
-    // Turnos de este día, ordenados por hora.
+    // Turnos de este día específico, ordenados cronológicamente por hora.
     const delDia = reservas
       .filter((r) => {
         const f = new Date(r.fechaInicio);
+        // Pertenece a este día si es >= a las 00:00 y menor al día de mañana
         return f >= dia && f < sumarDias(dia, 1) && f < finSemana;
       })
       .sort((a, b) => new Date(a.fechaInicio) - new Date(b.fechaInicio));
 
+    // Renderiza las "tarjetas" individuales de cada cita
     for (const r of delDia) {
       const turno = document.createElement('button');
       turno.type = 'button';
+      // La clase CSS cambia el color de la tarjeta según su estado (ej. verde si confirmada)
       turno.className = `turno turno--${r.estado.toLowerCase()}`;
 
       const h = document.createElement('span');
@@ -145,6 +163,7 @@ function pintarCalendario() {
       columna.append(turno);
     }
 
+    // Si el día no tiene citas, pinta un separador visual
     if (delDia.length === 0) {
       const vacio = document.createElement('span');
       vacio.className = 'dia__vacio';
@@ -156,9 +175,9 @@ function pintarCalendario() {
   }
 }
 
-/* ------------------------------------------------------------------ */
-/* Detalle del turno seleccionado                                      */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Detalle del turno seleccionado                                     //
+// ------------------------------------------------------------------ //
 
 const detalleTurno = document.getElementById('detalle-turno');
 const dtAcciones = document.getElementById('dt-acciones');
@@ -166,9 +185,13 @@ const dtObservaciones = document.getElementById('dt-observaciones');
 let turnoSeleccionado = null;
 
 /**
- * Abre el panel del turno con las acciones que la persona puede hacer.
- * Cada botón se dibuja solo si el token trae el permiso correspondiente
- * — y aun así la API lo verifica: esto es comodidad, no seguridad.
+ * Abre el panel lateral (o modal flotante) de un turno específico.
+ * 
+ * Dinamismo de RBAC:
+ * Cada botón de acción (Confirmar, Rechazar, Reprogramar) se dibuja en pantalla 
+ * EXCLUSIVAMENTE si el payload del token trae el permiso correspondiente (`puede()`).
+ * Nuevamente, esto es solo por comodidad visual. Aunque el botón se hackeara, 
+ * la API rebotaría la acción.
  */
 async function mostrarDetalleTurno(reserva) {
   turnoSeleccionado = reserva;
@@ -180,6 +203,7 @@ async function mostrarDetalleTurno(reserva) {
 
   dtAcciones.replaceChildren();
 
+  // Opciones lógicas de un flujo de estado
   if (puede('reservas.aprobar') && reserva.estado === 'PENDIENTE') {
     dtAcciones.append(
       botonEstado(reserva.idReserva, 'CONFIRMADA', 'Confirmar'),
@@ -193,16 +217,18 @@ async function mostrarDetalleTurno(reserva) {
     );
   }
 
-  // Radicar un caso desde este turno. El caso queda vinculado a la
-  // reserva, y quien lo resuelva verá el contexto del servicio.
+  // Integración entre Módulos SaaS (Cross-Module Integration):
+  // Radicar un caso técnico o clínico desde un turno. 
+  // Esta funcionalidad depende de dos validaciones: Que el usuario tenga permiso Y 
+  // que la empresa esté pagando por el módulo CRM ('sesionActual().empresaActiva.modulos').
   if (puede('casos.crear') && sesionActual().empresaActiva?.modulos?.includes('CRM')) {
     const btnCaso = document.createElement('button');
     btnCaso.type = 'button';
     btnCaso.className = 'boton boton--mini boton--borde';
     btnCaso.textContent = 'Radicar caso';
     btnCaso.addEventListener('click', () => {
-      // Se pasan reserva y cliente para que el CRM abra el formulario
-      // listo, sin que la persona tenga que buscar de nuevo.
+      // Pasa los datos por la URL como Query Params para prellenar 
+      // automáticamente el formulario del CRM en la otra vista.
       const params = new URLSearchParams({
         reserva: reserva.idReserva,
         cliente: reserva.idCliente,
@@ -213,17 +239,16 @@ async function mostrarDetalleTurno(reserva) {
     dtAcciones.append(btnCaso);
   }
 
-  // Reprogramar: solo con el permiso y si el turno sigue vivo.
   const reprogramable = puede('reservas.reprogramar')
     && ['PENDIENTE', 'CONFIRMADA'].includes(reserva.estado);
   document.getElementById('dt-reprogramar').hidden = !reprogramable;
 
-  // Observaciones: se cargan solo si hay permiso para verlas.
   const cajaObs = document.getElementById('dt-observaciones-caja');
   cajaObs.hidden = !puede('reservas.observar');
   if (puede('reservas.observar')) await cargarObservaciones(reserva.idReserva);
 
   detalleTurno.hidden = false;
+  // Hace que la pantalla se deslice suavemente hasta el panel recién abierto
   detalleTurno.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
@@ -284,12 +309,14 @@ document.getElementById('dt-guardar-nota').addEventListener('click', async () =>
       cuerpo: { detalle },
     });
     campo.value = '';
+    // Recarga la lista de comentarios tras publicar uno nuevo
     await cargarObservaciones(turnoSeleccionado.idReserva);
     await cargarReservas();
   } catch (error) { avisar(mensajeError(error)); }
   return undefined;
 });
 
+// Función de apoyo para instanciar botones dinámicos de cambio de estado //
 function botonEstado(idReserva, estado, texto) {
   const boton = document.createElement('button');
   boton.type = 'button';
@@ -310,14 +337,15 @@ function botonEstado(idReserva, estado, texto) {
   return boton;
 }
 
-/* ------------------------------------------------------------------ */
-/* Cargas                                                              */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Cargas de Datos Maestros                                           //
+// ------------------------------------------------------------------ //
 
 /**
- * Servicios: solo para llenar el desplegable de reservar.
- * La ADMINISTRACIÓN de servicios y prestadores vive ahora en
- * servicios.html; aquí únicamente se consultan para poder agendar.
+ * ¿Por qué esta función es tan corta si servicios y prestadores son una gran entidad?
+ * Arquitectura de Plataforma: La ADMINISTRACIÓN y creación de servicios y prestadores 
+ * se derivó a un módulo propio ('servicios.html'). En la agenda, únicamente 
+ * se consultan ("solo lectura") para poblar los selectores a la hora de crear una cita.
  */
 async function cargarServicios() {
   ({ servicios } = await pedir('/agenda/servicios'));
@@ -329,8 +357,10 @@ async function cargarServicios() {
   }
 }
 
-/** Solo para el desplegable de cliente al reservar a nombre de otro.
- *  La administración de personas vive en usuarios.html. */
+/** 
+ * Similar al anterior. Solo carga a los miembros con rol 'CLIENTE' para llenar 
+ * el buscador si se va a reservar a nombre de otra persona.
+ */
 async function cargarMiembros() {
   if (!puede('reservas.aprobar')) return;
   ({ miembros } = await pedir('/agenda/miembros'));
@@ -346,7 +376,9 @@ async function cargarReservas() {
   const respuesta = await pedir('/agenda/reservas');
   reservas = respuesta.reservas;
 
-  // El alcance lo decide el servidor con los permisos del token.
+  // Dinamismo de Interfaz. El título le aclara a la persona si está viendo 
+  // solo sus turnos, los de su sede (ámbito) o los de toda la empresa global.
+  // El backend inyecta la llave de 'alcance' en la respuesta tras evaluar el token.
   const textos = {
     propias: 'Estos son tus turnos.',
     ambito: 'Turnos de los prestadores que tienes asignados.',
@@ -357,19 +389,21 @@ async function cargarReservas() {
   pintarCalendario();
 }
 
-/* ------------------------------------------------------------------ */
-/* Reservar en tres pasos                                              */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Reservar en tres pasos (Flujo de Agendamiento)                     //
+// ------------------------------------------------------------------ //
 
 const cajaHoras = document.getElementById('r-horas');
 
 /**
- * Pide al servidor las horas libres del servicio en el día elegido.
- *
- * El cálculo lo hace el backend a propósito: si lo hiciera el navegador,
- * bastaría con no usar esta pantalla y pedir cualquier hora por la API.
- * Aquí el cliente elige de una lista cerrada, y al reservar el servidor
- * vuelve a comprobar que la franja siga libre.
+ * Apunte de Ciberseguridad Lógica:
+ * Pide al servidor las horas libres y pinta un botón por cada franja devuelta.
+ * 
+ * Es vital entender que el backend debe calcular la disponibilidad, y el frontend 
+ * simplemente renderizar el array de resultados.
+ * Si el navegador calculara las horas libres cruzándolas con una lista pública 
+ * de turnos ocupados, estaríamos exponiendo (Filtrando Datos Sensibles) el horario 
+ * exacto de otros clientes por la red REST.
  */
 async function cargarHorasLibres() {
   const idServicio = document.getElementById('r-servicio').value;
@@ -414,11 +448,11 @@ async function cargarHorasLibres() {
 async function reservar(fechaInicio, boton) {
   const cuerpo = {
     idServicio: document.getElementById('r-servicio').value,
-    fechaInicio,   // ya viene en ISO desde el servidor
+    fechaInicio,   // Ya viene formateada en ISO desde el servidor y la variable `libres`
   };
 
-  // Solo quien administra la agenda puede reservar a nombre de otro.
-  // El campo está oculto para los demás, y la API lo ignora igual.
+  // Un cliente normal obligatoriamente reserva bajo su propio nombre. 
+  // Solo quien administra la agenda ve el selector `r-cliente`.
   const selectCliente = document.getElementById('r-cliente');
   if (!document.getElementById('campo-cliente').hidden && selectCliente.value) {
     cuerpo.idCliente = selectCliente.value;
@@ -428,7 +462,9 @@ async function reservar(fechaInicio, boton) {
   try {
     await pedir('/agenda/reservas', { metodo: 'POST', cuerpo });
     await cargarReservas();
-    await cargarHorasLibres();   // esa franja ya no está libre
+    // Vuelve a consultar la base tras guardar. Esto actualizará el array y 
+    // desaparecerá el botón de la hora que acabas de elegir, previniendo dobles reservas.
+    await cargarHorasLibres(); 
     avisar('Turno reservado.', true);
   } catch (error) {
     avisar(mensajeError(error));
@@ -436,12 +472,13 @@ async function reservar(fechaInicio, boton) {
   }
 }
 
+// Disparadores reactivos: Al cambiar de servicio o fecha, recalcula las horas //
 document.getElementById('r-servicio').addEventListener('change', cargarHorasLibres);
 document.getElementById('r-dia').addEventListener('change', cargarHorasLibres);
 
-/* ------------------------------------------------------------------ */
-/* Navegación de semanas                                               */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Navegación de semanas                                              //
+// ------------------------------------------------------------------ //
 
 document.getElementById('btn-semana-anterior').addEventListener('click', () => {
   inicioSemana = sumarDias(inicioSemana, -7);
@@ -458,13 +495,15 @@ document.getElementById('btn-hoy').addEventListener('click', () => {
   pintarCalendario();
 });
 
-/* ------------------------------------------------------------------ */
-/* Arranque                                                            */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Arranque                                                           //
+// ------------------------------------------------------------------ //
 
-/** Muestra cada sección y cada enlace solo si el token trae el permiso
- *  correspondiente. Es comodidad: la API responde 403 igual aunque se
- *  fuerce el HTML desde las herramientas del navegador. */
+/**
+ * Función que configura la UI y la Barra de Navegación según el Tenant actual.
+ * Oculta los enlaces (clientes, crm, configuración) que la empresa 
+ * no haya pagado (módulos), o a los que la persona no tenga permiso por rol.
+ */
 function aplicarPermisos() {
   const datos = sesionActual();
   const modulos = datos.empresaActiva?.modulos ?? [];
@@ -475,15 +514,23 @@ function aplicarPermisos() {
 
   document.getElementById('nav-servicios').hidden = !puede('servicios.gestionar');
   document.getElementById('nav-usuarios').hidden = !puede('empleados.gestionar');
-  // Los clientes no dependen de ningún módulo: basta con poder
-  // administrarlos, manejar la agenda o atender casos.
+  
+  // Condicional compuesta: Los clientes se pueden gestionar si administras 
+  // toda la agenda, si atiendes quejas CRM o si directamente los manejas.
   document.getElementById('nav-clientes').hidden =
     !puede('clientes.gestionar') && !puede('reservas.aprobar') && !puede('casos.gestionar');
+    
+  // Control de facturación/SaaS: Oculta la vista si no hay módulo CRM
   document.getElementById('nav-crm').hidden = !modulos.includes('CRM');
+  
   document.getElementById('nav-admin').hidden =
     !datos.rolesPlataforma?.includes('SUPER_ADMIN');
 }
 
+/** 
+ * Si un administrador pertenece a más de una empresa (Sedes), dibuja un 
+ * selector rápido en la cabecera superior para saltar de tenant en tenant. 
+ */
 function pintarSelectorEmpresa() {
   const datos = sesionActual();
   selectorEmpresa.replaceChildren();
@@ -495,27 +542,31 @@ function pintarSelectorEmpresa() {
   selectorEmpresa.hidden = datos.empresas.length < 2;
 }
 
+/** Función orquestadora central. Llama a todas las promesas al iniciar sesión. */
 async function cargarTodo() {
   permisos = sesionActual().empresaActiva?.permisos ?? [];
   aplicarPermisos();
   pintarSelectorEmpresa();
 
-  // El selector de día no deja elegir fechas pasadas.
+  // Bloquea el selector nativo HTML de fecha (<input type="date">) 
+  // para que nadie pueda escoger una fecha anterior al día actual.
   const campoDia = document.getElementById('r-dia');
   const hoy = new Date().toISOString().slice(0, 10);
   campoDia.min = hoy;
   if (!campoDia.value) campoDia.value = hoy;
 
+  // Ejecuta la carga de selectores en paralelo para ahorrar tiempo de carga //
   await Promise.all([cargarServicios(), cargarMiembros()]);
   await cargarReservas();
 
-  // Ya hay servicios en el desplegable: se pintan las horas del día actual.
+  // Tras cargar todo, intenta buscar horas libres para el día actual automáticamente //
   if (!document.getElementById('reservar').hidden) await cargarHorasLibres();
 }
 
 selectorEmpresa.addEventListener('change', async () => {
   selectorEmpresa.disabled = true;
   try {
+    // Comunica a la API el cambio de contexto global de sesión //
     await elegirEmpresa(selectorEmpresa.value);
     await cargarTodo();
   } finally {
@@ -528,6 +579,7 @@ document.getElementById('btn-salir').addEventListener('click', async () => {
   location.replace('index.html');
 });
 
+// Función de validación y acceso Bootstrap
 async function iniciar() {
   const datos = await restaurarSesion();
   if (!datos || datos.requiereSeleccion) return location.replace('index.html');
@@ -537,6 +589,8 @@ async function iniciar() {
     cargando.textContent = 'Elige una empresa para ver su agenda.';
     return undefined;
   }
+  // Último chequeo vital antes de mostrar: 
+  // Asegura que este módulo en específico fue contratado en la BD
   if (!datos.empresaActiva.modulos.includes('AGENDA')) {
     cargando.textContent = 'Esta empresa no tiene contratado el módulo de agenda.';
     return undefined;
@@ -549,7 +603,6 @@ async function iniciar() {
 }
 
 iniciar().catch((error) => {
-  // Contraseña temporal: la API rechaza todo hasta que se cambie.
   if (error?.codigo === 'DEBE_CAMBIAR_PASSWORD') {
     return location.replace('cambiar-password.html');
   }

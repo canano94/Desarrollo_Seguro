@@ -1,8 +1,31 @@
+# Dependencias — se reinstalan con npm install
+node_modules/
+
+# Secretos: NUNCA al repositorio.
+# Si alguno se sube por error, no basta con borrarlo en el siguiente
+# commit: queda en el historial y hay que ROTAR la contraseña de la
+# base de datos y el JWT_SECRET.
 backend/.env
-bd_open/03_schema_v2_empresas_membresias_pg10.sql
-bd_open/04_funciones_admin_plataforma_pg10.sql
-bd_open/05_reset_password_admin_pg10.sql
-bd_open/06_rol_prestador_ambito_pg10.sql
-bd_open/dump_esquema.sql
+.env
+.env.local
+
+# Lo genera el contenedor al arrancar (env-entrypoint.sh).
+# El de local apunta a localhost y pisaría el del despliegue.
+frontend/env.js
+
+# Ejecutable de OpenShift: cada quien descarga el suyo.
 bd_open/oc.exe
+oc.exe
+
+# Volcados y notas locales con credenciales
+bd_open/dump_esquema.sql
 bd_open/userbd.txt
+respaldo_*.sql
+dump_*.sql
+
+# Registros y basura del editor
+*.log
+npm-debug.log*
+.vscode/
+.idea/
+Thumbs.db
