@@ -186,4 +186,18 @@ document.getElementById('btn-salir').addEventListener('click', async () => {
   location.replace('index.html');
 });
 
-iniciar().catch(() => location.replace('index.html'));
+iniciar().catch((error) => {
+  if (error?.codigo === 'DEBE_CAMBIAR_PASSWORD') {
+    return location.replace('cambiar-password.html');
+  }
+  // Solo se vuelve al login si el problema es de SESIÓN. Cualquier otro
+  // error (un elemento que no existe, un fallo de red) se muestra en
+  // pantalla: redirigir siempre esconde la causa y genera bucles.
+  const esSesion = ['SIN_TOKEN', 'TOKEN_INVALIDO', 'REFRESH_INVALIDO',
+                    'REFRESH_EXPIRADO', 'SIN_REFRESH_TOKEN'].includes(error?.codigo);
+  if (esSesion) return location.replace('index.html');
+
+  console.error(error);
+  cargando.textContent = `No se pudo cargar la pantalla: ${error?.message ?? error}`;
+  return undefined;
+});

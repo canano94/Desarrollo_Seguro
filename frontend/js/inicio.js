@@ -51,6 +51,10 @@ function pintar() {
   fichas(document.getElementById('dato-roles'), empresa?.roles ?? datos.rolesPlataforma);
   fichas(document.getElementById('dato-modulos'), empresa?.modulos ?? []);
 
+  document.getElementById('nav-servicios').hidden = !puede('servicios.gestionar');
+  document.getElementById('nav-usuarios').hidden = !puede('empleados.gestionar');
+  document.getElementById('nav-clientes').hidden = !puede('crm.ver_historial');
+
   // Enlaces de la barra superior
   document.getElementById('nav-admin').hidden = !esPlataforma;
   document.getElementById('nav-agenda').hidden = !empresa?.modulos?.includes('AGENDA');
@@ -134,5 +138,14 @@ iniciar().catch((error) => {
   if (error?.codigo === 'DEBE_CAMBIAR_PASSWORD') {
     return location.replace('cambiar-password.html');
   }
-  return location.replace('index.html');
+  // Solo se vuelve al login si el problema es de SESIÓN. Cualquier otro
+  // error (un elemento que no existe, un fallo de red) se muestra en
+  // pantalla: redirigir siempre esconde la causa y genera bucles.
+  const esSesion = ['SIN_TOKEN', 'TOKEN_INVALIDO', 'REFRESH_INVALIDO',
+                    'REFRESH_EXPIRADO', 'SIN_REFRESH_TOKEN'].includes(error?.codigo);
+  if (esSesion) return location.replace('index.html');
+
+  console.error(error);
+  cargando.textContent = `No se pudo cargar la pantalla: ${error?.message ?? error}`;
+  return undefined;
 });

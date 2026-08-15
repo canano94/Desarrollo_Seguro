@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Personas · Agenda</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+  <div id="cargando" class="cargando">Cargando…</div>
+
+  <div id="contenido" hidden>
+    <header class="barra">
+      <p class="barra__marca">Agenda</p>
+      <nav class="barra__nav">
+        <a href="inicio.html">Inicio</a>
+        <a href="agenda.html" id="nav-agenda" hidden>Agenda</a>
+        <a href="servicios.html" id="nav-servicios" hidden>Servicios</a>
+        <a href="usuarios.html" aria-current="page">Personas</a>
+        <a href="clientes.html" id="nav-clientes" hidden>Clientes</a>
+        <a href="crm.html" id="nav-crm" hidden>CRM</a>
+        <a href="perfil.html">Perfil</a>
+        <a href="admin.html" id="nav-admin" hidden>Plataforma</a>
+      </nav>
+      <div class="barra__derecha">
+        <label class="visualmente-oculto" for="selector-empresa">Empresa activa</label>
+        <select id="selector-empresa" class="selector"></select>
+        <button type="button" class="boton boton--texto" id="btn-salir">Salir</button>
+      </div>
+    </header>
+
+    <main class="tablero tablero--ancho">
+      <div class="encabezado-seccion">
+        <div>
+          <h1>Personas</h1>
+          <p class="apoyo">Empleados que atienden y clientes a los que se les agenda.</p>
+        </div>
+      </div>
+
+      <p id="aviso" class="aviso" role="alert" hidden></p>
+
+      <div class="campo">
+        <label for="buscar">Buscar</label>
+        <input id="buscar" type="search" maxlength="80" placeholder="Nombre, correo o rol">
+      </div>
+
+      <div class="tabla-envoltura">
+        <table class="tabla">
+          <thead>
+            <tr><th>Persona</th><th>Correo</th><th>Cargo</th><th>Rol</th><th>Prestadores</th><th>Estado</th><th></th></tr>
+          </thead>
+          <tbody id="tabla-miembros"></tbody>
+        </table>
+      </div>
+
+      <section class="tarjeta">
+        <h2>Vincular una persona</h2>
+        <p class="apoyo">Si ya tiene cuenta en la plataforma, se reutiliza su identidad.</p>
+        <form id="form-miembro" novalidate>
+          <div class="rejilla">
+            <div class="campo"><label for="m-email">Correo</label><input id="m-email" type="email" required></div>
+            <div class="campo"><label for="m-nombres">Nombres</label><input id="m-nombres" type="text" maxlength="100" required></div>
+            <div class="campo"><label for="m-apellidos">Apellidos</label><input id="m-apellidos" type="text" maxlength="100" required></div>
+            <div class="campo"><label for="m-rol">Rol</label>
+              <select id="m-rol" class="entrada">
+                <option value="CLIENTE">Cliente</option>
+                <option value="EMPLEADO">Empleado</option>
+                <option value="PRESTADOR">Responsable de prestador</option>
+                <option value="ADMIN_EMPRESA">Administrador</option>
+              </select>
+            </div>
+          </div>
+          <div class="campo" id="campo-prestadores" hidden>
+            <label for="m-prestadores">Prestadores asignados</label>
+            <select id="m-prestadores" class="entrada" multiple size="4"></select>
+            <p class="pista">Ctrl+clic para elegir varios. Define el ámbito de esa persona.</p>
+          </div>
+          <div class="acciones"><button type="submit" class="boton">Vincular</button></div>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <script src="env.js"></script>
+  <script type="module" src="js/usuarios.js"></script>
+</body>
+</html>

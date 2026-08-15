@@ -10,7 +10,6 @@ const avisoAcciones = document.getElementById('aviso-acciones');
 
 // Estado de la pantalla.
 let permisos = [];
-let prestadores = [];
 let servicios = [];
 let miembros = [];
 let reservas = [];
@@ -56,10 +55,8 @@ function hora(iso) {
 
 /**
  * El aviso tiene DOS zonas: un span de texto y un contenedor de botones.
- *
- * Antes se mezclaban textContent (para mensajes) y replaceChildren (para
- * meter botones) sobre el mismo elemento, y una forma borraba a la otra:
- * por eso la caja roja salía vacía. Separarlas resuelve el conflicto.
+ * Mezclar textContent y replaceChildren sobre el mismo elemento hacía
+ * que una forma borrara a la otra; separarlas resuelve el conflicto.
  */
 function avisar(mensaje, bien = false) {
   avisoTexto.textContent = mensaje;
@@ -68,26 +65,10 @@ function avisar(mensaje, bien = false) {
   avisoAgenda.hidden = false;
 }
 
-/**
- * Junta los detalles campo por campo que devuelve zod en un 422.
- * El ?? final es la red de seguridad: si el error no trae ni detalles
- * ni mensaje (por ejemplo un fallo de red), igual mostramos algo.
- */
+/** Junta los detalles campo por campo que devuelve zod en un 422. */
 function mensajeError(error) {
   const detalle = error?.detalles?.map((d) => d.mensaje).join(' · ');
   return detalle || error?.mensaje || 'Ocurrió un error inesperado.';
-}
-
-function item(titulo, detalle) {
-  const li = document.createElement('li');
-  const t = document.createElement('span');
-  t.className = 'item__titulo';
-  t.textContent = titulo;
-  const d = document.createElement('span');
-  d.className = 'item__detalle';
-  d.textContent = detalle;
-  li.append(t, d);
-  return li;
 }
 
 function opcion(valor, texto) {
@@ -290,6 +271,7 @@ document.getElementById('dt-guardar-fecha').addEventListener('click', async () =
     await cargarReservas();
     avisar('Turno reprogramado.', true);
   } catch (error) { avisar(mensajeError(error)); }
+  return undefined;
 });
 
 document.getElementById('dt-guardar-nota').addEventListener('click', async () => {
@@ -305,6 +287,7 @@ document.getElementById('dt-guardar-nota').addEventListener('click', async () =>
     await cargarObservaciones(turnoSeleccionado.idReserva);
     await cargarReservas();
   } catch (error) { avisar(mensajeError(error)); }
+  return undefined;
 });
 
 function botonEstado(idReserva, estado, texto) {
@@ -331,60 +314,26 @@ function botonEstado(idReserva, estado, texto) {
 /* Cargas                                                              */
 /* ------------------------------------------------------------------ */
 
-async function cargarPrestadores() {
-  // También lo necesita quien gestiona empleados, para asignarles ámbito.
-  if (!puede('prestadores.gestionar') && !puede('empleados.gestionar')) return;
-  ({ prestadores } = await pedir('/agenda/prestadores'));
-
-  const lista = document.getElementById('lista-prestadores');
-  lista.replaceChildren();
-  for (const p of prestadores) {
-    lista.append(item(p.nombre, `${p.servicios} servicio(s)${p.direccion ? ' · ' + p.direccion : ''}`));
-  }
-
-  const select = document.getElementById('s-prestador');
-  select.replaceChildren();
-  for (const p of prestadores) select.append(opcion(p.idPrestador, p.nombre));
-
-  // Mismo listado para asignar el ámbito de un empleado o responsable.
-  const multiple = document.getElementById('m-prestadores');
-  multiple.replaceChildren();
-  for (const p of prestadores) multiple.append(opcion(p.idPrestador, p.nombre));
-}
-
+/**
+ * Servicios: solo para llenar el desplegable de reservar.
+ * La ADMINISTRACIÓN de servicios y prestadores vive ahora en
+ * servicios.html; aquí únicamente se consultan para poder agendar.
+ */
 async function cargarServicios() {
   ({ servicios } = await pedir('/agenda/servicios'));
 
-  const lista = document.getElementById('lista-servicios');
-  lista.replaceChildren();
-  for (const s of servicios) {
-    lista.append(item(s.nombre, `${s.prestador} · ${s.duracionMinutos} min · $${s.precio.toLocaleString('es-CO')}`));
-  }
-
   const select = document.getElementById('r-servicio');
   select.replaceChildren();
-  for (const s of servicios) select.append(opcion(s.idServicio, `${s.nombre} — ${s.prestador}`));
+  for (const s of servicios) {
+    select.append(opcion(s.idServicio, `${s.nombre} — ${s.prestador}`));
+  }
 }
 
+/** Solo para el desplegable de cliente al reservar a nombre de otro.
+ *  La administración de personas vive en usuarios.html. */
 async function cargarMiembros() {
-  if (!puede('empleados.gestionar')) return;
+  if (!puede('reservas.aprobar')) return;
   ({ miembros } = await pedir('/agenda/miembros'));
-
-  const lista = document.getElementById('lista-miembros');
-  lista.replaceChildren();
-  for (const m of miembros) {
-    const li = item(`${m.nombres} ${m.apellidos}`, `${m.email} · ${m.roles.join(', ') || 'sin rol'}`);
-
-    // Restablecer contraseña, solo para quien administra usuarios.
-    const boton = document.createElement('button');
-    boton.type = 'button';
-    boton.className = 'boton boton--mini';
-    boton.textContent = 'Contraseña temporal';
-    boton.addEventListener('click', () => restablecerPassword(m.idUsuario, m.email));
-    li.append(boton);
-
-    lista.append(li);
-  }
 
   const select = document.getElementById('r-cliente');
   select.replaceChildren();
@@ -406,28 +355,6 @@ async function cargarReservas() {
   document.getElementById('subtitulo-agenda').textContent =
     textos[respuesta.alcance] ?? '';
   pintarCalendario();
-}
-
-/**
- * El administrador de empresa genera una temporal para SUS miembros.
- * La ruta es /mi-empresa/...: el servidor toma la empresa del token, no
- * de la URL, así que no puede tocar gente de otra empresa.
- */
-async function restablecerPassword(idUsuario, email) {
-  const seguro = confirm(
-    `¿Generar una contraseña temporal para ${email}?\n\n` +
-    'Se cerrarán todas sus sesiones y deberá cambiarla al entrar.',
-  );
-  if (!seguro) return;
-
-  try {
-    const resultado = await pedir(`/admin/mi-empresa/usuarios/${idUsuario}/password-temporal`, {
-      metodo: 'POST',
-    });
-    avisar(`Contraseña temporal de ${resultado.email}: ${resultado.passwordTemporal}`, true);
-  } catch (error) {
-    avisar(mensajeError(error));
-  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -513,26 +440,6 @@ document.getElementById('r-servicio').addEventListener('change', cargarHorasLibr
 document.getElementById('r-dia').addEventListener('change', cargarHorasLibres);
 
 /* ------------------------------------------------------------------ */
-/* Pestañas                                                            */
-/* ------------------------------------------------------------------ */
-
-/** Activa un panel dentro de un grupo de pestañas. Cada grupo maneja
- *  solo sus propias pestañas hermanas. */
-function activarPestana(grupo, idPanel) {
-  for (const pestana of grupo.querySelectorAll('.pestana')) {
-    const activa = pestana.dataset.panel === idPanel;
-    pestana.setAttribute('aria-selected', String(activa));
-    document.getElementById(pestana.dataset.panel).hidden = !activa;
-  }
-}
-
-for (const grupo of document.querySelectorAll('.pestanas')) {
-  for (const pestana of grupo.querySelectorAll('.pestana')) {
-    pestana.addEventListener('click', () => activarPestana(grupo, pestana.dataset.panel));
-  }
-}
-
-/* ------------------------------------------------------------------ */
 /* Navegación de semanas                                               */
 /* ------------------------------------------------------------------ */
 
@@ -552,108 +459,26 @@ document.getElementById('btn-hoy').addEventListener('click', () => {
 });
 
 /* ------------------------------------------------------------------ */
-/* Formularios                                                         */
-/* ------------------------------------------------------------------ */
-
-document.getElementById('form-prestador').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  try {
-    await pedir('/agenda/prestadores', {
-      metodo: 'POST',
-      cuerpo: {
-        nombre: document.getElementById('p-nombre').value.trim(),
-        direccion: document.getElementById('p-direccion').value.trim(),
-      },
-    });
-    e.target.reset();
-    await cargarPrestadores();
-    avisar('Prestador agregado.', true);
-  } catch (error) { avisar(mensajeError(error)); }
-});
-
-document.getElementById('form-servicio').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  try {
-    await pedir('/agenda/servicios', {
-      metodo: 'POST',
-      cuerpo: {
-        idPrestador: document.getElementById('s-prestador').value,
-        nombre: document.getElementById('s-nombre').value.trim(),
-        duracionMinutos: Number(document.getElementById('s-duracion').value),
-        precio: Number(document.getElementById('s-precio').value),
-      },
-    });
-    e.target.reset();
-    document.getElementById('s-duracion').value = 60;
-    await Promise.all([cargarServicios(), cargarPrestadores()]);
-    avisar('Servicio agregado.', true);
-  } catch (error) { avisar(mensajeError(error)); }
-});
-
-// El campo de prestadores solo aplica a empleados y responsables:
-// clientes y administradores no están atados a ninguna sede.
-document.getElementById('m-rol').addEventListener('change', (e) => {
-  document.getElementById('campo-prestadores').hidden =
-    !['EMPLEADO', 'PRESTADOR'].includes(e.target.value);
-});
-
-document.getElementById('form-miembro').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const rol = document.getElementById('m-rol').value;
-  const cuerpo = {
-    email: document.getElementById('m-email').value.trim(),
-    nombres: document.getElementById('m-nombres').value.trim(),
-    apellidos: document.getElementById('m-apellidos').value.trim(),
-    rol,
-  };
-
-  if (['EMPLEADO', 'PRESTADOR'].includes(rol)) {
-    // selectedOptions son las opciones marcadas en un <select multiple>.
-    cuerpo.prestadores = [...document.getElementById('m-prestadores').selectedOptions]
-      .map((o) => o.value);
-    if (cuerpo.prestadores.length === 0) {
-      return avisar('Elige al menos un prestador para esa persona.');
-    }
-  }
-
-  try {
-    const { miembro } = await pedir('/agenda/miembros', { metodo: 'POST', cuerpo });
-    e.target.reset();
-    await cargarMiembros();
-    avisar(
-      miembro.passwordTemporal
-        ? `Vinculado. Contraseña temporal: ${miembro.passwordTemporal}`
-        : 'Persona vinculada (ya tenía cuenta en la plataforma).',
-      true,
-    );
-  } catch (error) { avisar(mensajeError(error)); }
-  return undefined;
-});
-
-/* ------------------------------------------------------------------ */
 /* Arranque                                                            */
 /* ------------------------------------------------------------------ */
 
-/** Muestra cada sección solo si el token trae el permiso que la habilita.
- *  Es comodidad: la API responde 403 igual aunque se fuerce el HTML. */
+/** Muestra cada sección y cada enlace solo si el token trae el permiso
+ *  correspondiente. Es comodidad: la API responde 403 igual aunque se
+ *  fuerce el HTML desde las herramientas del navegador. */
 function aplicarPermisos() {
   const datos = sesionActual();
-
-  document.querySelector('[data-panel="t-prestadores"]').hidden = !puede('prestadores.gestionar');
-  document.querySelector('[data-panel="t-servicios"]').hidden = !puede('servicios.gestionar');
-  // 'empleados.gestionar' lo tienen PRESTADOR y ADMIN_EMPRESA.
-  document.querySelector('[data-panel="t-personas"]').hidden = !puede('empleados.gestionar');
+  const modulos = datos.empresaActiva?.modulos ?? [];
 
   document.getElementById('reservar').hidden =
     !puede('reservas.crear') && !puede('reservas.aprobar');
   document.getElementById('campo-cliente').hidden = !puede('reservas.aprobar');
 
+  document.getElementById('nav-servicios').hidden = !puede('servicios.gestionar');
+  document.getElementById('nav-usuarios').hidden = !puede('empleados.gestionar');
+  document.getElementById('nav-clientes').hidden = !puede('crm.ver_historial');
+  document.getElementById('nav-crm').hidden = !modulos.includes('CRM');
   document.getElementById('nav-admin').hidden =
     !datos.rolesPlataforma?.includes('SUPER_ADMIN');
-  
-  // El enlace al CRM solo aparece si la empresa contrató ese módulo.
-  document.getElementById('nav-crm').hidden =
-    !datos.empresaActiva?.modulos?.includes('CRM');
 }
 
 function pintarSelectorEmpresa() {
@@ -669,16 +494,18 @@ function pintarSelectorEmpresa() {
 
 async function cargarTodo() {
   permisos = sesionActual().empresaActiva?.permisos ?? [];
+  aplicarPermisos();
+  pintarSelectorEmpresa();
 
   // El selector de día no deja elegir fechas pasadas.
   const campoDia = document.getElementById('r-dia');
   const hoy = new Date().toISOString().slice(0, 10);
   campoDia.min = hoy;
   if (!campoDia.value) campoDia.value = hoy;
-  aplicarPermisos();
-  pintarSelectorEmpresa();
-  await Promise.all([cargarPrestadores(), cargarServicios(), cargarMiembros()]);
+
+  await Promise.all([cargarServicios(), cargarMiembros()]);
   await cargarReservas();
+
   // Ya hay servicios en el desplegable: se pintan las horas del día actual.
   if (!document.getElementById('reservar').hidden) await cargarHorasLibres();
 }
@@ -705,16 +532,17 @@ async function iniciar() {
 
   if (!datos.empresaActiva) {
     cargando.textContent = 'Elige una empresa para ver su agenda.';
-    return;
+    return undefined;
   }
   if (!datos.empresaActiva.modulos.includes('AGENDA')) {
     cargando.textContent = 'Esta empresa no tiene contratado el módulo de agenda.';
-    return;
+    return undefined;
   }
 
   await cargarTodo();
   cargando.hidden = true;
   contenido.hidden = false;
+  return undefined;
 }
 
 iniciar().catch((error) => {
@@ -726,4 +554,5 @@ iniciar().catch((error) => {
                     'REFRESH_EXPIRADO', 'SIN_REFRESH_TOKEN'].includes(error?.codigo);
   if (esSesion) return location.replace('index.html');
   cargando.textContent = `No se pudo cargar la agenda: ${error?.mensaje ?? error}`;
+  return undefined;
 });

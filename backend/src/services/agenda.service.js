@@ -577,3 +577,183 @@ function traducirDuplicado(mensaje) {
     throw error;
   };
 }
+
+/**
+ * Edita un prestador. Mismo patrón que actualizarEmpresa: lista blanca
+ * de columnas y SET construido dinámicamente.
+ *
+ * El nombre de una columna NO puede ir parametrizado en SQL, así que se
+ * concatena. Solo se concatenan claves de este objeto, escrito aquí en
+ * el código — nunca texto que venga del cliente.
+ */
+const COLUMNAS_PRESTADOR = {
+  nombre: 'nombre',
+  descripcion: 'descripcion',
+  direccion: 'direccion',
+  telefono: 'telefono',
+  activo: 'activo',
+};
+
+export async function actualizarPrestador(idEmpresa, idPrestador, datos, ambito = []) {
+  // Un PRESTADOR solo edita sus propias sedes.
+  if (ambito.length > 0 && !ambito.includes(idPrestador)) {
+    throw new AppError(404, 'PRESTADOR_NO_ENCONTRADO', 'Ese prestador no existe.');
+  }
+
+  const campos = Object.keys(COLUMNAS_PRESTADOR).filter((c) => datos[c] !== undefined);
+  if (campos.length === 0) {
+    throw new AppError(400, 'SIN_CAMBIOS', 'No enviaste ningún campo para actualizar.');
+  }
+
+  const asignaciones = campos
+    .map((campo, i) => `${COLUMNAS_PRESTADOR[campo]} = $${i + 2}`)
+    .join(', ');
+  const valores = campos.map((campo) => (datos[campo] === '' ? null : datos[campo]));
+
+  return conEmpresa(idEmpresa, async (client) => {
+    const { rows } = await client.query(
+      `UPDATE app.prestadores SET ${asignaciones}
+        WHERE id_prestador = $1
+        RETURNING id_prestador, nombre, descripcion, direccion, telefono, activo`,
+      [idPrestador, ...valores],
+    );
+    // Si es de otra empresa, RLS lo ocultó y no actualiza nada.
+    if (rows.length === 0) {
+      throw new AppError(404, 'PRESTADOR_NO_ENCONTRADO', 'Ese prestador no existe.');
+    }
+    const p = rows[0];
+    return {
+      idPrestador: p.id_prestador,
+      nombre: p.nombre,
+      descripcion: p.descripcion,
+      direccion: p.direccion,
+      telefono: p.telefono,
+      activo: p.activo,
+    };
+  }).catch(traducirDuplicado('Ya existe un prestador con ese nombre.'));
+}
+
+const COLUMNAS_SERVICIO = {
+  nombre: 'nombre',
+  descripcion: 'descripcion',
+  duracionMinutos: 'duracion_minutos',
+  precio: 'precio',
+  activo: 'activo',
+};
+
+export async function actualizarServicio(idEmpresa, idServicio, datos, ambito = []) {
+  const campos = Object.keys(COLUMNAS_SERVICIO).filter((c) => datos[c] !== undefined);
+  if (campos.length === 0) {
+    throw new AppError(400, 'SIN_CAMBIOS', 'No enviaste ningún campo para actualizar.');
+  }
+
+  const asignaciones = campos
+    .map((campo, i) => `${COLUMNAS_SERVICIO[campo]} = $${i + 2}`)
+    .join(', ');
+  const valores = campos.map((campo) => (datos[campo] === '' ? null : datos[campo]));
+
+  return conEmpresa(idEmpresa, async (client) => {
+    // El ámbito se comprueba contra el prestador DEL SERVICIO, no
+    // contra el servicio: el servicio no tiene ámbito propio.
+    const { rows: duenos } = await client.query(
+      'SELECT id_prestador FROM app.servicios WHERE id_servicio = $1',
+      [idServicio],
+    );
+    const idPrestador = duenos[0]?.id_prestador;
+    if (!idPrestador || (ambito.length > 0 && !ambito.includes(idPrestador))) {
+      throw new AppError(404, 'SERVICIO_NO_ENCONTRADO', 'Ese servicio no existe.');
+    }
+
+    const { rows } = await client.query(
+      `UPDATE app.servicios SET ${asignaciones}
+        WHERE id_servicio = $1
+        RETURNING id_servicio, nombre, descripcion, duracion_minutos, precio, activo`,
+      [idServicio, ...valores],
+    );
+    const s = rows[0];
+    return {
+      idServicio: s.id_servicio,
+      nombre: s.nombre,
+      descripcion: s.descripcion,
+      duracionMinutos: s.duracion_minutos,
+      precio: Number(s.precio),
+      activo: s.activo,
+    };
+  }).catch(traducirDuplicado('Ese prestador ya tiene un servicio con ese nombre.'));
+}
+
+/** Cambia el rol, el cargo, el estado o los prestadores de un miembro. */
+export async function actualizarMiembro(idEmpresa, idMembresia, datos) {
+  return conEmpresa(idEmpresa, async (client) => {
+    const { rows: actuales } = await client.query(
+      `SELECT COALESCE(ARRAY_AGG(r.codigo) FILTER (WHERE r.codigo IS NOT NULL), '{}') AS roles
+         FROM app.membresias m
+         LEFT JOIN app.membresia_roles mr ON mr.id_membresia = m.id_membresia
+         LEFT JOIN app.roles r ON r.id_rol = mr.id_rol
+        WHERE m.id_membresia = $1
+        GROUP BY m.id_membresia`,
+      [idMembresia],
+    );
+    if (actuales.length === 0) {
+      throw new AppError(404, 'MIEMBRO_NO_ENCONTRADO', 'Esa persona no existe en tu empresa.');
+    }
+
+    // Misma protección que en el panel de plataforma: no dejar la
+    // empresa sin ningún administrador. Se cuenta DENTRO de la
+    // transacción para que dos peticiones simultáneas no puedan
+    // retirar cada una "al penúltimo" admin.
+    const eraAdmin = actuales[0].roles.includes('ADMIN_EMPRESA');
+    const dejaDeSerlo =
+      (datos.rol !== undefined && datos.rol !== 'ADMIN_EMPRESA')
+      || (datos.estado !== undefined && datos.estado !== 'ACTIVA');
+
+    if (eraAdmin && dejaDeSerlo) {
+      const { rows: conteo } = await client.query(
+        `SELECT count(*)::int AS total
+           FROM app.membresias m
+           JOIN app.membresia_roles mr ON mr.id_membresia = m.id_membresia
+           JOIN app.roles r ON r.id_rol = mr.id_rol
+          WHERE m.estado = 'ACTIVA' AND r.codigo = 'ADMIN_EMPRESA'`,
+      );
+      if (conteo[0].total <= 1) {
+        throw new AppError(409, 'ULTIMO_ADMIN',
+          'No puedes dejar la empresa sin ningún administrador.');
+      }
+    }
+
+    if (datos.estado !== undefined || datos.cargo !== undefined) {
+      await client.query(
+        `UPDATE app.membresias
+            SET estado = COALESCE($2::app.estado_membresia, estado),
+                cargo  = CASE WHEN $3::text IS NULL THEN cargo
+                              WHEN $3 = '' THEN NULL ELSE $3 END
+          WHERE id_membresia = $1`,
+        [idMembresia, datos.estado ?? null, datos.cargo ?? null],
+      );
+    }
+
+    if (datos.rol !== undefined) {
+      await client.query('DELETE FROM app.membresia_roles WHERE id_membresia = $1', [idMembresia]);
+      await client.query(
+        `INSERT INTO app.membresia_roles (id_membresia, id_rol)
+         SELECT $1, id_rol FROM app.roles WHERE codigo = $2`,
+        [idMembresia, datos.rol],
+      );
+    }
+
+    if (datos.prestadores !== undefined) {
+      await client.query(
+        'DELETE FROM app.membresia_prestadores WHERE id_membresia = $1', [idMembresia],
+      );
+      if (datos.prestadores.length > 0) {
+        await client.query(
+          `INSERT INTO app.membresia_prestadores (id_membresia, id_prestador, id_empresa)
+           SELECT $1, unnest($2::uuid[]), $3 ON CONFLICT DO NOTHING`,
+          [idMembresia, datos.prestadores, idEmpresa],
+        );
+      }
+    }
+
+    return { idMembresia };
+  });
+}

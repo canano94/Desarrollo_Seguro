@@ -361,7 +361,16 @@ export async function registrarInteraccion(idEmpresa, idMembresia, datos) {
 export async function historialCliente(idEmpresa, idMembresiaCliente) {
   return conEmpresa(idEmpresa, async (client) => {
     const { rows: perfil } = await client.query(
-      `SELECT u.nombres, u.apellidos, u.email, u.telefono, m.cargo, m.created_at
+      `SELECT u.id_usuario, u.nombres, u.apellidos, u.email, u.telefono, u.documento,
+              u.estado, u.ultimo_login, m.cargo, m.estado AS estado_membresia, m.created_at,
+              -- Indicadores rápidos: cuántos turnos, cuántos no asistió,
+              -- cuántos casos abiertos. Es lo primero que quiere saber
+              -- quien atiende antes de hablar con la persona.
+              (SELECT count(*) FROM app.reservas r WHERE r.id_cliente = m.id_membresia) AS total_turnos,
+              (SELECT count(*) FROM app.reservas r WHERE r.id_cliente = m.id_membresia
+                AND r.estado = 'NO_ASISTIO') AS inasistencias,
+              (SELECT count(*) FROM app.casos_servicio c WHERE c.id_cliente = m.id_membresia
+                AND c.estado NOT IN ('RESUELTO','CERRADO')) AS casos_abiertos
          FROM app.membresias m
          JOIN app.usuarios u ON u.id_usuario = m.id_usuario
         WHERE m.id_membresia = $1`,
@@ -404,12 +413,20 @@ export async function historialCliente(idEmpresa, idMembresiaCliente) {
     const p = perfil[0];
     return {
       cliente: {
+        idUsuario: p.id_usuario,
         nombres: p.nombres,
         apellidos: p.apellidos,
         email: p.email,
         telefono: p.telefono,
+        documento: p.documento,
+        estado: p.estado,
+        estadoMembresia: p.estado_membresia,
         cargo: p.cargo,
         clienteDesde: p.created_at,
+        ultimoLogin: p.ultimo_login,
+        totalTurnos: Number(p.total_turnos),
+        inasistencias: Number(p.inasistencias),
+        casosAbiertos: Number(p.casos_abiertos),
       },
       turnos: turnos.rows.map((r) => ({
         idReserva: r.id_reserva,

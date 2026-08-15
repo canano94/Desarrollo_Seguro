@@ -221,3 +221,30 @@ export async function agregarObservacion(req, res, next) {
     res.status(201).json({ observacion });
   } catch (error) { next(error); }
 }
+
+export async function actualizarPrestador(req, res, next) {
+  try {
+    const prestador = await agenda.actualizarPrestador(
+      req.usuario.idEmpresa, req.params.idPrestador, req.body, ambitoDe(req),
+    );
+    res.json({ prestador });
+  } catch (error) { next(error); }
+}
+
+export async function actualizarServicio(req, res, next) {
+  try {
+    const servicio = await agenda.actualizarServicio(
+      req.usuario.idEmpresa, req.params.idServicio, req.body, ambitoDe(req),
+    );
+    res.json({ servicio });
+  } catch (error) { next(error); }
+}
+
+export async function actualizarMiembro(req, res, next) {
+  try {
+    const miembro = await agenda.actualizarMiembro(
+      req.usuario.idEmpresa, req.params.idMembresia, req.body,
+    );
+    res.json({ miembro });
+  } catch (error) { next(error); }
+}

@@ -1032,3 +1032,34 @@ textarea.entrada { font-family: inherit; resize: vertical; }
 
 #c-cliente-elegido-caja { display: flex; align-items: center; gap: 0.5rem; }
 .entrada--elegido { background: var(--agenda-clara); color: var(--agenda); font-weight: 500; }
+
+/* ---------- Indicadores del perfil de cliente ---------- */
+
+.indicadores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2rem;
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--linea);
+}
+
+.indicador { display: flex; flex-direction: column; gap: 2px; }
+
+.indicador__numero {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 1.75rem;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.indicador__texto {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--texto-tenue);
+}
+
+.items li .boton--borde { margin-left: auto; }

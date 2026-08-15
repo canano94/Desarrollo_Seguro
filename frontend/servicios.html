@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Servicios · Agenda</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+  <div id="cargando" class="cargando">Cargando…</div>
+
+  <div id="contenido" hidden>
+    <header class="barra">
+      <p class="barra__marca">Agenda</p>
+      <nav class="barra__nav">
+        <a href="inicio.html">Inicio</a>
+        <a href="agenda.html" id="nav-agenda">Agenda</a>
+        <a href="servicios.html" aria-current="page">Servicios</a>
+        <a href="usuarios.html" id="nav-usuarios" hidden>Personas</a>
+        <a href="clientes.html" id="nav-clientes" hidden>Clientes</a>
+        <a href="crm.html" id="nav-crm" hidden>CRM</a>
+        <a href="perfil.html">Perfil</a>
+        <a href="admin.html" id="nav-admin" hidden>Plataforma</a>
+      </nav>
+      <div class="barra__derecha">
+        <label class="visualmente-oculto" for="selector-empresa">Empresa activa</label>
+        <select id="selector-empresa" class="selector"></select>
+        <button type="button" class="boton boton--texto" id="btn-salir">Salir</button>
+      </div>
+    </header>
+
+    <main class="tablero tablero--ancho">
+      <p id="aviso" class="aviso" role="alert" hidden></p>
+
+      <section class="tarjeta" id="sec-prestadores">
+        <h1>Prestadores</h1>
+        <p class="apoyo">Sedes o profesionales cuya agenda administra esta empresa.</p>
+        <ul id="lista-prestadores" class="items"></ul>
+        <form id="form-prestador" class="fila-form" novalidate>
+          <div class="campo"><label for="p-nombre">Nombre</label><input id="p-nombre" type="text" maxlength="150" required></div>
+          <div class="campo"><label for="p-direccion">Dirección</label><input id="p-direccion" type="text" maxlength="200"></div>
+          <button type="submit" class="boton" id="btn-servicio">Agregar</button>
+          <button type="button" class="boton boton--texto" id="btn-cancelar-servicio" hidden>Cancelar</button>
+        </form>
+      </section>
+
+      <section class="tarjeta" id="sec-servicios">
+        <h2>Servicios</h2>
+        <p class="apoyo">Cada servicio pertenece a un prestador y define su duración.</p>
+        <ul id="lista-servicios" class="items"></ul>
+        <form id="form-servicio" class="fila-form" novalidate>
+          <div class="campo"><label for="s-prestador">Prestador</label><select id="s-prestador" class="entrada" required></select></div>
+          <div class="campo"><label for="s-nombre">Servicio</label><input id="s-nombre" type="text" maxlength="120" required></div>
+          <div class="campo"><label for="s-duracion">Minutos</label><input id="s-duracion" type="number" min="5" max="1440" value="60" required></div>
+          <div class="campo"><label for="s-precio">Precio</label><input id="s-precio" type="number" min="0" step="1000" value="0" required></div>
+          <button type="submit" class="boton" id="btn-prestador">Agregar</button>
+          <button type="button" class="boton boton--texto" id="btn-cancelar-prestador" hidden>Cancelar</button>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <script src="env.js"></script>
+  <script type="module" src="js/servicios.js"></script>
+</body>
+</html>

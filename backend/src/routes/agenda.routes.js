@@ -14,6 +14,9 @@ import {
   reprogramarReservaSchema,
   observacionSchema,
   disponibilidadSchema,
+  actualizarPrestadorSchema,
+  actualizarServicioSchema,
+  actualizarMiembroAgendaSchema,
 } from '../validators/agenda.schemas.js';
 // Importa los validadores genéricos de UUIDs y query params //
 import { validarParamUuid, validarConsulta } from '../validators/admin.schemas.js';
@@ -117,6 +120,24 @@ router.post('/reservas/:idReserva/observaciones',
   validarParamUuid('idReserva'),
   validar(observacionSchema),
   ctrl.agregarObservacion);
+
+router.patch('/prestadores/:idPrestador',
+  exigirPermisos('prestadores.gestionar'),
+  validarParamUuid('idPrestador'),
+  validar(actualizarPrestadorSchema),
+  ctrl.actualizarPrestador);
+
+router.patch('/servicios/:idServicio',
+  exigirPermisos('servicios.gestionar'),
+  validarParamUuid('idServicio'),
+  validar(actualizarServicioSchema),
+  ctrl.actualizarServicio);
+
+router.patch('/miembros/:idMembresia',
+  exigirPermisos('empleados.gestionar'),
+  validarParamUuid('idMembresia'),
+  validar(actualizarMiembroAgendaSchema),
+  ctrl.actualizarMiembro);
 
 // Exporta el enrutador configurado //
 export default router;

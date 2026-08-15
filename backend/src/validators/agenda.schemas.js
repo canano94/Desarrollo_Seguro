@@ -105,3 +105,41 @@ export const disponibilidadSchema = z
     fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Usa el formato AAAA-MM-DD.'),
   })
   .strict();
+
+export const actualizarPrestadorSchema = z
+  .object({
+    nombre: texto(150).optional(),
+    descripcion: opcional(500),
+    direccion: opcional(200),
+    telefono: opcional(30),
+    activo: z.boolean().optional(),
+  })
+  .strict()
+  .refine((d) => Object.keys(d).length > 0, {
+    message: 'Debes enviar al menos un campo para actualizar.',
+  });
+
+export const actualizarServicioSchema = z
+  .object({
+    nombre: texto(120).optional(),
+    descripcion: opcional(500),
+    duracionMinutos: z.coerce.number().int().min(5).max(1440).optional(),
+    precio: z.coerce.number().min(0).max(99999999).optional(),
+    activo: z.boolean().optional(),
+  })
+  .strict()
+  .refine((d) => Object.keys(d).length > 0, {
+    message: 'Debes enviar al menos un campo para actualizar.',
+  });
+
+export const actualizarMiembroAgendaSchema = z
+  .object({
+    rol: z.enum(['CLIENTE', 'EMPLEADO', 'PRESTADOR', 'ADMIN_EMPRESA']).optional(),
+    cargo: opcional(80),
+    estado: z.enum(['ACTIVA', 'SUSPENDIDA', 'RETIRADA']).optional(),
+    prestadores: z.array(uuid).max(20).optional(),
+  })
+  .strict()
+  .refine((d) => Object.keys(d).length > 0, {
+    message: 'Debes enviar al menos un campo para actualizar.',
+  });

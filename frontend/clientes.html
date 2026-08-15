@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clientes · Agenda</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+  <div id="cargando" class="cargando">Cargando…</div>
+
+  <div id="contenido" hidden>
+    <header class="barra">
+      <p class="barra__marca">Agenda</p>
+      <nav class="barra__nav">
+        <a href="inicio.html">Inicio</a>
+        <a href="agenda.html" id="nav-agenda" hidden>Agenda</a>
+        <a href="servicios.html" id="nav-servicios" hidden>Servicios</a>
+        <a href="usuarios.html" id="nav-usuarios" hidden>Personas</a>
+        <a href="clientes.html" aria-current="page">Clientes</a>
+        <a href="crm.html" id="nav-crm" hidden>CRM</a>
+        <a href="perfil.html">Perfil</a>
+        <a href="admin.html" id="nav-admin" hidden>Plataforma</a>
+      </nav>
+      <div class="barra__derecha">
+        <label class="visualmente-oculto" for="selector-empresa">Empresa activa</label>
+        <select id="selector-empresa" class="selector"></select>
+        <button type="button" class="boton boton--texto" id="btn-salir">Salir</button>
+      </div>
+    </header>
+
+    <main class="tablero tablero--ancho">
+      <p id="aviso" class="aviso" role="alert" hidden></p>
+
+      <!-- ===== BUSCADOR ===== -->
+      <div id="vista-busqueda">
+        <div class="encabezado-seccion">
+          <div>
+            <h1>Clientes</h1>
+            <p class="apoyo">Busca por nombre, correo, teléfono o documento.</p>
+          </div>
+        </div>
+
+        <div class="campo">
+          <label for="buscar">Buscar cliente</label>
+          <input id="buscar" type="search" maxlength="80"
+                 placeholder="Escribe al menos dos letras…" autocomplete="off">
+        </div>
+
+        <ul id="resultados" class="fichas-empresa"></ul>
+      </div>
+
+      <!-- ===== PERFIL DEL CLIENTE ===== -->
+      <div id="vista-perfil" hidden>
+        <button type="button" class="volver" id="btn-volver">← Clientes</button>
+
+        <section class="tarjeta tarjeta--identidad">
+          <h1 id="p-nombre"></h1>
+          <p class="apoyo mono" id="p-contacto"></p>
+
+          <dl class="datos">
+            <div><dt>Documento</dt><dd id="p-documento"></dd></div>
+            <div><dt>Cliente desde</dt><dd id="p-desde"></dd></div>
+            <div><dt>Estado</dt><dd id="p-estado" class="fichas"></dd></div>
+          </dl>
+
+          <!-- Indicadores: lo primero que quiere saber quien atiende -->
+          <div class="indicadores">
+            <div class="indicador">
+              <span class="indicador__numero" id="p-turnos">0</span>
+              <span class="indicador__texto">Turnos</span>
+            </div>
+            <div class="indicador">
+              <span class="indicador__numero" id="p-inasistencias">0</span>
+              <span class="indicador__texto">Inasistencias</span>
+            </div>
+            <div class="indicador">
+              <span class="indicador__numero" id="p-casos">0</span>
+              <span class="indicador__texto">Casos abiertos</span>
+            </div>
+          </div>
+        </section>
+
+        <div class="pestanas" role="tablist" id="pestanas-perfil">
+          <button type="button" class="pestana" role="tab" data-panel="pf-turnos" aria-selected="true">Turnos</button>
+          <button type="button" class="pestana" role="tab" data-panel="pf-casos" aria-selected="false">Casos</button>
+          <button type="button" class="pestana" role="tab" data-panel="pf-interacciones" aria-selected="false">Interacciones</button>
+        </div>
+
+        <section class="tarjeta" id="pf-turnos"><ul id="lista-turnos" class="observaciones"></ul></section>
+        <section class="tarjeta" id="pf-casos" hidden><ul id="lista-casos" class="observaciones"></ul></section>
+        <section class="tarjeta" id="pf-interacciones" hidden>
+          <ul id="lista-interacciones" class="observaciones"></ul>
+          <form id="form-interaccion" class="fila-form" novalidate>
+            <div class="campo">
+              <label for="i-canal">Canal</label>
+              <select id="i-canal" class="entrada">
+                <option value="LLAMADA">Llamada</option>
+                <option value="EMAIL">Correo</option>
+                <option value="WHATSAPP">WhatsApp</option>
+                <option value="CHAT">Chat</option>
+                <option value="PRESENCIAL">Presencial</option>
+                <option value="OTRO">Otro</option>
+              </select>
+            </div>
+            <div class="campo"><label for="i-asunto">Asunto</label><input id="i-asunto" type="text" maxlength="200"></div>
+            <div class="campo"><label for="i-detalle">Detalle</label><input id="i-detalle" type="text" maxlength="4000"></div>
+            <button type="submit" class="boton">Registrar</button>
+          </form>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="env.js"></script>
+  <script type="module" src="js/clientes.js"></script>
+</body>
+</html>
