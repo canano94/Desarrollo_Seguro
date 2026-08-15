@@ -14,6 +14,8 @@ import adminRoutes from './routes/admin.routes.js';
 import agendaRoutes from './routes/agenda.routes.js';
 // Importa tus propios middlewares de manejo de errores //
 import { notFound, errorHandler } from './middleware/errorHandler.js';
+// Importa el enrutador del módulo CRM (Casos, Interacciones, Historial 360) //
+import crmRoutes from './routes/crm.routes.js';
 
 // Instancia la aplicación principal de Express //
 export const app = express();
@@ -99,6 +101,11 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/agenda', agendaRoutes);
 
 /**
+ * Ruta del módulo CRM (Casos, Interacciones, Historial 360)
+ */
+app.use('/api/crm', crmRoutes);
+
+/**
  * CAPTURA DE ERRORES:
  * El orden es vital. Express ejecuta los middlewares en el orden en que se declaran.
  * Si una petición no hizo "match" con ninguna de las rutas de arriba, caerá inevitablemente 
@@ -107,3 +114,4 @@ app.use('/api/agenda', agendaRoutes);
  */
 app.use(notFound);
 app.use(errorHandler);
+

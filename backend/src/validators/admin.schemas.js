@@ -197,3 +197,44 @@ export function validarConsulta(schema) {
     return next();
   };
 }
+
+/* --- Editor de roles ------------------------------------------------ */
+
+export const crearRolSchema = z
+  .object({
+    codigo: z.string().trim().min(3).max(40).regex(/^[A-Za-z][A-Za-z0-9_ ]*$/,
+      'Solo letras, números, espacios y guion bajo.'),
+    nombre: texto(80),
+    descripcion: z.string().trim().max(200).optional().or(z.literal('')),
+    ambito: z.enum(['PLATAFORMA', 'EMPRESA']).optional(),
+  })
+  .strict();
+
+export const permisosDeRolSchema = z
+  .object({
+    // Lista COMPLETA, no un cambio parcial. Puede venir vacía: un rol
+    // sin permisos es válido, simplemente no puede hacer nada.
+    permisos: z.array(z.string().trim().max(60)).max(100),
+  })
+  .strict();
+
+/**
+ * Valida un parámetro de ruta numérico.
+ * Los roles usan smallserial (un entero), no uuid como el resto de
+ * tablas, así que validarParamUuid no sirve aquí.
+ */
+export function validarParamEntero(nombre) {
+  return (req, _res, next) => {
+    const valor = Number(req.params[nombre]);
+    if (!Number.isInteger(valor) || valor <= 0) {
+      return next(
+        Object.assign(new Error('Identificador inválido.'), {
+          status: 422,
+          codigo: 'VALIDACION',
+          detalles: [{ campo: nombre, mensaje: 'Debe ser un número entero positivo.' }],
+        }),
+      );
+    }
+    return next();
+  };
+}

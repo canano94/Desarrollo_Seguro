@@ -28,6 +28,11 @@
     </header>
 
     <main class="tablero tablero--ancho">
+      <!-- Pestañas principales del panel de plataforma -->
+      <div class="pestanas pestanas--grandes" role="tablist" id="pestanas-plataforma">
+        <button type="button" class="pestana" role="tab" data-panel="vista-lista" aria-selected="true">Empresas</button>
+        <button type="button" class="pestana" role="tab" data-panel="vista-roles" aria-selected="false">Roles y permisos</button>
+      </div>
 
       <!-- ============ VISTA LISTA ============ -->
       <div id="vista-lista">
@@ -156,6 +161,49 @@
             <button type="submit" class="boton">Vincular</button>
           </form>
         </section>
+      </div>
+
+      <!-- ============ VISTA ROLES ============ -->
+      <div id="vista-roles" hidden>
+        <div class="encabezado-seccion">
+          <div>
+            <h1>Roles y permisos</h1>
+            <p class="apoyo">
+              Marca qué puede hacer cada rol. Los cambios aplican en el próximo
+              inicio de sesión de cada persona, sin desplegar código.
+            </p>
+          </div>
+          <button type="button" class="boton" id="btn-nuevo-rol">Nuevo rol</button>
+        </div>
+
+        <p id="aviso-roles" class="aviso" role="alert" hidden></p>
+
+        <section class="tarjeta" id="panel-nuevo-rol" hidden>
+          <h2>Crear rol</h2>
+          <form id="form-rol" novalidate>
+            <div class="rejilla">
+              <div class="campo">
+                <label for="rol-codigo">Código</label>
+                <input id="rol-codigo" type="text" maxlength="40" placeholder="SUPERVISOR" required>
+                <p class="pista">Se guarda en mayúsculas, sin espacios.</p>
+              </div>
+              <div class="campo">
+                <label for="rol-nombre">Nombre visible</label>
+                <input id="rol-nombre" type="text" maxlength="80" required>
+              </div>
+              <div class="campo">
+                <label for="rol-descripcion">Descripción</label>
+                <input id="rol-descripcion" type="text" maxlength="200">
+              </div>
+            </div>
+            <div class="fila-botones">
+              <button type="submit" class="boton">Crear</button>
+              <button type="button" class="boton boton--texto" id="btn-cancelar-rol">Cancelar</button>
+            </div>
+          </form>
+        </section>
+
+        <div id="lista-roles"></div>
       </div>
 
     </main>

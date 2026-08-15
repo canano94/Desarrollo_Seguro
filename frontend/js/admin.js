@@ -165,6 +165,8 @@ async function abrirDetalle(empresa) {
 
   vistaLista.hidden = true;
   vistaDetalle.hidden = false;
+  // Las pestañas Empresas/Roles no aplican dentro del detalle.
+  document.getElementById('pestanas-plataforma').hidden = true;
   activarPestana('p-datos');
   window.scrollTo({ top: 0 });
 
@@ -175,6 +177,7 @@ function volverALista() {
   empresaActual = null;
   vistaDetalle.hidden = true;
   vistaLista.hidden = false;
+  document.getElementById('pestanas-plataforma').hidden = false;
   cargarEmpresas();
 }
 
@@ -435,6 +438,206 @@ document.getElementById('form-empresa').addEventListener('submit', async (evento
     boton.disabled = false;
   }
 });
+
+// ------------------------------------------------------------------ //
+// Editor de roles y permisos                                          //
+// ------------------------------------------------------------------ //
+
+const listaRoles = document.getElementById('lista-roles');
+const avisoRoles = document.getElementById('aviso-roles');
+const panelNuevoRol = document.getElementById('panel-nuevo-rol');
+
+/**
+ * ¿Qué hace esta función?
+ * Dibuja una tarjeta por rol con TODAS las casillas de permiso, marcando
+ * las que ese rol ya tiene.
+ *
+ * ¿Por qué agrupa por módulo?
+ * Porque un permiso de CRM solo sirve si la empresa contrató ese módulo.
+ * fn_membresias_de_usuario ya filtra por eso al armar el token, así que
+ * agruparlos visualmente refleja cómo funcionan de verdad.
+ */
+async function cargarRoles() {
+  const { roles, permisos } = await pedir('/admin/roles');
+
+  // Map conserva el orden de inserción, a diferencia de un objeto suelto.
+  const grupos = new Map();
+  for (const p of permisos) {
+    const clave = p.modulo ?? 'BASE';   // null = permiso general
+    if (!grupos.has(clave)) grupos.set(clave, []);
+    grupos.get(clave).push(p);
+  }
+
+  listaRoles.replaceChildren();
+
+  for (const rol of roles) {
+    const tarjeta = document.createElement('section');
+    tarjeta.className = 'tarjeta rol-tarjeta';
+
+    const cabecera = document.createElement('div');
+    cabecera.className = 'encabezado-seccion';
+
+    const info = document.createElement('div');
+    const titulo = document.createElement('h2');
+    titulo.textContent = rol.nombre;
+    const meta = document.createElement('p');
+    meta.className = 'apoyo mono';
+    meta.textContent = `${rol.codigo} · ${rol.ambito} · ${rol.asignaciones} asignación(es)`;
+    info.append(titulo, meta);
+    cabecera.append(info);
+
+    const acciones = document.createElement('div');
+    acciones.className = 'fila-botones';
+
+    // SUPER_ADMIN no se edita ni desde aquí ni desde la API: si se
+    // quitara a sí mismo 'empresas.gestionar', nadie podría arreglarlo.
+    const editable = rol.codigo !== 'SUPER_ADMIN';
+
+    if (editable) {
+      const btnGuardar = document.createElement('button');
+      btnGuardar.type = 'button';
+      btnGuardar.className = 'boton boton--mini';
+      btnGuardar.textContent = 'Guardar permisos';
+      btnGuardar.addEventListener('click', () => guardarPermisos(rol.idRol, tarjeta, btnGuardar));
+      acciones.append(btnGuardar);
+    }
+
+    // Solo se borran roles creados aquí y sin nadie asignado.
+    if (!rol.esSistema && rol.asignaciones === 0) {
+      const btnBorrar = document.createElement('button');
+      btnBorrar.type = 'button';
+      btnBorrar.className = 'boton boton--mini boton--borde';
+      btnBorrar.textContent = 'Eliminar';
+      btnBorrar.addEventListener('click', () => eliminarRol(rol.idRol, rol.nombre));
+      acciones.append(btnBorrar);
+    }
+
+    cabecera.append(acciones);
+    tarjeta.append(cabecera);
+
+    if (!editable) {
+      const nota = document.createElement('p');
+      nota.className = 'apoyo';
+      nota.textContent =
+        'Este rol no se puede editar: dejaría la plataforma sin acceso administrativo.';
+      tarjeta.append(nota);
+    }
+
+    for (const [modulo, lista] of grupos) {
+      const grupo = document.createElement('fieldset');
+      grupo.className = 'grupo';
+
+      const leyenda = document.createElement('legend');
+      leyenda.textContent = modulo === 'BASE' ? 'Generales' : `Módulo ${modulo}`;
+      grupo.append(leyenda);
+
+      for (const permiso of lista) {
+        const etiqueta = document.createElement('label');
+        etiqueta.className = 'casilla casilla--permiso';
+
+        const casilla = document.createElement('input');
+        casilla.type = 'checkbox';
+        casilla.value = permiso.codigo;
+        casilla.checked = rol.permisos.includes(permiso.codigo);
+        casilla.disabled = !editable;
+
+        const texto = document.createElement('span');
+        texto.textContent = permiso.descripcion ?? permiso.codigo;
+        const codigo = document.createElement('span');
+        codigo.className = 'casilla__codigo';
+        codigo.textContent = permiso.codigo;
+
+        etiqueta.append(casilla, texto, codigo);
+        grupo.append(etiqueta);
+      }
+      tarjeta.append(grupo);
+    }
+
+    listaRoles.append(tarjeta);
+  }
+}
+
+/**
+ * Envía la lista COMPLETA de permisos marcados.
+ * No se manda "agrega este / quita aquel": se manda el estado final y
+ * el servidor reemplaza. Menos casos que razonar, menos bugs.
+ */
+async function guardarPermisos(idRol, tarjeta, boton) {
+  avisoRoles.hidden = true;
+  const permisos = [...tarjeta.querySelectorAll('input[type="checkbox"]:checked')]
+    .map((c) => c.value);
+
+  boton.disabled = true;
+  try {
+    await pedir(`/admin/roles/${idRol}/permisos`, { metodo: 'PUT', cuerpo: { permisos } });
+    avisar(avisoRoles,
+      'Permisos guardados. Aplican en el próximo inicio de sesión de cada persona.', true);
+    await cargarRoles();
+  } catch (error) {
+    avisar(avisoRoles, mensajeError(error));
+  } finally {
+    boton.disabled = false;
+  }
+}
+
+async function eliminarRol(idRol, nombre) {
+  if (!confirm(`¿Eliminar el rol "${nombre}"?`)) return;
+  try {
+    await pedir(`/admin/roles/${idRol}`, { metodo: 'DELETE' });
+    await cargarRoles();
+    avisar(avisoRoles, 'Rol eliminado.', true);
+  } catch (error) {
+    avisar(avisoRoles, mensajeError(error));
+  }
+}
+
+document.getElementById('btn-nuevo-rol').addEventListener('click', () => {
+  panelNuevoRol.hidden = false;
+});
+
+document.getElementById('btn-cancelar-rol').addEventListener('click', () => {
+  panelNuevoRol.hidden = true;
+  avisoRoles.hidden = true;
+});
+
+document.getElementById('form-rol').addEventListener('submit', async (evento) => {
+  evento.preventDefault();
+  avisoRoles.hidden = true;
+  try {
+    await pedir('/admin/roles', {
+      metodo: 'POST',
+      cuerpo: {
+        codigo: document.getElementById('rol-codigo').value.trim(),
+        nombre: document.getElementById('rol-nombre').value.trim(),
+        descripcion: document.getElementById('rol-descripcion').value.trim(),
+      },
+    });
+    evento.target.reset();
+    panelNuevoRol.hidden = true;
+    await cargarRoles();
+    avisar(avisoRoles, 'Rol creado. Ahora marca sus permisos.', true);
+  } catch (error) {
+    avisar(avisoRoles, mensajeError(error));
+  }
+});
+
+/* --- Pestañas Empresas / Roles --- */
+
+const grupoPestanas = document.getElementById('pestanas-plataforma');
+for (const pestana of grupoPestanas.querySelectorAll('.pestana')) {
+  pestana.addEventListener('click', async () => {
+    for (const otra of grupoPestanas.querySelectorAll('.pestana')) {
+      const activa = otra === pestana;
+      otra.setAttribute('aria-selected', String(activa));
+      document.getElementById(otra.dataset.panel).hidden = !activa;
+    }
+    if (pestana.dataset.panel === 'vista-roles') {
+      vistaDetalle.hidden = true;
+      // Solo se carga la primera vez: después ya está pintado.
+      if (listaRoles.children.length === 0) await cargarRoles();
+    }
+  });
+}
 
 /* ------------------------------------------------------------------ */
 /* Arranque                                                            */

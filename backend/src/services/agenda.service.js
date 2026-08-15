@@ -130,27 +130,43 @@ export async function crearServicio(idEmpresa, datos) {
 
 export async function listarMiembros(idEmpresa, ambito = []) {
   return conEmpresa(idEmpresa, async (client) => {
-    const { rows } = await client.query(
-      `SELECT m.id_membresia, u.id_usuario, u.email, u.nombres, u.apellidos, m.cargo, m.estado,
-              COALESCE(ARRAY_AGG(r.codigo ORDER BY r.codigo)
-                       FILTER (WHERE r.codigo IS NOT NULL), '{}') AS roles,
-              COALESCE((SELECT ARRAY_AGG(mp.id_prestador)
-                          FROM app.membresia_prestadores mp
-                         WHERE mp.id_membresia = m.id_membresia), '{}') AS prestadores
-         FROM app.membresias m
-         JOIN app.usuarios u ON u.id_usuario = m.id_usuario
-         LEFT JOIN app.membresia_roles mr ON mr.id_membresia = m.id_membresia
-         LEFT JOIN app.roles r ON r.id_rol = mr.id_rol
-        WHERE cardinality($1::uuid[]) = 0
-           OR EXISTS (SELECT 1 FROM app.membresia_prestadores mp2
-                       WHERE mp2.id_membresia = m.id_membresia
-                         AND mp2.id_prestador = ANY($1::uuid[]))
-           OR NOT EXISTS (SELECT 1 FROM app.membresia_prestadores mp3
-                           WHERE mp3.id_membresia = m.id_membresia)
-        GROUP BY m.id_membresia, u.id_usuario
-        ORDER BY u.nombres`,
-      [ambito],
-    );
+      const { rows } = await client.query(
+        `SELECT m.id_membresia, u.id_usuario, u.email, u.nombres, u.apellidos, m.cargo, m.estado,
+                COALESCE(ARRAY_AGG(r.codigo ORDER BY r.codigo)
+                        FILTER (WHERE r.codigo IS NOT NULL), '{}') AS roles,
+                COALESCE((SELECT ARRAY_AGG(mp.id_prestador)
+                            FROM app.membresia_prestadores mp
+                          WHERE mp.id_membresia = m.id_membresia), '{}') AS prestadores
+          FROM app.membresias m
+          JOIN app.usuarios u ON u.id_usuario = m.id_usuario
+          LEFT JOIN app.membresia_roles mr ON mr.id_membresia = m.id_membresia
+          LEFT JOIN app.roles r ON r.id_rol = mr.id_rol
+          WHERE (
+                -- Sin límite de ámbito: un ADMIN_EMPRESA ve a todos.
+                cardinality($1::uuid[]) = 0
+                -- Con ámbito (un PRESTADOR): solo gente de SUS sedes...
+                OR EXISTS (SELECT 1 FROM app.membresia_prestadores mp2
+                            WHERE mp2.id_membresia = m.id_membresia
+                              AND mp2.id_prestador = ANY($1::uuid[]))
+                -- ...más los clientes, que no están atados a ninguna sede
+                -- y a los que cualquiera puede agendarles un turno.
+                OR NOT EXISTS (SELECT 1 FROM app.membresia_prestadores mp3
+                                WHERE mp3.id_membresia = m.id_membresia)
+                )
+            -- Un PRESTADOR no ve a los administradores de la empresa:
+            -- no puede resetearles la contraseña ni cambiarles el rol,
+            -- así que mostrarlos solo generaría botones que dan 403.
+            AND (
+                cardinality($1::uuid[]) = 0
+                OR NOT EXISTS (SELECT 1 FROM app.membresia_roles mr2
+                                JOIN app.roles r2 ON r2.id_rol = mr2.id_rol
+                                WHERE mr2.id_membresia = m.id_membresia
+                                  AND r2.codigo = 'ADMIN_EMPRESA')
+                )
+          GROUP BY m.id_membresia, u.id_usuario
+          ORDER BY u.nombres`,
+        [ambito],
+      );
     return rows.map((m) => ({
       idMembresia: m.id_membresia,
       idUsuario: m.id_usuario,
@@ -267,6 +283,8 @@ export async function listarReservas(idEmpresa, idMembresia, alcance, prestadore
       estado: r.estado,
       notas: r.notas_cliente,
       idPrestador: r.id_prestador,
+      // El frontend lo necesita para radicar un caso desde el turno.
+      idCliente: r.id_cliente,
       servicio: r.servicio,
       prestador: r.prestador,
       cliente: r.cliente,

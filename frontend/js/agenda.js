@@ -68,8 +68,14 @@ function avisar(mensaje, bien = false) {
   avisoAgenda.hidden = false;
 }
 
+/**
+ * Junta los detalles campo por campo que devuelve zod en un 422.
+ * El ?? final es la red de seguridad: si el error no trae ni detalles
+ * ni mensaje (por ejemplo un fallo de red), igual mostramos algo.
+ */
 function mensajeError(error) {
-  return error.detalles?.map((d) => d.mensaje).join(' · ') || error.mensaje;
+  const detalle = error?.detalles?.map((d) => d.mensaje).join(' · ');
+  return detalle || error?.mensaje || 'Ocurrió un error inesperado.';
 }
 
 function item(titulo, detalle) {
@@ -204,6 +210,26 @@ async function mostrarDetalleTurno(reserva) {
       botonEstado(reserva.idReserva, 'COMPLETADA', 'Marcar asistencia'),
       botonEstado(reserva.idReserva, 'NO_ASISTIO', 'No asistió'),
     );
+  }
+
+  // Radicar un caso desde este turno. El caso queda vinculado a la
+  // reserva, y quien lo resuelva verá el contexto del servicio.
+  if (puede('casos.crear') && sesionActual().empresaActiva?.modulos?.includes('CRM')) {
+    const btnCaso = document.createElement('button');
+    btnCaso.type = 'button';
+    btnCaso.className = 'boton boton--mini boton--borde';
+    btnCaso.textContent = 'Radicar caso';
+    btnCaso.addEventListener('click', () => {
+      // Se pasan reserva y cliente para que el CRM abra el formulario
+      // listo, sin que la persona tenga que buscar de nuevo.
+      const params = new URLSearchParams({
+        reserva: reserva.idReserva,
+        cliente: reserva.idCliente,
+        nombre: reserva.cliente,
+      });
+      location.href = `crm.html?${params}`;
+    });
+    dtAcciones.append(btnCaso);
   }
 
   // Reprogramar: solo con el permiso y si el turno sigue vivo.
@@ -622,12 +648,12 @@ function aplicarPermisos() {
     !puede('reservas.crear') && !puede('reservas.aprobar');
   document.getElementById('campo-cliente').hidden = !puede('reservas.aprobar');
 
-  // La pestaña de casos solo existe si la empresa contrató el CRM.
-  document.getElementById('tab-casos').hidden =
-    !datos.empresaActiva?.modulos?.includes('CRM');
-
   document.getElementById('nav-admin').hidden =
     !datos.rolesPlataforma?.includes('SUPER_ADMIN');
+  
+  // El enlace al CRM solo aparece si la empresa contrató ese módulo.
+  document.getElementById('nav-crm').hidden =
+    !datos.empresaActiva?.modulos?.includes('CRM');
 }
 
 function pintarSelectorEmpresa() {

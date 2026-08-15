@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CRM · Casos</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+  <div id="cargando" class="cargando">Cargando el CRM…</div>
+
+  <div id="contenido" hidden>
+    <header class="barra">
+      <p class="barra__marca">Agenda</p>
+      <nav class="barra__nav">
+        <a href="inicio.html">Inicio</a>
+        <a href="agenda.html" id="nav-agenda">Agenda</a>
+        <a href="crm.html" aria-current="page">CRM</a>
+        <a href="perfil.html">Perfil</a>
+        <a href="admin.html" id="nav-admin" hidden>Plataforma</a>
+      </nav>
+      <div class="barra__derecha">
+        <label class="visualmente-oculto" for="selector-empresa">Empresa activa</label>
+        <select id="selector-empresa" class="selector"></select>
+        <button type="button" class="boton boton--texto" id="btn-salir">Salir</button>
+      </div>
+    </header>
+
+    <main class="tablero tablero--ancho">
+
+      <div class="pestanas pestanas--grandes" role="tablist" id="pestanas-crm">
+        <button type="button" class="pestana" role="tab" data-panel="p-casos" aria-selected="true">Casos</button>
+        <button type="button" class="pestana" role="tab" data-panel="p-historial" aria-selected="false" id="tab-historial" hidden>Historial del cliente</button>
+      </div>
+
+      <p id="aviso-crm" class="aviso" role="alert" hidden></p>
+
+      <!-- ============ CASOS ============ -->
+      <div id="p-casos">
+        <div class="encabezado-seccion">
+          <div>
+            <h1>Casos de servicio</h1>
+            <p class="apoyo" id="subtitulo-casos"></p>
+          </div>
+          <button type="button" class="boton" id="btn-nuevo-caso">Radicar caso</button>
+        </div>
+
+        <section class="tarjeta" id="panel-nuevo-caso" hidden>
+          <h2>Radicar un caso</h2>
+          <form id="form-caso" novalidate>
+            <div class="rejilla">
+              <div class="campo" id="campo-cliente-caso" hidden>
+                <label for="c-cliente-busca">Cliente</label>
+                <!-- Cuando hay cliente elegido se oculta el buscador y
+                     se muestra este campo de solo lectura, para que el
+                     dato se vea donde se espera y no como nota al pie. -->
+                <div id="c-cliente-elegido-caja" hidden>
+                  <input id="c-cliente-elegido" type="text" readonly class="entrada entrada--elegido">
+                  <button type="button" class="boton boton--texto boton--mini" id="c-cliente-cambiar">Cambiar</button>
+                </div>
+                <input id="c-cliente-busca" type="search" maxlength="80"
+                       placeholder="Nombre, correo, teléfono o documento" autocomplete="off">
+                <ul id="c-cliente-resultados" class="resultados" hidden></ul>
+              </div>
+              <div class="campo" id="campo-turno">
+                <label for="c-turno">Turno relacionado (opcional)</label>
+                <select id="c-turno" class="entrada">
+                  <option value="">Sin turno relacionado</option>
+                </select>
+                <p class="pista">Vincular el turno le da contexto a quien resuelva el caso.</p>
+              </div>
+              <div class="campo">
+                <label for="c-tipo">Tipo</label>
+                <select id="c-tipo" class="entrada">
+                  <option value="PETICION">Petición</option>
+                  <option value="QUEJA">Queja</option>
+                  <option value="RECLAMO">Reclamo</option>
+                  <option value="SUGERENCIA">Sugerencia</option>
+                  <option value="SOPORTE">Soporte</option>
+                </select>
+              </div>
+              <div class="campo" id="campo-prioridad" hidden>
+                <label for="c-prioridad">Prioridad</label>
+                <select id="c-prioridad" class="entrada">
+                  <option value="BAJA">Baja</option>
+                  <option value="MEDIA" selected>Media</option>
+                  <option value="ALTA">Alta</option>
+                  <option value="CRITICA">Crítica</option>
+                </select>
+              </div>
+              <div class="campo">
+                <label for="c-asunto">Asunto</label>
+                <input id="c-asunto" type="text" maxlength="200" required>
+              </div>
+            </div>
+            <div class="campo">
+              <label for="c-descripcion">Descripción</label>
+              <textarea id="c-descripcion" class="entrada" rows="4" maxlength="4000" required></textarea>
+            </div>
+            <div class="fila-botones">
+              <button type="submit" class="boton">Radicar</button>
+              <button type="button" class="boton boton--texto" id="btn-cancelar-caso">Cancelar</button>
+            </div>
+          </form>
+        </section>
+
+        <div class="tabla-envoltura">
+          <table class="tabla">
+            <thead>
+              <tr><th>Caso</th><th>Tipo</th><th>Asunto</th><th>Cliente</th><th>Asignado</th><th>Prioridad</th><th>Estado</th></tr>
+            </thead>
+            <tbody id="tabla-casos"></tbody>
+          </table>
+        </div>
+
+        <!-- Detalle del caso seleccionado -->
+        <section class="tarjeta tarjeta--identidad" id="detalle-caso" hidden>
+          <div class="detalle__cabecera">
+            <div>
+              <h2 id="dc-asunto"></h2>
+              <p class="apoyo mono" id="dc-meta"></p>
+            </div>
+            <button type="button" class="boton boton--texto" id="dc-cerrar">Cerrar</button>
+          </div>
+
+          <p id="dc-descripcion" class="dc-descripcion"></p>
+          <div id="dc-reserva" hidden></div>
+
+          <div class="fila-form" id="dc-gestion" hidden>
+            <div class="campo">
+              <label for="dc-estado">Estado</label>
+              <select id="dc-estado" class="entrada">
+                <option value="ABIERTO">Abierto</option>
+                <option value="EN_PROCESO">En proceso</option>
+                <option value="ESCALADO">Escalado</option>
+                <option value="RESUELTO">Resuelto</option>
+                <option value="CERRADO">Cerrado</option>
+              </select>
+            </div>
+            <div class="campo">
+              <label for="dc-prioridad">Prioridad</label>
+              <select id="dc-prioridad" class="entrada">
+                <option value="BAJA">Baja</option>
+                <option value="MEDIA">Media</option>
+                <option value="ALTA">Alta</option>
+                <option value="CRITICA">Crítica</option>
+              </select>
+            </div>
+            <button type="button" class="boton boton--mini" id="dc-guardar">Actualizar</button>
+          </div>
+
+          <h3 class="subtitulo">Interacciones</h3>
+          <ul id="dc-interacciones" class="observaciones"></ul>
+
+          <div class="fila-form" id="dc-nueva-interaccion" hidden>
+            <div class="campo">
+              <label for="i-canal">Canal</label>
+              <select id="i-canal" class="entrada">
+                <option value="LLAMADA">Llamada</option>
+                <option value="EMAIL">Correo</option>
+                <option value="WHATSAPP">WhatsApp</option>
+                <option value="CHAT">Chat</option>
+                <option value="PRESENCIAL">Presencial</option>
+                <option value="OTRO">Otro</option>
+              </select>
+            </div>
+            <div class="campo">
+              <label for="i-asunto">Asunto</label>
+              <input id="i-asunto" type="text" maxlength="200">
+            </div>
+            <div class="campo">
+              <label for="i-detalle">Detalle</label>
+              <input id="i-detalle" type="text" maxlength="4000">
+            </div>
+            <button type="button" class="boton boton--mini" id="i-guardar">Registrar</button>
+          </div>
+        </section>
+      </div>
+
+      <!-- ============ HISTORIAL 360 ============ -->
+      <div id="p-historial" hidden>
+        <div class="encabezado-seccion">
+          <div>
+            <h1>Historial del cliente</h1>
+            <p class="apoyo">Todo lo que ha pasado con esa persona: turnos, casos e interacciones.</p>
+          </div>
+        </div>
+
+        <div class="campo">
+          <label for="h-cliente">Cliente</label>
+          <select id="h-cliente" class="entrada"></select>
+        </div>
+
+        <div id="h-resultado"></div>
+      </div>
+
+    </main>
+  </div>
+
+  <script src="env.js"></script>
+  <script type="module" src="js/crm.js"></script>
+</body>
+</html>

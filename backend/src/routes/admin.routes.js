@@ -15,6 +15,9 @@ import {
   busquedaUsuariosSchema,
   validarConsulta,
   validarParamUuid,
+  validarParamEntero,
+  crearRolSchema,
+  permisosDeRolSchema,
 } from '../validators/admin.schemas.js';
 // Importa los middlewares de seguridad y autorización (RBAC) //
 import {
@@ -102,6 +105,23 @@ router.get('/usuarios', exigirPlataforma, validarConsulta(busquedaUsuariosSchema
 router.post('/usuarios/:idUsuario/password-temporal',
   exigirPlataforma, validarParamUuid('idUsuario'), ctrl.restablecerPassword);
 
+
+/* --- Editor de roles y permisos (solo plataforma) ------------------ */
+// Cambiar la matriz aquí surte efecto sin desplegar código: los
+// permisos se recalculan en cada login y en cada refresh del token.
+router.get('/roles', exigirPlataforma, ctrl.matrizRoles);
+
+router.post('/roles', exigirPlataforma,
+  validar(crearRolSchema), ctrl.crearRol);
+
+// PUT y no PATCH: se manda la lista completa de permisos, no un cambio
+// parcial. PUT significa "reemplaza el recurso por esto".
+router.put('/roles/:idRol/permisos', exigirPlataforma,
+  validarParamEntero('idRol'), validar(permisosDeRolSchema), ctrl.actualizarPermisosDeRol);
+
+router.delete('/roles/:idRol', exigirPlataforma,
+  validarParamEntero('idRol'), ctrl.eliminarRol);
+
 // --- Empresa: solo ve la suya, y RLS lo garantiza ------------------ //
 
 /**
@@ -116,14 +136,19 @@ router.get(
 );
 
 /**
- * El admin de empresa restablece contraseñas solo de SUS miembros.
- * El ID de la empresa a la que tiene acceso no viaja en la URL (sería inseguro), 
- * sino que el servicio verifica la pertenencia usando el idEmpresa del token.
+ * ¿Por qué 'empleados.gestionar' y no 'usuarios.gestionar'?
+ * Porque ese permiso lo tienen PRESTADOR y ADMIN_EMPRESA, y queremos
+ * que ambos puedan resetear. La diferencia de alcance NO se resuelve
+ * en la ruta sino en el servicio: el prestador solo llega a SUS
+ * empleados, y ninguno de los dos puede tocar a otro administrador.
+ *
+ * Regla general: la ruta filtra QUIÉN entra, el servicio filtra HASTA
+ * DÓNDE llega.
  */
 router.post(
   '/mi-empresa/usuarios/:idUsuario/password-temporal',
   exigirEmpresaActiva,
-  exigirPermisos('usuarios.gestionar'),
+  exigirPermisos('empleados.gestionar'),
   validarParamUuid('idUsuario'),
   ctrl.restablecerPasswordMiEmpresa,
 );

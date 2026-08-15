@@ -55,6 +55,10 @@ function pintar() {
   document.getElementById('nav-admin').hidden = !esPlataforma;
   document.getElementById('nav-agenda').hidden = !empresa?.modulos?.includes('AGENDA');
 
+  // El CRM solo aparece si la empresa contrató ese módulo.
+  document.getElementById('nav-crm').hidden =
+    !empresa?.modulos?.includes('CRM');
+
   // Accesos: se arman según lo que la persona puede hacer de verdad.
   accesos.replaceChildren();
 
@@ -79,6 +83,11 @@ function pintar() {
         'Consulta tus reservas y solicita una nueva.'));
     }
   }
+
+  if (empresa?.modulos?.includes('CRM') && (puede('casos.crear') || puede('casos.gestionar'))) {
+      accesos.append(acceso('crm.html', 'CRM',
+        'Casos de servicio, interacciones e historial del cliente.'));
+    }
 
   accesos.append(acceso('perfil.html', 'Mi perfil',
     'Tus datos personales y tu contraseña.'));

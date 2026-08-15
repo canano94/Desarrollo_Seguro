@@ -1,11 +1,12 @@
 // Importa el módulo de criptografía nativo para generar contraseñas seguras //
 import crypto from 'node:crypto';
 // Importa la configuración de base de datos y la función maestra de multitenencia (conEmpresa) //
-import { query, conEmpresa } from '../db/pool.js';
+import { query, conEmpresa, pool } from '../db/pool.js';
 // Importa el constructor de errores controlados //
 import { AppError } from '../utils/errors.js';
 // Importa la función para encriptar contraseñas antes de guardarlas //
 import { hashearPassword } from '../utils/crypto.js';
+
 
 // ------------------------------------------------------------------ //
 // Lecturas de plataforma                                             //
@@ -520,8 +521,16 @@ export async function actualizarMiembro(idEmpresa, idMembresia, datos) {
  *    sirva únicamente para iniciar sesión y obligatoriamente cambiarla.
  * 3. Cierre masivo de sesiones: Invalida tokens antiguos (`token_version + 1`) y revoca los Refresh Tokens.
  * 4. Auditoría inmutable: Registra forzosamente quién hizo la acción y por qué, evitando puertas traseras sin rastro.
+ * 
+ * idUsuario    - Identificador de la cuenta a la que se le restablecerá la clave.
+ * idActor      - Quién ejecuta la acción (para la bitácora).
+ * idEmpresa - null para el admin de plataforma; el uuid de la
+ *                                empresa para un ADMIN_EMPRESA, que solo puede
+ *                                restablecer a miembros suyos.
+ * ambitoActor - Lista de prestadores a los que está limitado 
+ *                                      el actor (en caso de aplicar restricciones por sede).
  */
-export async function restablecerPassword(idUsuario, idActor, idEmpresa = null) {
+export async function restablecerPassword(idUsuario, idActor, idEmpresa = null, ambitoActor = []) {
   const { rows: usuarios } = await query(
     'SELECT id_usuario, email, estado FROM app.usuarios WHERE id_usuario = $1',
     [idUsuario],
@@ -531,25 +540,78 @@ export async function restablecerPassword(idUsuario, idActor, idEmpresa = null) 
     throw new AppError(404, 'USUARIO_NO_ENCONTRADO', 'Ese usuario no existe.');
   }
 
-  // Restricciones de alcance: un admin de tenant no puede resetear a quien no le pertenece.
+  // Restricciones de alcance cuando el reseteo lo pide una empresa.
+  // Son cuatro barreras en cascada, de la más amplia a la más fina.
   if (idEmpresa) {
-    const esMiembro = await conEmpresa(idEmpresa, (client) =>
-      client.query(
-        "SELECT 1 FROM app.membresias WHERE id_usuario = $1 AND estado <> 'RETIRADA'",
+    /**
+     * BARRERA 1: pertenencia al tenant.
+     * La consulta corre dentro de conEmpresa(), así que RLS ya impide
+     * ver membresías de otras empresas. De paso traemos los roles y el
+     * ámbito del objetivo, que hacen falta en las barreras 3 y 4.
+     */
+    const objetivo = await conEmpresa(idEmpresa, async (client) => {
+      const { rows } = await client.query(
+        `SELECT m.id_membresia,
+                COALESCE(ARRAY_AGG(r.codigo) FILTER (WHERE r.codigo IS NOT NULL), '{}') AS roles,
+                COALESCE((SELECT ARRAY_AGG(mp.id_prestador)
+                            FROM app.membresia_prestadores mp
+                           WHERE mp.id_membresia = m.id_membresia), '{}') AS prestadores
+           FROM app.membresias m
+           LEFT JOIN app.membresia_roles mr ON mr.id_membresia = m.id_membresia
+           LEFT JOIN app.roles r ON r.id_rol = mr.id_rol
+          WHERE m.id_usuario = $1 AND m.estado <> 'RETIRADA'
+          GROUP BY m.id_membresia`,
         [idUsuario],
-      ),
-    );
-    if (esMiembro.rowCount === 0) {
+      );
+      return rows[0];
+    });
+
+    if (!objetivo) {
+      // Mismo mensaje que "no existe": si dijéramos "existe pero no es
+      // tuyo", el atacante podría mapear qué correos hay registrados
+      // en OTRAS empresas de la plataforma probando identificadores.
       throw new AppError(404, 'USUARIO_NO_ENCONTRADO', 'Ese usuario no existe en tu empresa.');
     }
 
-    // Impide escalar privilegios: un admin local no puede secuestrar la cuenta de un SUPER_ADMIN global.
+    /**
+     * BARRERA 2: nadie desde una empresa toca una cuenta de plataforma.
+     * Impide que un admin local secuestre la cuenta de un SUPER_ADMIN
+     * simplemente invitándolo antes a su empresa.
+     */
     const { rows: plataforma } = await query(
       'SELECT app.fn_roles_plataforma($1) AS roles',
       [idUsuario],
     );
     if ((plataforma[0]?.roles ?? []).length > 0) {
       throw new AppError(403, 'SIN_PERMISO', 'No puedes restablecer esa cuenta.');
+    }
+
+    /**
+     * BARRERA 3: un admin de empresa NO puede resetear a otro admin.
+     * Si pudiera, dos administradores podrían tomarse la cuenta
+     * mutuamente y no habría forma de saber cuál actuó de buena fe.
+     * Ese caso queda reservado al administrador de la plataforma.
+     */
+    if (objetivo.roles.includes('ADMIN_EMPRESA')) {
+      throw new AppError(
+        403,
+        'SIN_PERMISO',
+        'Solo el administrador de la plataforma puede restablecer la contraseña de un administrador de empresa.',
+      );
+    }
+
+    /**
+     * BARRERA 4: ámbito por prestador.
+     * Un PRESTADOR trae en su token la lista de sedes que administra y
+     * solo alcanza a la gente de esas sedes. Un ADMIN_EMPRESA trae la
+     * lista VACÍA, que por convención significa "sin límite".
+     * Se responde 404 y no 403 por la misma razón de la barrera 1.
+     */
+    if (ambitoActor.length > 0) {
+      const compartePrestador = objetivo.prestadores.some((p) => ambitoActor.includes(p));
+      if (!compartePrestador) {
+        throw new AppError(404, 'USUARIO_NO_ENCONTRADO', 'Ese usuario no existe en tu empresa.');
+      }
     }
   }
 
@@ -585,4 +647,184 @@ export async function restablecerPassword(idUsuario, idActor, idEmpresa = null) 
   );
 
   return { idUsuario, email: usuario.email, passwordTemporal };
+}
+
+// ================================================================== //
+// EDITOR DE ROLES Y PERMISOS                                         //
+// ================================================================== //
+
+/**
+ * ¿Por qué esto funciona sin desplegar código?
+ * Porque la matriz rol x permiso vive en la tabla app.rol_permisos, y
+ * fn_membresias_de_usuario la recalcula en CADA login. Cambiar una fila
+ * aquí cambia lo que puede hacer la gente, sin tocar el backend.
+ *
+ * ¿Cuál es la contrapartida a estudiar?
+ * Los permisos viajan DENTRO del JWT, que dura 15 minutos. Si le quitas
+ * un permiso a alguien con sesión abierta, lo conserva hasta que su
+ * token expire. Es el precio de no consultar la base en cada petición:
+ * ganamos velocidad, perdemos inmediatez. Es una decisión consciente,
+ * no un descuido.
+ */
+export async function listarMatrizRoles() {
+  const { rows: roles } = await query(
+    `SELECT r.id_rol, r.codigo, r.nombre, r.descripcion, r.ambito, r.es_sistema,
+            COALESCE(ARRAY_AGG(p.codigo ORDER BY p.codigo)
+                     FILTER (WHERE p.codigo IS NOT NULL), '{}') AS permisos,
+            (SELECT count(*) FROM app.membresia_roles mr WHERE mr.id_rol = r.id_rol)
+            + (SELECT count(*) FROM app.usuario_roles_plataforma up WHERE up.id_rol = r.id_rol)
+              AS asignaciones
+       FROM app.roles r
+       LEFT JOIN app.rol_permisos rp ON rp.id_rol = r.id_rol
+       LEFT JOIN app.permisos p ON p.id_permiso = rp.id_permiso
+      GROUP BY r.id_rol
+      ORDER BY r.ambito DESC, r.codigo`,
+  );
+
+  const { rows: permisos } = await query(
+    `SELECT p.codigo, p.descripcion, m.codigo AS modulo
+       FROM app.permisos p
+       LEFT JOIN app.modulos m ON m.id_modulo = p.id_modulo
+      ORDER BY COALESCE(m.codigo, ''), p.codigo`,
+  );
+
+  return {
+    roles: roles.map((r) => ({
+      idRol: r.id_rol,
+      codigo: r.codigo,
+      nombre: r.nombre,
+      descripcion: r.descripcion,
+      ambito: r.ambito,
+      esSistema: r.es_sistema ?? false,
+      permisos: r.permisos,
+      asignaciones: Number(r.asignaciones),
+    })),
+    permisos: permisos.map((p) => ({
+      codigo: p.codigo,
+      descripcion: p.descripcion,
+      modulo: p.modulo,   // null = permiso base, no depende de módulo
+    })),
+  };
+}
+
+/**
+ * Crea un rol nuevo.
+ * El código se normaliza a mayúsculas y guiones bajos porque el resto
+ * del sistema lo compara literalmente (WHERE codigo = $1). Dejar que
+ * entre "Supervisor " con espacio al final sería una fuente silenciosa
+ * de "por qué no le funcionan los permisos a esta persona".
+ */
+export async function crearRol(datos) {
+  const codigo = datos.codigo.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+
+  const duplicado = await query('SELECT 1 FROM app.roles WHERE codigo = $1', [codigo]);
+  if (duplicado.rowCount > 0) {
+    throw new AppError(409, 'ROL_EN_USO', 'Ya existe un rol con ese código.');
+  }
+
+  const { rows } = await query(
+    `INSERT INTO app.roles (codigo, nombre, descripcion, ambito)
+     VALUES ($1, $2, $3, $4::app.ambito_rol)
+     RETURNING id_rol, codigo, nombre, descripcion, ambito`,
+    [codigo, datos.nombre, datos.descripcion || null, datos.ambito ?? 'EMPRESA'],
+  );
+
+  return {
+    idRol: rows[0].id_rol,
+    codigo: rows[0].codigo,
+    nombre: rows[0].nombre,
+    descripcion: rows[0].descripcion,
+    ambito: rows[0].ambito,
+    permisos: [],
+    asignaciones: 0,
+  };
+}
+
+/**
+ * Reemplaza la lista COMPLETA de permisos de un rol.
+ *
+ * ¿Por qué borrar todo y reinsertar en vez de calcular diferencias?
+ * Porque el resultado final es exactamente lo que llegó, sin estados
+ * intermedios. Va dentro de una transacción: o queda toda la matriz
+ * nueva, o no queda ninguna. Nunca a medias.
+ */
+export async function actualizarPermisosDeRol(idRol, codigosPermisos) {
+  const { rows: roles } = await query(
+    'SELECT codigo FROM app.roles WHERE id_rol = $1',
+    [idRol],
+  );
+  if (roles.length === 0) {
+    throw new AppError(404, 'ROL_NO_ENCONTRADO', 'Ese rol no existe.');
+  }
+
+  /**
+   * SUPER_ADMIN queda fuera del editor a propósito.
+   * Si alguien le quitara 'empresas.gestionar' por error, NADIE podría
+   * volver a entrar a arreglarlo: el único rol capaz de editar roles se
+   * habría quitado a sí mismo el permiso. Es el mismo razonamiento del
+   * último administrador de empresa: hay estados sin retorno, y la
+   * aplicación debe negarse a llegar a ellos.
+   */
+  if (roles[0].codigo === 'SUPER_ADMIN') {
+    throw new AppError(
+      409,
+      'ROL_PROTEGIDO',
+      'El rol de administrador de plataforma no se puede editar: dejaría la plataforma sin acceso.',
+    );
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM app.rol_permisos WHERE id_rol = $1', [idRol]);
+    if (codigosPermisos.length > 0) {
+      // El WHERE codigo = ANY(...) descarta solo los códigos que no
+      // existan: no hace falta validarlos uno por uno antes.
+      await client.query(
+        `INSERT INTO app.rol_permisos (id_rol, id_permiso)
+         SELECT $1, id_permiso FROM app.permisos WHERE codigo = ANY($2::text[])`,
+        [idRol, codigosPermisos],
+      );
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  return listarMatrizRoles();
+}
+
+/** Elimina un rol. Dos condiciones: que no sea del sistema y que nadie lo use. */
+export async function eliminarRol(idRol) {
+  const { rows } = await query(
+    `SELECT r.codigo,
+            (SELECT count(*) FROM app.membresia_roles mr WHERE mr.id_rol = r.id_rol)
+            + (SELECT count(*) FROM app.usuario_roles_plataforma up WHERE up.id_rol = r.id_rol)
+              AS asignaciones
+       FROM app.roles r WHERE r.id_rol = $1`,
+    [idRol],
+  );
+  const rol = rows[0];
+  if (!rol) throw new AppError(404, 'ROL_NO_ENCONTRADO', 'Ese rol no existe.');
+
+  const PROTEGIDOS = ['SUPER_ADMIN', 'ADMIN_EMPRESA', 'PRESTADOR', 'EMPLEADO', 'CLIENTE'];
+  if (PROTEGIDOS.includes(rol.codigo)) {
+    throw new AppError(409, 'ROL_PROTEGIDO', 'Ese rol es parte del sistema y no se puede eliminar.');
+  }
+
+  // Sin esta comprobación, la FK de membresia_roles lanzaría un 23503
+  // feo. Preferimos un mensaje que diga cuánta gente quedaría afectada.
+  if (Number(rol.asignaciones) > 0) {
+    throw new AppError(
+      409,
+      'ROL_EN_USO',
+      `No puedes eliminar ese rol: ${rol.asignaciones} persona(s) lo tienen asignado.`,
+    );
+  }
+
+  await query('DELETE FROM app.roles WHERE id_rol = $1', [idRol]);
+  return { idRol };
 }

@@ -18,6 +18,7 @@
       <nav class="barra__nav">
         <a href="inicio.html">Inicio</a>
         <a href="agenda.html" aria-current="page">Agenda</a>
+        <a href="crm.html" id="nav-crm" hidden>CRM</a>
         <a href="perfil.html">Perfil</a>
         <a href="admin.html" id="nav-admin" hidden>Plataforma</a>
       </nav>
@@ -30,10 +31,9 @@
 
     <main class="tablero tablero--ancho">
 
-      <!-- Pestañas principales: Turnos / Casos -->
+      <!-- Pestañas principales: Turnos  -->
       <div class="pestanas pestanas--grandes" role="tablist">
         <button type="button" class="pestana" role="tab" data-panel="p-turnos" aria-selected="true">Turnos</button>
-        <button type="button" class="pestana" role="tab" data-panel="p-casos" aria-selected="false" id="tab-casos">Casos</button>
       </div>
 
       <div id="aviso-agenda" class="aviso aviso--con-acciones" role="alert" hidden>
@@ -175,14 +175,6 @@
             </div>
             <button type="submit" class="boton">Vincular</button>
           </form>
-        </section>
-      </div>
-
-      <!-- ============ CASOS ============ -->
-      <div id="p-casos" class="contenido-pestana" hidden>
-        <section class="tarjeta">
-          <h2>Casos de servicio</h2>
-          <p class="apoyo" id="mensaje-casos">El módulo CRM está en construcción.</p>
         </section>
       </div>
 

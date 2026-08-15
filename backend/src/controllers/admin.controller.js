@@ -140,18 +140,64 @@ export async function restablecerPassword(req, res, next) {
 }
 
 /**
- * Restablecimiento por el administrador de una empresa local.
- * ¿Cómo se le pone el límite? Le pasamos `req.usuario.idEmpresa` (que sale del Token)
- * a la función. El servicio usará esto para asegurarse de que el usuario a resetear 
- * realmente pertenezca a esa misma empresa.
+ * ¿Qué hace esta función?
+ * Restablecimiento pedido desde una empresa (ADMIN_EMPRESA o PRESTADOR).
+ *
+ * ¿Por qué el idEmpresa sale del token y no de la URL?
+ * Porque si viniera de la URL, bastaría con cambiar ese valor para
+ * resetear gente de otra empresa. El token va firmado: nadie puede
+ * alterarlo sin invalidar la firma.
+ *
+ * AMbito
+ * Quien tiene 'usuarios.gestionar' (ADMIN_EMPRESA) manda lista vacía,
+ * que significa "sin límite de sede". Un PRESTADOR manda sus sedes
+ * asignadas, y el servicio solo le deja tocar a la gente de esas.
  */
 export async function restablecerPasswordMiEmpresa(req, res, next) {
   try {
+    const ambito = req.usuario.permisos.includes('usuarios.gestionar')
+      ? []
+      : (req.usuario.prestadores ?? []);
+
     const resultado = await adminService.restablecerPassword(
       req.params.idUsuario,
       req.usuario.idUsuario,
-      req.usuario.idEmpresa, // Límite estricto
+      req.usuario.idEmpresa,
+      ambito,
     );
     res.json(resultado);
+  } catch (error) { next(error); }
+}
+
+/* --- Editor de roles y permisos ------------------------------------ */
+
+export async function matrizRoles(_req, res, next) {
+  try {
+    res.json(await adminService.listarMatrizRoles());
+  } catch (error) { next(error); }
+}
+
+export async function crearRol(req, res, next) {
+  try {
+    const rol = await adminService.crearRol(req.body);
+    res.status(201).json({ rol });
+  } catch (error) { next(error); }
+}
+
+export async function actualizarPermisosDeRol(req, res, next) {
+  try {
+    // Se devuelve la matriz completa para que el frontend repinte todo
+    // sin tener que pedirla otra vez.
+    const matriz = await adminService.actualizarPermisosDeRol(
+      Number(req.params.idRol),
+      req.body.permisos,
+    );
+    res.json(matriz);
+  } catch (error) { next(error); }
+}
+
+export async function eliminarRol(req, res, next) {
+  try {
+    res.json(await adminService.eliminarRol(Number(req.params.idRol)));
   } catch (error) { next(error); }
 }
