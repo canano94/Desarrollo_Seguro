@@ -1,1 +1,8 @@
 backend/.env
+bd_open/03_schema_v2_empresas_membresias_pg10.sql
+bd_open/04_funciones_admin_plataforma_pg10.sql
+bd_open/05_reset_password_admin_pg10.sql
+bd_open/06_rol_prestador_ambito_pg10.sql
+bd_open/dump_esquema.sql
+bd_open/oc.exe
+bd_open/userbd.txt

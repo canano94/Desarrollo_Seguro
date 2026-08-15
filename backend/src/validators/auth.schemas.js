@@ -1,3 +1,4 @@
+// Importa la librería zod //
 import { z } from 'zod';
 
 /**
@@ -7,6 +8,7 @@ import { z } from 'zod';
  * (mass assignment).
  */
 
+// Almacena la validación para identificadores de empresa //
 const slugEmpresa = z
   .string()
   .trim()
@@ -14,8 +16,10 @@ const slugEmpresa = z
   .max(60)
   .regex(/^[a-z0-9](-?[a-z0-9]+)*$/, 'Identificador de empresa inválido.');
 
+// Almacena el esquema de correos en minúsculas y sin espacios //
 const email = z.string().trim().toLowerCase().email().max(254);
 
+// Almacena el comprobador de formato UUID válido //
 const uuid = z.string().uuid('Identificador inválido.');
 
 /**
@@ -31,6 +35,9 @@ const password = z
   .regex(/[A-Z]/, 'Debe incluir al menos una mayúscula.')
   .regex(/[0-9]/, 'Debe incluir al menos un número.');
 
+/**
+ * Función transformadora de cadenas cortas que elimina caracteres inválidos.
+ */
 const textoCorto = (max) =>
   z
     .string()
@@ -51,7 +58,9 @@ export const loginSchema = z
   })
   .strict();
 
-/** Elegir empresa activa, o cambiarse a otra sin volver a autenticarse. */
+/** 
+ * Elegir empresa activa, o cambiarse a otra sin volver a autenticarse. 
+ */
 export const seleccionEmpresaSchema = z
   .object({
     idEmpresa: uuid,
@@ -74,6 +83,7 @@ export const registroSchema = z
   })
   .strict();
 
+// Esquema de actualización parcial donde al menos se debe mandar un campo //
 export const actualizarPerfilSchema = z
   .object({
     nombres: textoCorto(100).optional(),
@@ -93,7 +103,6 @@ export const actualizarPerfilSchema = z
  * Si fuera un campo más del formulario, quien secuestre una sesión se
  * apodera de la cuenta.
  */
-
 export const cambioPasswordSchema = z
   .object({
     passwordActual: z.string().min(1).max(72),
@@ -101,7 +110,11 @@ export const cambioPasswordSchema = z
   })
   .strict();
 
-/** Middleware genérico: valida y REEMPLAZA req.body por el objeto limpio. */
+/** 
+ * Middleware genérico: valida y REEMPLAZA req.body por el objeto limpio. 
+ * En caso de que se presente un error en el parseo, va a generar este formato
+ * devolviendo las propiedades con problema y un status HTTP de error de validación.
+ */
 export function validar(schema) {
   return (req, _res, next) => {
     const resultado = schema.safeParse(req.body);

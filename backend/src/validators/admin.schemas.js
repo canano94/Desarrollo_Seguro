@@ -1,5 +1,7 @@
+// Importa la librería zod para crear y validar esquemas de datos //
 import { z } from 'zod';
 
+// Almacena en una constante la validación para identificadores (slugs) //
 const slug = z
   .string()
   .trim()
@@ -8,8 +10,13 @@ const slug = z
   .max(60)
   .regex(/^[a-z0-9](-?[a-z0-9]+)*$/, 'Solo minúsculas, números y guiones.');
 
+// Almacena en una constante la validación de formato y longitud de correos //
 const email = z.string().trim().toLowerCase().email().max(254);
 
+/**
+ * Función que genera una validación para textos genéricos.
+ * Recorta espacios en blanco, limita el tamaño máximo y elimina caracteres de control.
+ */
 const texto = (max) =>
   z
     .string()
@@ -19,6 +26,7 @@ const texto = (max) =>
     // eslint-disable-next-line no-control-regex
     .transform((v) => v.replace(/[\u0000-\u001F\u007F]/g, ''));
 
+// Almacena las reglas de seguridad exigidas para las contraseñas //
 const password = z
   .string()
   .min(12, 'La contraseña debe tener al menos 12 caracteres.')
@@ -31,6 +39,7 @@ const password = z
  * Los módulos se validan contra una lista cerrada. Si mañana nace un
  * módulo nuevo se agrega aquí y en la tabla app.modulos — a propósito:
  * que el cliente no pueda inventarse códigos.
+ * En caso de que se manden datos no declarados, el .strict() generará un error.
  */
 export const crearEmpresaSchema = z
   .object({
@@ -52,6 +61,7 @@ export const crearEmpresaSchema = z
   })
   .strict();
 
+// Esquema que define los parámetros de búsqueda de usuarios con paginación //
 export const busquedaUsuariosSchema = z
   .object({
     busqueda: z.string().trim().max(80).optional(),
@@ -60,7 +70,6 @@ export const busquedaUsuariosSchema = z
   })
   .strict();
 
-
 /**
  * Actualizar los datos de una empresa (PATCH).
  *
@@ -68,12 +77,9 @@ export const busquedaUsuariosSchema = z
  * quiere cambiar; el .refine() del final impide que mande un body vacío.
  *
  * NO están aquí, a propósito:
- *   slug    -> es el identificador público; cambiarlo rompe enlaces y
- *              referencias que ya circulan.
- *   modulos -> tienen su propio endpoint: quitar un módulo afecta la
- *              contratación y deja gente sin acceso, no es lo mismo que
- *              corregir un teléfono.
- *   estado  -> también endpoint aparte, por la misma razón.
+ *   slug    -> es el identificador público; cambiarlo rompe enlaces y referencias.
+ *   modulos -> tienen su propio endpoint.
+ *   estado  -> también endpoint aparte.
  */
 export const actualizarEmpresaSchema = z
   .object({
@@ -100,7 +106,9 @@ export const cambiarEstadoEmpresaSchema = z
   })
   .strict();
 
-/** Módulos contratados. Se manda la lista COMPLETA, no un cambio parcial. */
+/** 
+ * Módulos contratados. Se manda la lista COMPLETA, no un cambio parcial. 
+ */
 export const modulosEmpresaSchema = z
   .object({
     modulos: z.array(z.enum(['AGENDA', 'CRM'])).min(1, 'Elige al menos un módulo.'),
@@ -123,7 +131,10 @@ export const miembroEmpresaSchema = z
   })
   .strict();
 
-/** Cambiar el rol de un miembro, o retirarlo de la empresa. */
+/** 
+ * Cambiar el rol de un miembro, o retirarlo de la empresa. 
+ * En caso de enviar un objeto vacío, el .refine() va a generar un error.
+ */
 export const actualizarMiembroSchema = z
   .object({
     rol: z.enum(['CLIENTE', 'EMPLEADO', 'PRESTADOR', 'ADMIN_EMPRESA']).optional(),
@@ -139,9 +150,8 @@ export const actualizarMiembroSchema = z
  * Valida un parámetro de ruta con formato uuid.
  *
  * Sin esto, un id ausente o mal formado llega tal cual a PostgreSQL y
- * revienta con "sintaxis de entrada no es válida para tipo uuid" — un
- * error 500 que además filtra detalles internos en el stack. Validar en
- * el borde convierte eso en un 422 limpio.
+ * revienta con un error 500 que filtra detalles. 
+ * En caso que se presente un identificador no válido, va a generar un error 422 limpio.
  */
 export function validarParamUuid(nombre) {
   return (req, _res, next) => {
@@ -163,7 +173,10 @@ export function validarParamUuid(nombre) {
   };
 }
 
-/** Valida query strings en vez del body. */
+/** 
+ * Valida query strings en la URL en vez del body. 
+ * En caso de no cumplir con el esquema, genera una alerta detallada de validación.
+ */
 export function validarConsulta(schema) {
   return (req, _res, next) => {
     const resultado = schema.safeParse(req.query);

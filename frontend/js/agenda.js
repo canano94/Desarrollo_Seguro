@@ -691,4 +691,13 @@ async function iniciar() {
   contenido.hidden = false;
 }
 
-iniciar().catch(() => location.replace('index.html'));
+iniciar().catch((error) => {
+  // Contraseña temporal: la API rechaza todo hasta que se cambie.
+  if (error?.codigo === 'DEBE_CAMBIAR_PASSWORD') {
+    return location.replace('cambiar-password.html');
+  }
+  const esSesion = ['SIN_TOKEN', 'TOKEN_INVALIDO', 'REFRESH_INVALIDO',
+                    'REFRESH_EXPIRADO', 'SIN_REFRESH_TOKEN'].includes(error?.codigo);
+  if (esSesion) return location.replace('index.html');
+  cargando.textContent = `No se pudo cargar la agenda: ${error?.mensaje ?? error}`;
+});

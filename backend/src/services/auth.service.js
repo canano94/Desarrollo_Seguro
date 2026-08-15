@@ -1,5 +1,8 @@
+// Importa las dependencias necesarias de base de datos //
 import { query, conEmpresa } from '../db/pool.js';
+// Importa utilidades de errores para lanzar estatus HTTP //
 import { AppError, credencialesInvalidas } from '../utils/errors.js';
+// Importa el set completo de utilidades criptográficas para sesiones seguras //
 import {
   hashearPassword,
   verificarPassword,
@@ -7,16 +10,16 @@ import {
   generarRefreshToken,
   sha256,
 } from '../utils/crypto.js';
+// Importa la función generadora de JWT //
 import { firmarAccessToken } from '../utils/jwt.js';
+// Importa variables de entorno globales //
 import { env } from '../config/env.js';
 
-/* ------------------------------------------------------------------ */
-/* Consultas de apoyo                                                  */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Consultas de apoyo                                                 //
+// ------------------------------------------------------------------ //
 
 async function buscarUsuarioPorEmail(email) {
-  // usuarios no lleva RLS: es identidad global, anterior a cualquier
-  // empresa. Por eso el login puede consultarla directo.
   const { rows } = await query('SELECT * FROM app.usuarios WHERE email = $1', [email]);
   return rows[0] ?? null;
 }
@@ -26,7 +29,6 @@ async function buscarUsuarioPorId(idUsuario) {
   return rows[0] ?? null;
 }
 
-/** Empresas a las que pertenece la persona, con roles, permisos y módulos. */
 async function membresiasDe(idUsuario) {
   const { rows } = await query('SELECT * FROM app.fn_membresias_de_usuario($1)', [idUsuario]);
   return rows;
@@ -57,7 +59,6 @@ function identidadPublica(usuario) {
   };
 }
 
-/** Lo que el frontend necesita para pintar el selector de empresa. */
 function empresaPublica(m) {
   return {
     idEmpresa: m.id_empresa,
@@ -66,8 +67,6 @@ function empresaPublica(m) {
     roles: m.roles,
     permisos: m.permisos,
     modulos: m.modulos,
-    // Ámbito: prestadores a los que está limitada esta membresía.
-    // Un arreglo VACÍO significa "sin límite" (admin de empresa, cliente).
     prestadores: m.prestadores ?? [],
   };
 }
@@ -85,17 +84,10 @@ async function emitirRefreshToken(usuario, ctx) {
   return { valor, expira, idToken: rows[0].id_token };
 }
 
-/**
- * Arma la respuesta de sesión. Si hay una empresa activa, el token la
- * lleva; si no (super admin sin membresías), va solo con los roles de
- * plataforma.
- */
 function armarSesion({ usuario, contexto, rolesPlataforma, membresias }) {
   return {
     accessToken: firmarAccessToken({ usuario, contexto, rolesPlataforma }),
-    // El frontend lo usa para redirigir al cambio obligatorio; el
-    // bloqueo real vive en el middleware, que lo lee del token.
-    debeCambiarPassword: usuario.debe_cambiar_password,
+    debeCambiarPassword: usuario.debe_cambiar_password === true,
     usuario: identidadPublica(usuario),
     empresaActiva: contexto ? empresaPublica(contexto) : null,
     empresas: membresias.map(empresaPublica),
@@ -103,9 +95,9 @@ function armarSesion({ usuario, contexto, rolesPlataforma, membresias }) {
   };
 }
 
-/* ------------------------------------------------------------------ */
-/* Registro                                                            */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Registro                                                           //
+// ------------------------------------------------------------------ //
 
 export async function registrar(datos, ctx) {
   let empresa = null;
@@ -123,9 +115,6 @@ export async function registrar(datos, ctx) {
 
   const yaExiste = await buscarUsuarioPorEmail(datos.email);
   if (yaExiste) {
-    // Este 409 revela que el correo existe. Es el precio de un registro
-    // autoservicio claro; la alternativa es responder 202 siempre y
-    // avisar por correo. Queda anotado como mejora para otro sprint.
     throw new AppError(409, 'EMAIL_EN_USO', 'Ya existe una cuenta con ese correo.');
   }
 
@@ -147,8 +136,6 @@ export async function registrar(datos, ctx) {
   const usuario = rows[0];
 
   if (empresa) {
-    // El rol NUNCA viene del body: el registro autoservicio solo crea
-    // clientes. Todo lo demás se asigna desde el módulo de administración.
     await conEmpresa(empresa.id_empresa, async (client) => {
       const { rows: nuevas } = await client.query(
         `INSERT INTO app.membresias (id_usuario, id_empresa) VALUES ($1, $2)
@@ -174,16 +161,23 @@ export async function registrar(datos, ctx) {
   return identidadPublica(usuario);
 }
 
-/* ------------------------------------------------------------------ */
-/* Login — solo correo y contraseña                                    */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Login                                                              //
+// ------------------------------------------------------------------ //
 
+/**
+ * ¿Qué hacen todas estas precauciones en el Login?
+ * 1. Quemar tiempo: Como vimos en Utils, si el correo no existe, simulamos que toma el mismo 
+ *    tiempo revisando su contraseña para que los hackers no midan diferencias de latencia.
+ * 2. Cero delaciones: Si la contraseña falla, manda el MISMO error ('Credenciales Invalidas') 
+ *    que si el correo no existiera.
+ * 3. Bloqueos dinámicos: Monitorea cuántos fallos consecutivos lleva. Al alcanzar el máximo, 
+ *    inyecta una fecha a futuro y congela la cuenta sin requerir acciones manuales.
+ */
 export async function login({ email, password }, ctx) {
   const usuario = await buscarUsuarioPorEmail(email);
 
   if (!usuario) {
-    // Gastamos el mismo tiempo que en un login real para que la latencia
-    // no delate qué correos están registrados.
     await quemarTiempo();
     await registrarIntento({ email, exito: false, motivo: 'USUARIO_NO_EXISTE', ctx });
     throw credencialesInvalidas();
@@ -221,7 +215,6 @@ export async function login({ email, password }, ctx) {
       ctx,
     });
 
-    // Misma respuesta que "usuario no existe": no revelamos nada.
     throw credencialesInvalidas();
   }
 
@@ -253,12 +246,6 @@ export async function login({ email, password }, ctx) {
 
   await registrarIntento({ email, idUsuario: usuario.id_usuario, exito: true, motivo: 'OK', ctx });
 
-  /**
-   * Con una sola membresía entramos directo. Con varias, devolvemos la
-   * lista y NO emitimos access token todavía: la persona elige y la
-   * cookie de refresh la identifica en /empresa. Así nunca circula un
-   * token sin empresa definida.
-   */
   const contexto = membresias.length === 1 ? membresias[0] : null;
   const requiereSeleccion = membresias.length > 1;
 
@@ -283,15 +270,10 @@ export async function login({ email, password }, ctx) {
   };
 }
 
-/* ------------------------------------------------------------------ */
-/* Elegir o cambiar de empresa                                         */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Elegir o cambiar de empresa                                        //
+// ------------------------------------------------------------------ //
 
-/**
- * Emite un access token para la empresa pedida. Se usa tanto al elegir
- * después del login como al cambiar de empresa más adelante: en ambos
- * casos la identidad sale de la cookie, no del body.
- */
 export async function seleccionarEmpresa(idUsuario, idEmpresa) {
   const usuario = await buscarUsuarioPorId(idUsuario);
   if (!usuario || usuario.estado !== 'ACTIVO') {
@@ -303,9 +285,6 @@ export async function seleccionarEmpresa(idUsuario, idEmpresa) {
     rolesPlataformaDe(idUsuario),
   ]);
 
-  // La pertenencia se verifica contra la base, nunca contra lo que
-  // mande el cliente. Sin esto, cambiar un uuid en la petición daría
-  // acceso a otra empresa.
   const contexto = membresias.find((m) => m.id_empresa === idEmpresa);
   if (!contexto) {
     throw new AppError(403, 'SIN_ACCESO_EMPRESA', 'No perteneces a esa empresa.');
@@ -314,10 +293,21 @@ export async function seleccionarEmpresa(idUsuario, idEmpresa) {
   return armarSesion({ usuario, contexto, rolesPlataforma, membresias });
 }
 
-/* ------------------------------------------------------------------ */
-/* Refresh con rotación + detección de reuso                           */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Refresh Token                                                      //
+// ------------------------------------------------------------------ //
 
+/**
+ * ¿Cómo funciona la arquitectura de Rotación y Detección de Reuso?
+ * Cada vez que expiran los 15 minutos del token corto, se usa el token largo para pedir otro.
+ * ¡PERO el token largo es de UN SOLO USO! Al pedir el reemplazo, el largo queda marcado 
+ * como revocado y se emite uno nuevo.
+ * 
+ * Si llega un token largo que YA estaba revocado en base de datos, significa que se clonó: 
+ * o lo robaron, o el internet se cayó y se está interceptando. El sistema entra en pánico 
+ * y desactiva absolutamente toda la cadena y familia de sesiones del usuario para forzar 
+ * a todo el mundo a volver a escribir su contraseña. Un escudo perfecto.
+ */
 export async function refrescarSesion(refreshTokenPlano, idEmpresaDeseada, ctx) {
   if (!refreshTokenPlano) {
     throw new AppError(401, 'SIN_REFRESH_TOKEN', 'No hay sesión activa.');
@@ -333,13 +323,6 @@ export async function refrescarSesion(refreshTokenPlano, idEmpresaDeseada, ctx) 
 
   if (!token) throw new AppError(401, 'REFRESH_INVALIDO', 'Sesión inválida.');
 
-  /**
-   * Rotación con detección de reuso.
-   * Un refresh token se usa UNA vez. Si llega uno ya revocado, o lo
-   * robaron, o el legítimo fue interceptado. No hay forma de saber cuál
-   * es el atacante, así que se derriba toda la familia de sesiones y se
-   * invalidan los JWT vigentes subiendo token_version.
-   */
   if (token.revocado_en) {
     await query(
       'UPDATE app.refresh_tokens SET revocado_en = now() WHERE id_usuario = $1 AND revocado_en IS NULL',
@@ -373,8 +356,6 @@ export async function refrescarSesion(refreshTokenPlano, idEmpresaDeseada, ctx) 
     [token.id_token, nuevo.idToken],
   );
 
-  // El frontend recuerda cuál empresa tenía abierta y la pide de vuelta;
-  // si no pide ninguna y hay una sola, entramos directo a esa.
   let contexto = null;
   if (idEmpresaDeseada) {
     contexto = membresias.find((m) => m.id_empresa === idEmpresaDeseada) ?? null;
@@ -388,6 +369,7 @@ export async function refrescarSesion(refreshTokenPlano, idEmpresaDeseada, ctx) 
     return {
       requiereSeleccion: true,
       accessToken: null,
+      debeCambiarPassword: usuario.debe_cambiar_password,
       usuario: identidadPublica(usuario),
       empresaActiva: null,
       empresas: membresias.map(empresaPublica),
@@ -405,9 +387,9 @@ export async function refrescarSesion(refreshTokenPlano, idEmpresaDeseada, ctx) 
   };
 }
 
-/* ------------------------------------------------------------------ */
-/* Logout                                                              */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Logout                                                             //
+// ------------------------------------------------------------------ //
 
 export async function cerrarSesion(refreshTokenPlano) {
   if (!refreshTokenPlano) return;
@@ -428,9 +410,9 @@ export async function cerrarTodasLasSesiones(idUsuario) {
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* Perfil                                                              */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Perfil                                                             //
+// ------------------------------------------------------------------ //
 
 export async function obtenerPerfil(idUsuario) {
   const usuario = await buscarUsuarioPorId(idUsuario);
@@ -449,12 +431,12 @@ export async function obtenerPerfil(idUsuario) {
 }
 
 /**
- * Lista blanca de columnas editables. Es la pieza clave: el nombre de
- * una columna NO puede ir como parámetro ($1) en SQL, así que se
- * concatena al texto de la consulta. Concatenar algo que venga del
- * usuario sería inyección directa — por eso solo se concatenan valores
- * de este arreglo, escrito aquí en el código. Los VALORES sí van
- * parametrizados.
+ * ¿Por qué el perfil es la demostración perfecta de seguridad IDOR?
+ * 1. Lista blanca (`CAMPOS_EDITABLES`): Impide inyección SQL dinámica. Si alguien trata de mandar 
+ *    `"token_version": 0` en el body para revivir tokens expirados, el `.filter()` lo elimina de raíz.
+ * 2. Cero parámetros en URL: Fíjate que en la consulta SQL, el ID del usuario (`idUsuario`) se saca 
+ *    directamente del Token en el servidor, NUNCA del cliente. Así evitamos IDOR (Insecure Direct 
+ *    Object Reference) donde alguien podría cambiar datos ajenos manipulando peticiones web.
  */
 const CAMPOS_EDITABLES = ['nombres', 'apellidos', 'telefono', 'documento'];
 
@@ -467,8 +449,6 @@ export async function actualizarPerfil(idUsuario, datos) {
   const asignaciones = campos.map((campo, i) => `${campo} = $${i + 2}`).join(', ');
   const valores = campos.map((campo) => (datos[campo] === '' ? null : datos[campo]));
 
-  // El WHERE usa el id del token, nunca uno del cliente: así nadie edita
-  // el perfil de otra persona (IDOR).
   const { rowCount } = await query(
     `UPDATE app.usuarios SET ${asignaciones} WHERE id_usuario = $1`,
     [idUsuario, ...valores],
@@ -496,7 +476,6 @@ export async function cambiarPassword({ idUsuario, passwordActual, passwordNueva
     [idUsuario, nuevoHash],
   );
 
-  // Cambiar la contraseña cierra todas las sesiones abiertas.
   await query(
     'UPDATE app.refresh_tokens SET revocado_en = now() WHERE id_usuario = $1 AND revocado_en IS NULL',
     [idUsuario],

@@ -1,11 +1,15 @@
+// Importa la librería zod de validaciones //
 import { z } from 'zod';
 
-// uuid() valida el formato antes de que el valor llegue a la base:
-// una cadena rara nunca alcanza a convertirse en consulta.
+// uuid() valida el formato antes de que el valor llegue a la base //
+// una cadena rara nunca alcanza a convertirse en consulta previniendo inyecciones //
 const uuid = z.string().uuid('Identificador inválido.');
 
-// Texto libre: recorta espacios y elimina caracteres de control.
-// El escape definitivo contra XSS lo hace el frontend al renderizar.
+/**
+ * Función que limpia un campo de texto libre.
+ * Recorta espacios y elimina caracteres de control.
+ * El escape definitivo contra XSS lo hace el frontend al renderizar.
+ */
 const texto = (max) =>
   z
     .string()
@@ -15,9 +19,10 @@ const texto = (max) =>
     // eslint-disable-next-line no-control-regex
     .transform((v) => v.replace(/[\u0000-\u001F\u007F]/g, ''));
 
+// Almacena una regla de campo de texto opcional o vacío //
 const opcional = (max) => z.string().trim().max(max).optional().or(z.literal(''));
 
-/* --- Prestadores --------------------------------------------------- */
+// --- Prestadores --------------------------------------------------- //
 export const crearPrestadorSchema = z
   .object({
     nombre: texto(150),          // "Sede Chapinero", "Dra. Pérez"
@@ -27,7 +32,7 @@ export const crearPrestadorSchema = z
   })
   .strict();                     // .strict() rechaza campos no declarados
 
-/* --- Servicios ----------------------------------------------------- */
+// --- Servicios ----------------------------------------------------- //
 export const crearServicioSchema = z
   .object({
     idPrestador: uuid,                                   // a quién pertenece
@@ -38,7 +43,7 @@ export const crearServicioSchema = z
   })
   .strict();
 
-/* --- Miembros de la empresa ---------------------------------------- */
+// --- Miembros de la empresa ---------------------------------------- //
 export const invitarMiembroSchema = z
   .object({
     email: z.string().trim().toLowerCase().email().max(254),
@@ -49,8 +54,7 @@ export const invitarMiembroSchema = z
     rol: z.enum(['CLIENTE', 'EMPLEADO', 'PRESTADOR', 'ADMIN_EMPRESA']),
     cargo: opcional(80),
     // A qué prestadores queda atada la persona. Obligatorio para
-    // EMPLEADO y PRESTADOR; se ignora para CLIENTE y ADMIN_EMPRESA,
-    // que no tienen límite de sede.
+    // EMPLEADO y PRESTADOR; se ignora para CLIENTE y ADMIN_EMPRESA.
     prestadores: z.array(uuid).max(20).optional(),
   })
   .strict()
@@ -59,7 +63,7 @@ export const invitarMiembroSchema = z
     { message: 'Un empleado o prestador debe quedar asignado a al menos un prestador.' },
   );
 
-/* --- Reservas ------------------------------------------------------ */
+// --- Reservas ------------------------------------------------------ //
 export const crearReservaSchema = z
   .object({
     idServicio: uuid,
@@ -77,7 +81,7 @@ export const cambiarEstadoReservaSchema = z
   })
   .strict();
 
-/* --- Reprogramar y observar ---------------------------------------- */
+// --- Reprogramar y observar ---------------------------------------- //
 
 export const reprogramarReservaSchema = z
   .object({
@@ -92,7 +96,9 @@ export const observacionSchema = z
   })
   .strict();
 
-/** Consulta de disponibilidad: qué horas quedan libres ese día. */
+/** 
+ * Consulta de disponibilidad: verifica qué horas quedan libres ese día. 
+ */
 export const disponibilidadSchema = z
   .object({
     idServicio: uuid,

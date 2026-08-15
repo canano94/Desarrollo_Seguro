@@ -1,17 +1,26 @@
+// Importa el módulo de criptografía nativo para generar contraseñas seguras //
 import crypto from 'node:crypto';
+// Importa la configuración de base de datos y la función maestra de multitenencia (conEmpresa) //
 import { query, conEmpresa } from '../db/pool.js';
+// Importa el constructor de errores controlados //
 import { AppError } from '../utils/errors.js';
+// Importa la función para encriptar contraseñas antes de guardarlas //
 import { hashearPassword } from '../utils/crypto.js';
 
-/* ------------------------------------------------------------------ */
-/* Lecturas de plataforma                                              */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Lecturas de plataforma                                             //
+// ------------------------------------------------------------------ //
 
 /**
- * Estas tres funciones llaman a las funciones SECURITY DEFINER del
- * script 04, que son las únicas autorizadas a leer por encima de RLS.
- * El control de quién puede llegar hasta acá vive en las rutas, con
- * exigirPlataforma.
+ * ¿Qué hacen estas funciones (listarEmpresas, listarUsuarios, listarMiembros)?
+ * Consultan a nivel global toda la plataforma utilizando funciones específicas 
+ * de la base de datos (fn_admin_empresas).
+ * 
+ * ¿Por qué para estudiar es importante notar esto?
+ * En PostgreSQL, estas funciones SQL (04) seguramente tienen el modificador 'SECURITY DEFINER'. 
+ * Eso significa que pueden leer por encima de las reglas de seguridad de filas (RLS) que 
+ * normalmente aíslan a cada empresa. Por eso, el control de quién puede disparar esto 
+ * NO vive aquí, sino en las rutas (con el middleware exigirPlataforma).
  */
 
 export async function listarEmpresas() {
@@ -68,11 +77,14 @@ export async function listarMiembros(idEmpresa) {
 }
 
 /**
- * Miembros de la empresa activa, para el ADMIN_EMPRESA.
- * Ojo a la diferencia con listarMiembros(): aquí NO hay función
- * privilegiada. Se usa conEmpresa() y RLS filtra. Un administrador de
- * empresa no necesita ver por encima de su tenant, así que no se le
- * abre esa puerta.
+ * ¿Qué hace esta función?
+ * Lista los miembros de la empresa activa, ideal para la vista del ADMIN_EMPRESA.
+ * 
+ * OJO a la diferencia de arquitectura:
+ * Aquí NO llamamos a una función privilegiada. Usamos `conEmpresa()`, lo que activa 
+ * el RLS (Row Level Security). Esto significa que el administrador de la empresa 
+ * navega con los permisos normales de su tenant y PostgreSQL filtra automáticamente 
+ * para que no vea datos de otras empresas.
  */
 export async function listarMiembrosPropios(idEmpresa) {
   return conEmpresa(idEmpresa, async (client) => {
@@ -101,10 +113,19 @@ export async function listarMiembrosPropios(idEmpresa) {
   });
 }
 
-/* ------------------------------------------------------------------ */
-/* Crear empresa                                                       */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Crear empresa                                                      //
+// ------------------------------------------------------------------ //
 
+/**
+ * ¿Qué hace esta función?
+ * Crea el cascarón de la empresa, le asigna módulos y, si mandas un admin, 
+ * le crea la cuenta (o reutiliza una existente) vinculándolo como administrador.
+ * 
+ * ¿Por qué usa `RETURNING`?
+ * Para ahorrarse una consulta extra. PostgreSQL inserta y devuelve los datos
+ * (como el id_empresa recién generado) en la misma llamada.
+ */
 export async function crearEmpresa(datos) {
   const duplicado = await query('SELECT 1 FROM app.empresas WHERE slug = $1', [datos.slug]);
   if (duplicado.rowCount > 0) {
@@ -139,8 +160,7 @@ export async function crearEmpresa(datos) {
 
     if (!datos.administrador) return;
 
-    // Si la persona ya tiene cuenta, se reutiliza su identidad: una
-    // sola cuenta por correo en toda la plataforma.
+    // Si la persona ya tiene cuenta, se reutiliza su identidad global.
     const existente = await client.query('SELECT id_usuario FROM app.usuarios WHERE email = $1', [
       datos.administrador.email,
     ]);
@@ -182,35 +202,35 @@ export async function crearEmpresa(datos) {
     razonSocial: empresa.razon_social,
     modulos: datos.modulos,
     administrador: adminCreado,
-    // Solo se devuelve una vez, al crearla. No queda guardada en ningún
-    // lado: en la base solo vive su hash. En un sistema real esto sería
-    // un correo de invitación con un enlace de un solo uso.
+    // Solo se devuelve una vez al crearla. En producción, esto iría 
+    // a un email y NUNCA se guardaría en texto plano en la base.
     passwordTemporal,
   };
 }
 
+/**
+ * ¿Qué hace esta función?
+ * Garantiza la creación de una contraseña aleatoria de 16 caracteres.
+ * El truco del "A1" al inicio asegura que siempre cumpla con la política 
+ * de "al menos una mayúscula y un número" sin depender de la suerte del generador.
+ */
 function generarPasswordTemporal() {
-  // 12 bytes en base64url dan 16 caracteres. Se le agregan un dígito y
-  // una mayúscula para cumplir la política sin depender del azar.
   return `A1${crypto.randomBytes(12).toString('base64url')}`;
 }
 
-/* ================================================================== */
-/* CRUD DE EMPRESAS                                                    */
-/* ================================================================== */
+// ================================================================== //
+// CRUD DE EMPRESAS                                                   //
+// ================================================================== //
 
 /**
- * Mapa camelCase -> snake_case.
- *
- * En actualizarPerfil() bastaba un arreglo porque los nombres coincidían
- * ('nombres' -> 'nombres'). Aquí no: el JSON trae razonSocial y la
- * columna se llama razon_social.
- *
- * Este objeto es además la LISTA BLANCA: el nombre de una columna no
- * puede viajar como parámetro ($1) en SQL, así que se concatena al texto
- * de la consulta. Concatenar algo que venga del cliente sería inyección
- * directa — por eso solo se concatenan claves de este objeto, escrito
- * aquí en el código. Los VALORES sí van parametrizados.
+ * ¿Qué es este diccionario y por qué es clave en seguridad?
+ * Funciona como un mapa (camelCase de JS a snake_case de SQL) y como LISTA BLANCA (Allowlist).
+ * 
+ * En SQL, no puedes enviar el nombre de una columna parametrizada ($1), tienes que 
+ * inyectarlo directamente en el string: `UPDATE tabla SET ${columna} = $1`.
+ * Si confías en la llave que envía el usuario desde el frontend, te pueden hacer 
+ * Inyección SQL. Al cruzar las llaves del request contra ESTE diccionario fijo en 
+ * el código, la inyección queda bloqueada de raíz.
  */
 const COLUMNAS_EMPRESA = {
   razonSocial: 'razon_social',
@@ -220,23 +240,21 @@ const COLUMNAS_EMPRESA = {
 };
 
 export async function actualizarEmpresa(idEmpresa, datos) {
-  // Solo los campos que de verdad llegaron en el body.
+  // Solo arma query de actualización con los campos que realmente llegaron
   const campos = Object.keys(COLUMNAS_EMPRESA).filter((c) => datos[c] !== undefined);
 
   if (campos.length === 0) {
     throw new AppError(400, 'SIN_CAMBIOS', 'No enviaste ningún campo para actualizar.');
   }
 
-  // $1 queda reservado para el id, por eso los valores arrancan en $2.
+  // Se arma la cadena: "razon_social = $2, nit = $3"
   const asignaciones = campos
     .map((campo, i) => `${COLUMNAS_EMPRESA[campo]} = $${i + 2}`)
     .join(', ');
 
-  // Un string vacío significa "borrar el dato", así que se guarda NULL.
+  // Se extraen los valores a inyectar en los parámetros
   const valores = campos.map((campo) => (datos[campo] === '' ? null : datos[campo]));
 
-  // app.empresas NO lleva RLS (no tiene columna id_empresa propia que
-  // filtrar), así que va con query() suelto, no con conEmpresa().
   const { rows } = await query(
     `UPDATE app.empresas SET ${asignaciones}
       WHERE id_empresa = $1
@@ -251,6 +269,13 @@ export async function actualizarEmpresa(idEmpresa, datos) {
   return empresaPublica(rows[0]);
 }
 
+/**
+ * ¿Qué hace esta función?
+ * Aplica una "Baja Lógica" (Soft Delete).
+ * Nunca usamos un DELETE real en producción para entidades principales. Si borraras la empresa,
+ * el ON DELETE CASCADE eliminaría en cadena facturas, historiales de citas, etc., rompiendo 
+ * la auditoría. Simplemente se le cambia el estado.
+ */
 export async function cambiarEstadoEmpresa(idEmpresa, estado) {
   const { rows } = await query(
     `UPDATE app.empresas SET estado = $2::app.estado_empresa
@@ -263,14 +288,14 @@ export async function cambiarEstadoEmpresa(idEmpresa, estado) {
     throw new AppError(404, 'EMPRESA_NO_ENCONTRADA', 'Esa empresa no existe.');
   }
 
-  // Efecto secundario deseado: fn_membresias_de_usuario filtra por
-  // e.estado = 'ACTIVA', así que suspender saca a todos sus usuarios
-  // sin borrar un solo registro. Los tokens vigentes siguen vivos hasta
-  // que expiren (15 min), pero el refresh ya no devolverá esa empresa.
   return empresaPublica(rows[0]);
 }
 
-/** Forma pública de una empresa, para no exponer columnas de más. */
+/** 
+ * ¿Qué hace esta función?
+ * Corta los datos antes de enviarlos al frontend, evitando fugas 
+ * de información interna (como fechas de auditoría o flags técnicos). 
+ */
 function empresaPublica(e) {
   return {
     idEmpresa: e.id_empresa,
@@ -283,25 +308,25 @@ function empresaPublica(e) {
   };
 }
 
-/* ================================================================== */
-/* MÓDULOS CONTRATADOS                                                 */
-/* ================================================================== */
+// ================================================================== //
+// MÓDULOS CONTRATADOS                                                //
+// ================================================================== //
 
+/**
+ * ¿Qué hace esta función y cómo gestiona el historial?
+ * Primero apaga (soft delete) todos los módulos, y luego enciende/crea los solicitados.
+ * 
+ * NUNCA se borran filas. Si una empresa desactiva el CRM, su información de módulo
+ * simplemente pasa a false conservando la fecha de contratación original. 
+ * Si mañana lo vuelve a pagar, su data vieja sigue intacta.
+ */
 export async function cambiarModulos(idEmpresa, modulos) {
-  // app.empresa_modulos SÍ lleva RLS, a diferencia de app.empresas.
-  // Por eso aquí sí hace falta conEmpresa(): fija app.id_empresa y las
-  // políticas dejan ver y tocar solo las filas de esta empresa.
   return conEmpresa(idEmpresa, async (client) => {
-    // Primero se apagan todos.
     await client.query(
       'UPDATE app.empresa_modulos SET activo = false WHERE id_empresa = $1',
       [idEmpresa],
     );
 
-    // Luego se encienden (o se crean) los que llegaron.
-    // NUNCA se borran filas: desactivar conserva contratado_en, que es
-    // historial. Y si mañana vuelve a contratar el módulo, sus datos
-    // siguen intactos — solo vuelven a ser alcanzables desde la API.
     await client.query(
       `INSERT INTO app.empresa_modulos (id_empresa, id_modulo, activo)
        SELECT $1, id_modulo, true FROM app.modulos WHERE codigo = ANY($2::text[])
@@ -322,17 +347,20 @@ export async function cambiarModulos(idEmpresa, modulos) {
   });
 }
 
-/* ================================================================== */
-/* MIEMBROS DE UNA EMPRESA                                             */
-/* ================================================================== */
+// ================================================================== //
+// MIEMBROS DE UNA EMPRESA                                            //
+// ================================================================== //
 
 /**
- * Vincula a alguien con la empresa. Si el correo ya existe en la
- * plataforma se reutiliza esa identidad: una sola cuenta por persona,
- * aunque trabaje en cinco empresas.
+ * ¿Qué hace esta función?
+ * Asocia un usuario existente (o crea uno nuevo) a la empresa activa.
+ * 
+ * ¿Por qué el ON CONFLICT es brillante aquí?
+ * Si el empleado había renunciado (estado = RETIRADA) y lo vuelven a contratar un año después, 
+ * el INSERT chocará. En vez de fallar, el DO UPDATE lo reactiva. Así no pierdes 
+ * la conexión con las citas o casos que atendió en su primer periodo laboral.
  */
 export async function agregarMiembro(idEmpresa, datos) {
-  // La empresa debe existir y estar activa.
   const { rows: empresas } = await query(
     'SELECT estado FROM app.empresas WHERE id_empresa = $1',
     [idEmpresa],
@@ -343,7 +371,6 @@ export async function agregarMiembro(idEmpresa, datos) {
 
   let passwordTemporal = null;
 
-  // app.usuarios no lleva RLS (es identidad global), por eso query() suelto.
   const existente = await query('SELECT id_usuario FROM app.usuarios WHERE email = $1', [
     datos.email,
   ]);
@@ -361,8 +388,6 @@ export async function agregarMiembro(idEmpresa, datos) {
   }
 
   const resultado = await conEmpresa(idEmpresa, async (client) => {
-    // ON CONFLICT: si ya fue miembro y quedó retirado, se reactiva en
-    // vez de fallar. Su historial de reservas y casos sigue enlazado.
     const membresia = await client.query(
       `INSERT INTO app.membresias (id_usuario, id_empresa, cargo)
        VALUES ($1, $2, $3)
@@ -373,8 +398,6 @@ export async function agregarMiembro(idEmpresa, datos) {
     );
     const idMembresia = membresia.rows[0].id_membresia;
 
-    // El rol viene de un z.enum cerrado, así que este WHERE nunca puede
-    // resolver a SUPER_ADMIN por más que el cliente lo intente.
     await client.query(
       `INSERT INTO app.membresia_roles (id_membresia, id_rol)
        SELECT $1, id_rol FROM app.roles WHERE codigo = $2
@@ -385,17 +408,16 @@ export async function agregarMiembro(idEmpresa, datos) {
     return { idMembresia, email: datos.email, rol: datos.rol };
   });
 
-  // Se devuelve UNA sola vez; en la base solo queda el hash.
   return { ...resultado, passwordTemporal };
 }
 
 /**
- * Cambia el rol de un miembro, su cargo o su estado (incluido retirarlo).
- *
- * La validación importante está aquí: no se puede dejar una empresa sin
- * ningún administrador. Se cuenta ANTES de aplicar el cambio, dentro de
- * la misma transacción, para que dos peticiones simultáneas no puedan
- * retirar cada una "al penúltimo" admin y dejar la empresa huérfana.
+ * ¿Qué lógica de prevención crítica tiene esta función?
+ * Evita el estado de "Empresa Huérfana".
+ * Antes de quitarle el rol de admin a alguien, cuenta cuántos administradores quedan. 
+ * Si solo queda uno, bloquea la acción. Se hace todo en una sola transacción para evitar
+ * condiciones de carrera (Race Conditions) donde dos admins se borren mutuamente al 
+ * mismo tiempo.
  */
 export async function actualizarMiembro(idEmpresa, idMembresia, datos) {
   return conEmpresa(idEmpresa, async (client) => {
@@ -411,7 +433,6 @@ export async function actualizarMiembro(idEmpresa, idMembresia, datos) {
     );
 
     const actual = actuales[0];
-    // Si la membresía es de otra empresa, RLS la oculta y no llega nada.
     if (!actual) {
       throw new AppError(404, 'MIEMBRO_NO_ENCONTRADO', 'Ese miembro no existe en la empresa.');
     }
@@ -450,7 +471,6 @@ export async function actualizarMiembro(idEmpresa, idMembresia, datos) {
     }
 
     if (datos.rol !== undefined) {
-      // Un rol por membresía en este modelo: se reemplaza el anterior.
       await client.query('DELETE FROM app.membresia_roles WHERE id_membresia = $1', [idMembresia]);
       await client.query(
         `INSERT INTO app.membresia_roles (id_membresia, id_rol)
@@ -485,31 +505,21 @@ export async function actualizarMiembro(idEmpresa, idMembresia, datos) {
   });
 }
 
-/* ================================================================== */
-/* RESTABLECER CONTRASEÑA                                             */
-/* ================================================================== */
+// ================================================================== //
+// RESTABLECER CONTRASEÑA                                             //
+// ================================================================== //
 
 /**
- * Genera una contraseña temporal para otra persona.
- *
- * Cuatro reglas de seguridad, todas visibles en el código:
- *
- *  1. El administrador NO elige la contraseña. La genera el servidor al
- *     azar. Si el admin la escogiera, la conocería de antemano y podría
- *     entrar como esa persona con toda tranquilidad.
- *  2. Se devuelve UNA sola vez y no se guarda en ninguna parte: en la
- *     base solo queda su hash bcrypt.
- *  3. Se marca debe_cambiar_password: la temporal solo sirve para entrar
- *     y cambiarla. El middleware exigirPasswordDefinitiva bloquea todo
- *     lo demás.
- *  4. Se cierran todas las sesiones de esa persona (token_version + 1 y
- *     revocación de refresh tokens) y queda registro en la bitácora de
- *     quién lo hizo.
- *
- * @param idActor   quién ejecuta la acción (para la bitácora)
- * @param idEmpresa null para el admin de plataforma; el uuid de la
- *                  empresa para un ADMIN_EMPRESA, que solo puede
- *                  restablecer a miembros suyos.
+ * ¿Qué hace esta función?
+ * Resetea el acceso de un usuario entregándole una contraseña temporal generada por el sistema.
+ * 
+ * Puntos clave de ciberseguridad a estudiar aquí:
+ * 1. Generación del lado del servidor: El admin que clickea el botón no puede escoger 
+ *    la contraseña; esto evita el secuestro silencioso de cuentas.
+ * 2. Bloqueo obligatorio: Activa el `debe_cambiar_password = true` para que la nueva contraseña 
+ *    sirva únicamente para iniciar sesión y obligatoriamente cambiarla.
+ * 3. Cierre masivo de sesiones: Invalida tokens antiguos (`token_version + 1`) y revoca los Refresh Tokens.
+ * 4. Auditoría inmutable: Registra forzosamente quién hizo la acción y por qué, evitando puertas traseras sin rastro.
  */
 export async function restablecerPassword(idUsuario, idActor, idEmpresa = null) {
   const { rows: usuarios } = await query(
@@ -521,9 +531,7 @@ export async function restablecerPassword(idUsuario, idActor, idEmpresa = null) 
     throw new AppError(404, 'USUARIO_NO_ENCONTRADO', 'Ese usuario no existe.');
   }
 
-  // Un administrador de empresa solo puede restablecer a SUS miembros.
-  // La comprobación se hace dentro de conEmpresa(), así que RLS ya
-  // garantiza que solo vea membresías de su propia empresa.
+  // Restricciones de alcance: un admin de tenant no puede resetear a quien no le pertenece.
   if (idEmpresa) {
     const esMiembro = await conEmpresa(idEmpresa, (client) =>
       client.query(
@@ -532,13 +540,10 @@ export async function restablecerPassword(idUsuario, idActor, idEmpresa = null) 
       ),
     );
     if (esMiembro.rowCount === 0) {
-      // Mismo mensaje que "no existe": no confirmamos si esa persona
-      // tiene cuenta en otra empresa de la plataforma.
       throw new AppError(404, 'USUARIO_NO_ENCONTRADO', 'Ese usuario no existe en tu empresa.');
     }
 
-    // Nadie puede restablecer la contraseña de un administrador de
-    // plataforma desde el panel de una empresa.
+    // Impide escalar privilegios: un admin local no puede secuestrar la cuenta de un SUPER_ADMIN global.
     const { rows: plataforma } = await query(
       'SELECT app.fn_roles_plataforma($1) AS roles',
       [idUsuario],
@@ -563,15 +568,11 @@ export async function restablecerPassword(idUsuario, idActor, idEmpresa = null) 
     [idUsuario, hash],
   );
 
-  // Sin esto, una sesión abierta seguiría viva con la contraseña vieja.
   await query(
     'UPDATE app.refresh_tokens SET revocado_en = now() WHERE id_usuario = $1 AND revocado_en IS NULL',
     [idUsuario],
   );
 
-  // Rastro en la bitácora. Sin esto, esta función sería una puerta
-  // trasera silenciosa: alguien podría tomar cualquier cuenta sin dejar
-  // constancia de nada.
   await query(
     `INSERT INTO app.intentos_login (email, id_usuario, id_actor, exito, motivo)
      VALUES ($1, $2, $3, true, $4)`,

@@ -1,27 +1,37 @@
+// Importa el módulo nativo criptográfico //
 import crypto from 'node:crypto';
+// Importa la abstracción de base de datos y la función inyectora de multitenencia //
 import { conEmpresa, query } from '../db/pool.js';
+// Importa el gestor de errores HTTP unificado //
 import { AppError } from '../utils/errors.js';
+// Importa la función de cifrado de contraseñas //
 import { hashearPassword } from '../utils/crypto.js';
 
 /**
- * TODO en este archivo corre dentro de conEmpresa(idEmpresa, ...).
- * Eso ejecuta un SET LOCAL app.id_empresa antes de cada consulta, así
- * que las políticas RLS filtran por empresa automáticamente.
- *
- * Consecuencia práctica: verás consultas SIN "WHERE id_empresa = ...".
- * No es un olvido — es el motor haciendo el filtro. Si alguien manda el
- * uuid de una sede ajena, la fila simplemente no existe para él.
+ * DATO CLAVE DE ARQUITECTURA (Para repasar):
+ * TODO en este archivo corre dentro de `conEmpresa(idEmpresa, ...)` o hereda su contexto.
+ * Por eso, NO VAS A VER consultas tipo `WHERE id_empresa = $1`. 
+ * ¿Magia? No, PostgreSQL está utilizando políticas de Row Level Security (RLS). 
+ * Al hacer SET LOCAL de la empresa en la transacción, PostgreSQL automáticamente 
+ * vuelve invisibles las sedes o turnos de la empresa B para el empleado de la empresa A.
  */
 
-/* ================================================================== */
-/* PRESTADORES                                                        */
-/* ================================================================== */
+// ================================================================== //
+// PRESTADORES                                                        //
+// ================================================================== //
 
+/**
+ * ¿Qué hace esta función y qué significa `cardinality`?
+ * Devuelve las sucursales/prestadores a los que tiene acceso el usuario actual.
+ * 
+ * La clave: `cardinality($1::uuid[]) = 0`
+ * El parámetro $1 es el "ámbito" (array de IDs). Si el array está vacío (tamaño 0), significa 
+ * que la persona no tiene restricciones y puede ver TODO (como un dueño o un cliente). 
+ * Si el array tiene IDs, el motor filtra (`= ANY($1)`) obligando a que solo vea esos lugares.
+ */
 export async function listarPrestadores(idEmpresa, ambito = []) {
   return conEmpresa(idEmpresa, async (client) => {
     const { rows } = await client.query(
-      // COUNT con LEFT JOIN para traer cuántos servicios tiene cada uno.
-      // cardinality($1) = 0 significa ámbito vacío, es decir sin límite.
       `SELECT p.id_prestador, p.nombre, p.descripcion, p.direccion, p.telefono, p.activo,
               COUNT(s.id_servicio) AS servicios
          FROM app.prestadores p
@@ -45,8 +55,8 @@ export async function listarPrestadores(idEmpresa, ambito = []) {
 
 export async function crearPrestador(idEmpresa, datos) {
   return conEmpresa(idEmpresa, async (client) => {
-    // id_empresa se toma del token, NUNCA del body: así nadie crea un
-    // prestador dentro de otra empresa.
+    // idEmpresa se inyecta desde el servidor, bloqueando la posibilidad 
+    // de que el frontend envíe un id falso en el payload.
     const { rows } = await client.query(
       `INSERT INTO app.prestadores (id_empresa, nombre, descripcion, direccion, telefono)
        VALUES ($1, $2, $3, $4, $5)
@@ -57,15 +67,13 @@ export async function crearPrestador(idEmpresa, datos) {
   }).catch(traducirDuplicado('Ya existe un prestador con ese nombre.'));
 }
 
-/* ================================================================== */
-/* SERVICIOS                                                          */
-/* ================================================================== */
+// ================================================================== //
+// SERVICIOS                                                          //
+// ================================================================== //
 
 export async function listarServicios(idEmpresa, idPrestador, ambito = []) {
   return conEmpresa(idEmpresa, async (client) => {
     const { rows } = await client.query(
-      // $1 puede venir null: en ese caso trae todos los de la empresa.
-      // $2 es el ámbito; vacío significa sin límite.
       `SELECT s.id_servicio, s.nombre, s.descripcion, s.duracion_minutos, s.precio, s.activo,
               p.id_prestador, p.nombre AS prestador
          FROM app.servicios s
@@ -90,8 +98,6 @@ export async function listarServicios(idEmpresa, idPrestador, ambito = []) {
 
 export async function crearServicio(idEmpresa, datos) {
   return conEmpresa(idEmpresa, async (client) => {
-    // Si el prestador es de otra empresa, RLS hace que este SELECT no
-    // devuelva nada y respondemos 404 sin revelar que existe.
     const dueño = await client.query(
       'SELECT 1 FROM app.prestadores WHERE id_prestador = $1',
       [datos.idPrestador],
@@ -118,20 +124,13 @@ export async function crearServicio(idEmpresa, datos) {
   }).catch(traducirDuplicado('Ese prestador ya tiene un servicio con ese nombre.'));
 }
 
-/* ================================================================== */
-/* MIEMBROS DE LA EMPRESA                                             */
-/* ================================================================== */
+// ================================================================== //
+// MIEMBROS DE LA EMPRESA                                             //
+// ================================================================== //
 
-/**
- * Miembros de la empresa. Con ámbito, un PRESTADOR ve solo a la gente
- * asignada a SUS prestadores (más los clientes, que no están atados a
- * ninguna sede y cualquiera puede agendarles).
- */
 export async function listarMiembros(idEmpresa, ambito = []) {
   return conEmpresa(idEmpresa, async (client) => {
     const { rows } = await client.query(
-      // FILTER descarta los NULL que produce el LEFT JOIN cuando el
-      // miembro todavía no tiene roles asignados.
       `SELECT m.id_membresia, u.id_usuario, u.email, u.nombres, u.apellidos, m.cargo, m.estado,
               COALESCE(ARRAY_AGG(r.codigo ORDER BY r.codigo)
                        FILTER (WHERE r.codigo IS NOT NULL), '{}') AS roles,
@@ -142,12 +141,12 @@ export async function listarMiembros(idEmpresa, ambito = []) {
          JOIN app.usuarios u ON u.id_usuario = m.id_usuario
          LEFT JOIN app.membresia_roles mr ON mr.id_membresia = m.id_membresia
          LEFT JOIN app.roles r ON r.id_rol = mr.id_rol
-        WHERE cardinality($1::uuid[]) = 0            -- sin límite de ámbito
+        WHERE cardinality($1::uuid[]) = 0
            OR EXISTS (SELECT 1 FROM app.membresia_prestadores mp2
                        WHERE mp2.id_membresia = m.id_membresia
                          AND mp2.id_prestador = ANY($1::uuid[]))
            OR NOT EXISTS (SELECT 1 FROM app.membresia_prestadores mp3
-                           WHERE mp3.id_membresia = m.id_membresia)  -- clientes
+                           WHERE mp3.id_membresia = m.id_membresia)
         GROUP BY m.id_membresia, u.id_usuario
         ORDER BY u.nombres`,
       [ambito],
@@ -166,22 +165,13 @@ export async function listarMiembros(idEmpresa, ambito = []) {
   });
 }
 
-/**
- * Vincula a alguien con la empresa. Si el correo ya tiene cuenta en la
- * plataforma se reutiliza esa identidad — una sola cuenta por persona,
- * aunque trabaje en cinco empresas.
- */
 export async function invitarMiembro(idEmpresa, datos) {
   let passwordTemporal = null;
 
-  // usuarios no lleva RLS (es identidad global), por eso va con query()
-  // suelto y no dentro de conEmpresa().
   const existente = await query('SELECT id_usuario FROM app.usuarios WHERE email = $1', [datos.email]);
   let idUsuario = existente.rows[0]?.id_usuario;
 
   if (!idUsuario) {
-    // Contraseña temporal aleatoria. El prefijo A1 garantiza mayúscula
-    // y dígito sin depender del azar.
     passwordTemporal = `A1${crypto.randomBytes(12).toString('base64url')}`;
     const hash = await hashearPassword(passwordTemporal);
     const creado = await query(
@@ -193,8 +183,6 @@ export async function invitarMiembro(idEmpresa, datos) {
   }
 
   const resultado = await conEmpresa(idEmpresa, async (client) => {
-    // ON CONFLICT: si ya era miembro y estaba retirado, se reactiva en
-    // vez de fallar.
     const membresia = await client.query(
       `INSERT INTO app.membresias (id_usuario, id_empresa, cargo)
        VALUES ($1, $2, $3)
@@ -205,8 +193,6 @@ export async function invitarMiembro(idEmpresa, datos) {
     );
     const idMembresia = membresia.rows[0].id_membresia;
 
-    // El rol viene de una lista cerrada validada por zod, así que este
-    // WHERE nunca puede resolver a SUPER_ADMIN.
     await client.query(
       `INSERT INTO app.membresia_roles (id_membresia, id_rol)
        SELECT $1, id_rol FROM app.roles WHERE codigo = $2
@@ -214,9 +200,6 @@ export async function invitarMiembro(idEmpresa, datos) {
       [idMembresia, datos.rol],
     );
 
-    // EMPLEADO y PRESTADOR quedan atados a uno o varios prestadores.
-    // La FK compuesta (id_prestador, id_empresa) impide asignar un
-    // prestador de otra empresa: lo garantiza el motor.
     if (['EMPLEADO', 'PRESTADOR'].includes(datos.rol) && datos.prestadores?.length) {
       await client.query(
         'DELETE FROM app.membresia_prestadores WHERE id_membresia = $1',
@@ -233,25 +216,23 @@ export async function invitarMiembro(idEmpresa, datos) {
     return { idMembresia, email: datos.email, rol: datos.rol };
   });
 
-  // La contraseña temporal se devuelve UNA sola vez. En la base solo
-  // queda su hash. En producción esto sería un correo de invitación.
   return { ...resultado, passwordTemporal };
 }
 
-/* ================================================================== */
-/* RESERVAS                                                           */
-/* ================================================================== */
+// ================================================================== //
+// RESERVAS                                                           //
+// ================================================================== //
 
 /**
- * Lista turnos según el ALCANCE de quien pregunta. Tres casos:
- *
- *   'propias' -> un CLIENTE: solo los turnos donde él es el cliente.
- *   'ambito'  -> un EMPLEADO o PRESTADOR: los de sus prestadores asignados.
- *   'todas'   -> un ADMIN_EMPRESA: toda la empresa.
- *
- * El alcance lo decide el controlador leyendo los permisos del token,
- * NUNCA un parámetro que mande el cliente. Si viniera del cliente,
- * bastaría con cambiar "propias" por "todas" en la petición.
+ * ¿Qué hace esta función?
+ * Lista las reservas variando inteligentemente lo que devuelve según *quién* pregunta.
+ * 
+ * La variable alcance determina la regla:
+ * - 'propias': Cliente (Filtra la reserva por ID del cliente).
+ * - 'ambito': Empleado (Filtra para devolver todas las de su sede).
+ * - 'todas': Admin (Devuelve todas).
+ * El motor de la seguridad es que el controlador inyecta el `alcance` leyendo el token,
+ * y no confiando en el parámetro del Body o Query de la petición web.
  */
 export async function listarReservas(idEmpresa, idMembresia, alcance, prestadoresAmbito = []) {
   return conEmpresa(idEmpresa, async (client) => {
@@ -296,25 +277,13 @@ export async function listarReservas(idEmpresa, idMembresia, alcance, prestadore
 }
 
 /**
- * Franjas ocupadas de un prestador en un día, para que el cliente vea
- * qué horas están tomadas antes de elegir.
- *
- * Devuelve SOLO inicio y fin: ni cliente, ni servicio, ni notas. Un
- * cliente no tiene por qué saber quién más reservó ni para qué — eso
- * sería una fuga de datos de otros clientes.
- */
-/**
- * Franjas LIBRES de un servicio en un día concreto.
- *
- * El cálculo vive en el servidor a propósito. Si lo hiciera el
- * navegador, bastaría con no usar la interfaz y pedir cualquier hora
- * por la API. Aquí el cliente recibe una lista cerrada de opciones, y
- * al reservar el servidor vuelve a comprobar que la hora elegida siga
- * libre — porque entre que se pinta la lista y se pulsa el botón,
- * alguien más pudo tomar esa franja.
- *
- * Devuelve solo horas de inicio: ni quién reservó, ni qué servicio.
- * Un cliente no tiene por qué saber nada de los turnos ajenos.
+ * ¿Por qué el cálculo de franjas libres debe vivir en el Backend?
+ * Si le mandaramos todas las horas disponibles al frontend de React y dejáramos que 
+ * el navegador armara los turnos, un usuario malintencionado podría usar Postman para enviar 
+ * un turno a las 3:00 am inventando datos.
+ * 
+ * Al calcularlo aquí, devolvemos un array estricto con los horarios válidos sin revelar NADA 
+ * de la información personal de otros usuarios que ya tomaron turnos paralelos. Evitamos fugas de datos.
  */
 export async function franjasLibres(idEmpresa, idServicio, fecha) {
   return conEmpresa(idEmpresa, async (client) => {
@@ -329,7 +298,6 @@ export async function franjasLibres(idEmpresa, idServicio, fecha) {
       throw new AppError(404, 'SERVICIO_NO_ENCONTRADO', 'Ese servicio no existe o está inactivo.');
     }
 
-    // Turnos ya tomados ese día en ese prestador.
     const { rows: ocupadas } = await client.query(
       `SELECT fecha_inicio, fecha_fin
          FROM app.reservas
@@ -344,8 +312,6 @@ export async function franjasLibres(idEmpresa, idServicio, fecha) {
     const libres = [];
     const ahora = Date.now();
 
-    // Jornada de 07:00 a 20:00, en pasos del tamaño del servicio.
-    // Un horario configurable por prestador sería el siguiente paso.
     const JORNADA_INICIO = 7;
     const JORNADA_FIN = 20;
 
@@ -357,9 +323,6 @@ export async function franjasLibres(idEmpresa, idServicio, fecha) {
       const inicio = new Date(cursor);
       const fin = new Date(cursor.getTime() + duracion * 60_000);
 
-      // Se descartan las horas ya pasadas y las que se solapan con un
-      // turno existente. Dos rangos se solapan si cada uno empieza
-      // antes de que termine el otro.
       const yaPaso = inicio.getTime() <= ahora;
       const chocaConOtro = ocupadas.some((o) =>
         inicio < new Date(o.fecha_fin) && fin > new Date(o.fecha_inicio));
@@ -374,12 +337,19 @@ export async function franjasLibres(idEmpresa, idServicio, fecha) {
   });
 }
 
+/**
+ * ¿Qué hace esta función y cómo protege la doble reserva?
+ * Intenta insertar un turno nuevo. 
+ * Ojo con el try...catch: la base de datos PostgreSQL está configurada con una regla `EXCLUDE`. 
+ * Es decir, si dos personas clican a la vez la misma cita en la web, ambas peticiones llegarán 
+ * simultáneas al servidor (Race Condition). El código no lo detectaría, pero PostgreSQL 
+ * chocará, lanzará el error '23P01' y lo interceptamos devolviendo un mensaje limpio. 
+ * ¡La consistencia se delega al motor de la BD!
+ */
 export async function crearReserva(
   idEmpresa, idMembresiaSolicitante, datos, puedeAgendarAOtros, ambito = [],
 ) {
   return conEmpresa(idEmpresa, async (client) => {
-    // El servicio define el prestador y la duración: el cliente no los
-    // manda, así no puede pedir "30 minutos" en un servicio de 2 horas.
     const { rows: servicios } = await client.query(
       'SELECT id_servicio, id_prestador, duracion_minutos FROM app.servicios WHERE id_servicio = $1 AND activo',
       [datos.idServicio],
@@ -389,13 +359,10 @@ export async function crearReserva(
       throw new AppError(404, 'SERVICIO_NO_ENCONTRADO', 'Ese servicio no existe o está inactivo.');
     }
 
-    // Quien tiene ámbito solo agenda en sus propios prestadores.
     if (ambito.length > 0 && !ambito.includes(servicio.id_prestador)) {
       throw new AppError(404, 'SERVICIO_NO_ENCONTRADO', 'Ese servicio no existe o está inactivo.');
     }
 
-    // Solo quien administra la agenda puede reservar a nombre de otro.
-    // Un cliente siempre reserva para sí mismo, diga lo que diga el body.
     const idCliente = puedeAgendarAOtros && datos.idCliente ? datos.idCliente : idMembresiaSolicitante;
 
     const inicio = new Date(datos.fechaInicio);
@@ -432,13 +399,9 @@ export async function crearReserva(
         estado: rows[0].estado,
       };
     } catch (error) {
-      // 23P01 = violación de EXCLUDE: el empleado ya tiene otro turno
-      // solapado. Lo impide la base de datos, no el código.
       if (error.code === '23P01') {
         throw new AppError(409, 'HORARIO_OCUPADO', 'Ese empleado ya tiene un turno en ese horario.');
       }
-      // 23503 = llave foránea: el cliente o el empleado no pertenecen a
-      // esta empresa. También lo impide el motor.
       if (error.code === '23503') {
         throw new AppError(404, 'REFERENCIA_INVALIDA', 'El cliente o el empleado no existen en tu empresa.');
       }
@@ -449,10 +412,8 @@ export async function crearReserva(
 
 export async function cambiarEstadoReserva(idEmpresa, idMembresia, idReserva, datos, ambito = []) {
   return conEmpresa(idEmpresa, async (client) => {
-    // Primero se comprueba el ÁMBITO: la reserva debe pertenecer a un
-    // prestador que esta persona tenga asignado. Sin esto, un empleado
-    // de Chapinero podría confirmar turnos de Usaquén con solo cambiar
-    // el uuid en la petición.
+    // Si no verificamos ámbito aquí, un empleado malicioso de sede Norte
+    // podría confirmar turnos de la Sede Sur adivinando el UUID.
     await verificarAmbitoReserva(client, idReserva, ambito);
 
     const { rows } = await client.query(
@@ -472,10 +433,6 @@ export async function cambiarEstadoReserva(idEmpresa, idMembresia, idReserva, da
   });
 }
 
-/**
- * Reprograma un turno. La duración NO se recalcula desde el cliente:
- * se toma del servicio, igual que al crearlo.
- */
 export async function reprogramarReserva(idEmpresa, idMembresia, idReserva, datos, ambito = []) {
   return conEmpresa(idEmpresa, async (client) => {
     const reserva = await verificarAmbitoReserva(client, idReserva, ambito);
@@ -511,8 +468,6 @@ export async function reprogramarReserva(idEmpresa, idMembresia, idReserva, dato
         estado: rows[0].estado,
       };
     } catch (error) {
-      // La restricción EXCLUDE del esquema impide dos turnos solapados
-      // del mismo empleado. Lo garantiza el motor, no el código.
       if (error.code === '23P01') {
         throw new AppError(409, 'HORARIO_OCUPADO', 'Ese empleado ya tiene un turno en ese horario.');
       }
@@ -521,9 +476,9 @@ export async function reprogramarReserva(idEmpresa, idMembresia, idReserva, dato
   });
 }
 
-/* ================================================================== */
-/* OBSERVACIONES SOBRE UN TURNO                                       */
-/* ================================================================== */
+// ================================================================== //
+// OBSERVACIONES SOBRE UN TURNO                                       //
+// ================================================================== //
 
 export async function listarObservaciones(idEmpresa, idReserva, ambito = []) {
   return conEmpresa(idEmpresa, async (client) => {
@@ -566,17 +521,18 @@ export async function agregarObservacion(idEmpresa, idMembresia, idReserva, deta
   });
 }
 
-/* ================================================================== */
-/* Utilidades                                                         */
-/* ================================================================== */
+// ================================================================== //
+// Utilidades                                                         //
+// ================================================================== //
 
 /**
- * Comprueba que una reserva exista Y esté dentro del ámbito de quien
- * pregunta. Devuelve la reserva para no tener que consultarla otra vez.
- *
- * El 404 es deliberado en los dos casos: si la reserva existe pero está
- * fuera del ámbito, responder 403 confirmaría que ese id es real. Con
- * 404 el atacante no aprende nada probando identificadores.
+ * ¿Qué hace esta utilidad y por qué es vital devolver un Error 404 en vez de 403?
+ * Verifica si el empleado actual tiene permiso (ámbito) sobre una reserva específica.
+ * 
+ * Si un empleado de Sede A intenta abrir una reserva de Sede B (a la que no tiene acceso), 
+ * NO se le devuelve un "Error 403 Prohibido". Responder "Prohibido" le confirmaría al atacante 
+ * que la reserva existe y que acertó el ID. Responder "404 No Encontrado" (como hacemos aquí)
+ * lo deja ciego.
  */
 async function verificarAmbitoReserva(client, idReserva, ambito) {
   const { rows } = await client.query(
@@ -584,18 +540,19 @@ async function verificarAmbitoReserva(client, idReserva, ambito) {
     [idReserva],
   );
   const reserva = rows[0];
-  // Si es de otra empresa, RLS ya la ocultó y no llega nada.
   if (!reserva) {
     throw new AppError(404, 'RESERVA_NO_ENCONTRADA', 'Esa reserva no existe.');
   }
-  // Ámbito vacío = sin límite de prestador.
   if (ambito.length > 0 && !ambito.includes(reserva.id_prestador)) {
     throw new AppError(404, 'RESERVA_NO_ENCONTRADA', 'Esa reserva no existe.');
   }
   return reserva;
 }
 
-/** Convierte el error 23505 (unique_violation) en un 409 con mensaje claro. */
+/** 
+ * Convierte un error de SQL puro y duro en un mensaje comprensible 
+ * para el Frontend de React.
+ */
 function traducirDuplicado(mensaje) {
   return (error) => {
     if (error.code === '23505') throw new AppError(409, 'DUPLICADO', mensaje);

@@ -84,6 +84,10 @@ async function llamar(ruta, { metodo = 'GET', cuerpo, conToken = true } = {}) {
 
 function guardarSesion(datos) {
   accessToken = datos.accessToken;
+  // El backend lo manda dentro de `usuario`. Lo subimos a la raíz para
+  // que todas las pantallas lo lean del mismo sitio.
+  datos.debeCambiarPassword =
+    datos.debeCambiarPassword ?? datos.usuario?.debeCambiarPassword ?? false;
   sesion = datos;
   if (datos.empresaActiva) {
     sessionStorage.setItem(CLAVE_EMPRESA, datos.empresaActiva.idEmpresa);

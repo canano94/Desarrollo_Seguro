@@ -121,4 +121,9 @@ async function iniciar() {
   contenido.hidden = false;
 }
 
-iniciar().catch(() => location.replace('index.html'));
+iniciar().catch((error) => {
+  if (error?.codigo === 'DEBE_CAMBIAR_PASSWORD') {
+    return location.replace('cambiar-password.html');
+  }
+  return location.replace('index.html');
+});
