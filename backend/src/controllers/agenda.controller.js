@@ -1,5 +1,6 @@
 // Importa la lógica de negocio de la agenda //
 import * as agenda from '../services/agenda.service.js';
+import * as crm from '../services/crm.service.js';
 
 // Función auxiliar rápida que verifica si el usuario actual tiene un permiso en su token //
 const puede = (req, permiso) => req.usuario.permisos.includes(permiso);
@@ -246,5 +247,36 @@ export async function actualizarMiembro(req, res, next) {
       req.usuario.idEmpresa, req.params.idMembresia, req.body,
     );
     res.json({ miembro });
+  } catch (error) { next(error); }
+}
+
+/* --- Clientes ------------------------------------------------------ */
+
+/**
+ * Estos tres controladores usan el servicio de CRM aunque vivan aquí.
+ * No es una mezcla descuidada: el servicio no sabe nada de rutas ni de
+ * módulos, así que puede llamarse desde donde haga falta. Los clientes
+ * atraviesan agenda y CRM, por eso su router es independiente.
+ */
+export async function clientes(req, res, next) {
+  try {
+    const termino = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 80) : null;
+    res.json({ clientes: await crm.buscarClientes(req.usuario.idEmpresa, termino) });
+  } catch (error) { next(error); }
+}
+
+export async function historialCliente(req, res, next) {
+  try {
+    res.json(await crm.historialCliente(req.usuario.idEmpresa, req.params.idCliente));
+  } catch (error) { next(error); }
+}
+
+export async function turnosDeCliente(req, res, next) {
+  try {
+    res.json({
+      turnos: await crm.turnosDeCliente(
+        req.usuario.idEmpresa, req.params.idCliente, ambitoDe(req),
+      ),
+    });
   } catch (error) { next(error); }
 }

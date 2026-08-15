@@ -26,6 +26,7 @@ import {
   exigirEmpresaActiva,
   exigirPermisos,
   exigirPasswordDefinitiva,
+  exigirAlgunPermiso,
 } from '../middleware/auth.js';
 
 // Instancia el enrutador //
@@ -148,7 +149,9 @@ router.get(
 router.post(
   '/mi-empresa/usuarios/:idUsuario/password-temporal',
   exigirEmpresaActiva,
-  exigirPermisos('empleados.gestionar'),
+  // 'empleados.gestionar' para el personal, 'clientes.password' para
+  // los clientes. El servicio ya limita el alcance por ámbito.
+  exigirAlgunPermiso('empleados.gestionar', 'clientes.password'),
   validarParamUuid('idUsuario'),
   ctrl.restablecerPasswordMiEmpresa,
 );

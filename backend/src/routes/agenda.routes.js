@@ -26,6 +26,7 @@ import {
   exigirEmpresaActiva,
   exigirModulo,
   exigirPermisos,
+  exigirAlgunPermiso,
   exigirPasswordDefinitiva,
 } from '../middleware/auth.js';
 
@@ -134,7 +135,7 @@ router.patch('/servicios/:idServicio',
   ctrl.actualizarServicio);
 
 router.patch('/miembros/:idMembresia',
-  exigirPermisos('empleados.gestionar'),
+  exigirAlgunPermiso('empleados.gestionar', 'clientes.gestionar'),
   validarParamUuid('idMembresia'),
   validar(actualizarMiembroAgendaSchema),
   ctrl.actualizarMiembro);

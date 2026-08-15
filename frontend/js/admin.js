@@ -461,9 +461,47 @@ async function cargarRoles() {
   const { roles, permisos } = await pedir('/admin/roles');
 
   // Map conserva el orden de inserción, a diferencia de un objeto suelto.
+  /**
+   * Los permisos se agrupan por ÁREA, no por módulo.
+   *
+   * El módulo dice si la empresa contrató esa funcionalidad; el área
+   * dice sobre QUÉ actúa el permiso. Editar un cliente y cerrar un caso
+   * son cosas distintas aunque ambas se hagan desde el CRM, y separarlas
+   * ayuda a repartir responsabilidades con criterio.
+   *
+   * El área sale del prefijo del código: 'clientes.password' → clientes.
+   * Cuando el permiso pertenece a un módulo se indica entre paréntesis,
+   * porque ese dato importa: sin el módulo contratado, ese permiso no
+   * llega al token aunque el rol lo tenga marcado.
+   */
+  const NOMBRES_AREA = {
+    empresas: 'Empresas',
+    prestadores: 'Prestadores',
+    servicios: 'Servicios',
+    usuarios: 'Usuarios de la empresa',
+    empleados: 'Empleados',
+    clientes: 'Clientes',
+    roles: 'Roles',
+    reportes: 'Reportes',
+    reservas: 'Turnos',
+    casos: 'Casos de servicio',
+    crm: 'Interacciones e historial',
+  };
+
+  // El orden de las áreas es fijo para que la pantalla no cambie de
+  // forma cada vez que se agrega un permiso nuevo.
+  const ORDEN = Object.keys(NOMBRES_AREA);
+
   const grupos = new Map();
-  for (const p of permisos) {
-    const clave = p.modulo ?? 'BASE';   // null = permiso general
+  for (const p of [...permisos].sort((a, b) => {
+    const ia = ORDEN.indexOf(a.codigo.split('.')[0]);
+    const ib = ORDEN.indexOf(b.codigo.split('.')[0]);
+    if (ia !== ib) return ia - ib;
+    return a.codigo.localeCompare(b.codigo);
+  })) {
+    const area = p.codigo.split('.')[0];
+    const titulo = NOMBRES_AREA[area] ?? area;
+    const clave = p.modulo ? `${titulo} · módulo ${p.modulo}` : titulo;
     if (!grupos.has(clave)) grupos.set(clave, []);
     grupos.get(clave).push(p);
   }
@@ -523,12 +561,15 @@ async function cargarRoles() {
       tarjeta.append(nota);
     }
 
-    for (const [modulo, lista] of grupos) {
+    // 'nombreGrupo' y no 'titulo': esa variable ya la usa el <h2> del
+    // nombre del rol más arriba, y reutilizarla pintaba el elemento
+    // completo en vez de su texto.
+    for (const [nombreGrupo, lista] of grupos) {
       const grupo = document.createElement('fieldset');
       grupo.className = 'grupo';
 
       const leyenda = document.createElement('legend');
-      leyenda.textContent = modulo === 'BASE' ? 'Generales' : `Módulo ${modulo}`;
+      leyenda.textContent = nombreGrupo;
       grupo.append(leyenda);
 
       for (const permiso of lista) {

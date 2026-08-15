@@ -36,8 +36,9 @@ function opcion(valor, texto) {
  * cambia de "Agregar" a "Guardar cambios": un solo formulario para
  * crear y editar, en vez de dos casi idénticos.
  */
-function itemEditable(titulo, detalle, alEditar) {
+function itemEditable(titulo, detalle, alEditar, activo, alAlternar) {
   const li = document.createElement('li');
+  if (!activo) li.classList.add('fila-tenue');
 
   const t = document.createElement('span');
   t.className = 'item__titulo';
@@ -45,15 +46,23 @@ function itemEditable(titulo, detalle, alEditar) {
 
   const d = document.createElement('span');
   d.className = 'item__detalle';
-  d.textContent = detalle;
+  d.textContent = detalle + (activo ? '' : ' · INACTIVO');
 
-  const boton = document.createElement('button');
-  boton.type = 'button';
-  boton.className = 'boton boton--mini boton--borde';
-  boton.textContent = 'Editar';
-  boton.addEventListener('click', alEditar);
+  const btnEditar = document.createElement('button');
+  btnEditar.type = 'button';
+  btnEditar.className = 'boton boton--mini boton--borde';
+  btnEditar.textContent = 'Editar';
+  btnEditar.addEventListener('click', alEditar);
 
-  li.append(t, d, boton);
+  // Baja lógica: no se borra, se desactiva. Los servicios y prestadores
+  // inactivos dejan de ofrecerse pero conservan su historial de reservas.
+  const btnEstado = document.createElement('button');
+  btnEstado.type = 'button';
+  btnEstado.className = 'boton boton--mini';
+  btnEstado.textContent = activo ? 'Desactivar' : 'Activar';
+  btnEstado.addEventListener('click', () => alAlternar(!activo));
+
+  li.append(t, d, btnEditar, btnEstado);
   return li;
 }
 
@@ -71,6 +80,8 @@ async function cargarPrestadores() {
       p.nombre,
       `${p.servicios} servicio(s)${p.direccion ? ' · ' + p.direccion : ''}`,
       () => editarPrestador(p),
+      p.activo,
+      (activo) => alternarEstado('prestadores', p.idPrestador, activo),
     ));
   }
 
@@ -88,8 +99,18 @@ async function cargarServicios() {
       s.nombre,
       `${s.prestador} · ${s.duracionMinutos} min · $${s.precio.toLocaleString('es-CO')}`,
       () => editarServicio(s),
+      s.activo,
+      (activo) => alternarEstado('servicios', s.idServicio, activo),
     ));
   }
+}
+
+async function alternarEstado(tipo, id, activo) {
+  try {
+    await pedir(`/agenda/${tipo}/${id}`, { metodo: 'PATCH', cuerpo: { activo } });
+    await Promise.all([cargarPrestadores(), cargarServicios()]);
+    avisar(activo ? 'Activado.' : 'Desactivado.', true);
+  } catch (error) { avisar(mensajeError(error)); }
 }
 
 /* ------------------------------------------------------------------ */
@@ -201,7 +222,10 @@ function aplicarPermisos() {
   document.getElementById('nav-agenda').hidden = !modulos.includes('AGENDA');
   document.getElementById('nav-crm').hidden = !modulos.includes('CRM');
   document.getElementById('nav-usuarios').hidden = !puede('empleados.gestionar');
-  document.getElementById('nav-clientes').hidden = !puede('crm.ver_historial');
+  // Los clientes no dependen de ningún módulo: basta con poder
+  // administrarlos, manejar la agenda o atender casos.
+  document.getElementById('nav-clientes').hidden =
+    !puede('clientes.gestionar') && !puede('reservas.aprobar') && !puede('casos.gestionar');
   document.getElementById('nav-admin').hidden =
     !datos.rolesPlataforma?.includes('SUPER_ADMIN');
 }

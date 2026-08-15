@@ -9,6 +9,7 @@ const tablaMiembros = document.getElementById('tabla-miembros');
 let permisos = [];
 let miembros = [];
 let prestadores = [];
+let editando = null;
 
 const puede = (p) => permisos.includes(p);
 
@@ -74,14 +75,21 @@ function pintarMiembros(filtro = '') {
     fila.append(celda(m.estado));
 
     const tdAcciones = document.createElement('td');
-    const boton = document.createElement('button');
-    boton.type = 'button';
-    boton.className = 'boton boton--mini';
-    boton.textContent = 'Contraseña temporal';
-    boton.addEventListener('click', () => restablecerPassword(m.idUsuario, m.email));
-    tdAcciones.append(boton);
-    fila.append(tdAcciones);
+    const btnEditar = document.createElement('button');
+    btnEditar.type = 'button';
+    btnEditar.className = 'boton boton--mini boton--borde';
+    btnEditar.textContent = 'Editar';
+    btnEditar.addEventListener('click', () => editarMiembro(m));
+    tdAcciones.append(btnEditar);
 
+    const btnClave = document.createElement('button');
+    btnClave.type = 'button';
+    btnClave.className = 'boton boton--mini';
+    btnClave.textContent = 'Contraseña temporal';
+    btnClave.addEventListener('click', () => restablecerPassword(m.idUsuario, m.email));
+    tdAcciones.append(btnClave);
+
+    fila.append(tdAcciones);
     tablaMiembros.append(fila);
   }
 
@@ -148,33 +156,44 @@ document.getElementById('m-rol').addEventListener('change', (e) => {
 document.getElementById('form-miembro').addEventListener('submit', async (e) => {
   e.preventDefault();
   const rol = document.getElementById('m-rol').value;
+
+  // Al editar solo se mandan los campos que sí se pueden cambiar; al
+  // crear hace falta además la identidad de la persona.
   const cuerpo = {
-    email: document.getElementById('m-email').value.trim(),
-    nombres: document.getElementById('m-nombres').value.trim(),
-    apellidos: document.getElementById('m-apellidos').value.trim(),
     rol,
+    cargo: document.getElementById('m-cargo').value.trim(),
   };
 
   if (['EMPLEADO', 'PRESTADOR'].includes(rol)) {
-    // selectedOptions son las opciones marcadas en un <select multiple>.
     cuerpo.prestadores = [...document.getElementById('m-prestadores').selectedOptions]
       .map((o) => o.value);
     if (cuerpo.prestadores.length === 0) {
       return avisar('Elige al menos un prestador para esa persona.');
     }
+  } else {
+    // Un cliente o un administrador no están atados a ninguna sede:
+    // se limpia el ámbito por si antes era empleado.
+    cuerpo.prestadores = [];
   }
 
   try {
-    const { miembro } = await pedir('/agenda/miembros', { metodo: 'POST', cuerpo });
-    e.target.reset();
-    document.getElementById('campo-prestadores').hidden = true;
+    if (editando) {
+      await pedir(`/agenda/miembros/${editando.idMembresia}`, { metodo: 'PATCH', cuerpo });
+      avisar('Persona actualizada.', true);
+    } else {
+      cuerpo.email = document.getElementById('m-email').value.trim();
+      cuerpo.nombres = document.getElementById('m-nombres').value.trim();
+      cuerpo.apellidos = document.getElementById('m-apellidos').value.trim();
+      const { miembro } = await pedir('/agenda/miembros', { metodo: 'POST', cuerpo });
+      avisar(
+        miembro.passwordTemporal
+          ? `Vinculado. Contraseña temporal: ${miembro.passwordTemporal}`
+          : 'Persona vinculada (ya tenía cuenta en la plataforma).',
+        true,
+      );
+    }
+    cancelarEdicion();
     await cargarMiembros();
-    avisar(
-      miembro.passwordTemporal
-        ? `Vinculado. Contraseña temporal: ${miembro.passwordTemporal}`
-        : 'Persona vinculada (ya tenía cuenta en la plataforma).',
-      true,
-    );
   } catch (error) { avisar(mensajeError(error)); }
   return undefined;
 });
@@ -186,7 +205,10 @@ function aplicarPermisos() {
   document.getElementById('nav-agenda').hidden = !modulos.includes('AGENDA');
   document.getElementById('nav-crm').hidden = !modulos.includes('CRM');
   document.getElementById('nav-servicios').hidden = !puede('servicios.gestionar');
-  document.getElementById('nav-clientes').hidden = !puede('crm.ver_historial');
+  // Los clientes no dependen de ningún módulo: basta con poder
+  // administrarlos, manejar la agenda o atender casos.
+  document.getElementById('nav-clientes').hidden =
+    !puede('clientes.gestionar') && !puede('reservas.aprobar') && !puede('casos.gestionar');
   document.getElementById('nav-admin').hidden =
     !datos.rolesPlataforma?.includes('SUPER_ADMIN');
 }
@@ -209,6 +231,53 @@ async function cargarTodo() {
   await cargarPrestadores();
   await cargarMiembros();
 }
+
+/**
+ * Carga los datos de la persona en el formulario de abajo.
+ * El correo no se edita: es el identificador global de la cuenta y
+ * cambiarlo tendría que pasar por verificación, no por este formulario.
+ */
+function editarMiembro(m) {
+  editando = { idMembresia: m.idMembresia };
+
+  document.getElementById('m-email').value = m.email;
+  document.getElementById('m-email').disabled = true;
+  document.getElementById('m-nombres').value = m.nombres;
+  document.getElementById('m-nombres').disabled = true;
+  document.getElementById('m-apellidos').value = m.apellidos;
+  document.getElementById('m-apellidos').disabled = true;
+
+  document.getElementById('m-rol').value = m.roles[0] ?? 'CLIENTE';
+  document.getElementById('m-cargo').value = m.cargo ?? '';
+
+  // Marca los prestadores que esa persona ya tiene asignados.
+  const select = document.getElementById('m-prestadores');
+  for (const opt of select.options) {
+    opt.selected = (m.prestadores ?? []).includes(opt.value);
+  }
+  document.getElementById('campo-prestadores').hidden =
+    !['EMPLEADO', 'PRESTADOR'].includes(m.roles[0]);
+
+  document.getElementById('titulo-form').textContent = `Editar a ${m.nombres} ${m.apellidos}`;
+  document.getElementById('btn-miembro').textContent = 'Guardar cambios';
+  document.getElementById('btn-cancelar-miembro').hidden = false;
+  document.getElementById('m-rol').focus();
+}
+
+function cancelarEdicion() {
+  editando = null;
+  const form = document.getElementById('form-miembro');
+  form.reset();
+  for (const id of ['m-email', 'm-nombres', 'm-apellidos']) {
+    document.getElementById(id).disabled = false;
+  }
+  document.getElementById('campo-prestadores').hidden = true;
+  document.getElementById('titulo-form').textContent = 'Vincular una persona';
+  document.getElementById('btn-miembro').textContent = 'Vincular';
+  document.getElementById('btn-cancelar-miembro').hidden = true;
+}
+
+document.getElementById('btn-cancelar-miembro').addEventListener('click', cancelarEdicion);
 
 selectorEmpresa.addEventListener('change', async () => {
   selectorEmpresa.disabled = true;

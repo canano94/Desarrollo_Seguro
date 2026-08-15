@@ -57,13 +57,14 @@
       </div>
 
       <section class="tarjeta">
-        <h2>Vincular una persona</h2>
+        <h2 id="titulo-form">Vincular una persona</h2>
         <p class="apoyo">Si ya tiene cuenta en la plataforma, se reutiliza su identidad.</p>
         <form id="form-miembro" novalidate>
           <div class="rejilla">
             <div class="campo"><label for="m-email">Correo</label><input id="m-email" type="email" required></div>
             <div class="campo"><label for="m-nombres">Nombres</label><input id="m-nombres" type="text" maxlength="100" required></div>
             <div class="campo"><label for="m-apellidos">Apellidos</label><input id="m-apellidos" type="text" maxlength="100" required></div>
+            <div class="campo"><label for="m-cargo">Cargo</label><input id="m-cargo" type="text" maxlength="80"></div>
             <div class="campo"><label for="m-rol">Rol</label>
               <select id="m-rol" class="entrada">
                 <option value="CLIENTE">Cliente</option>
@@ -78,7 +79,10 @@
             <select id="m-prestadores" class="entrada" multiple size="4"></select>
             <p class="pista">Ctrl+clic para elegir varios. Define el ámbito de esa persona.</p>
           </div>
-          <div class="acciones"><button type="submit" class="boton">Vincular</button></div>
+          <div class="fila-botones">
+            <button type="submit" class="boton" id="btn-miembro">Vincular</button>
+            <button type="button" class="boton boton--texto" id="btn-cancelar-miembro" hidden>Cancelar</button>
+          </div>
         </form>
       </section>
     </main>

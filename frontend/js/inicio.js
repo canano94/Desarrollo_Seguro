@@ -53,7 +53,10 @@ function pintar() {
 
   document.getElementById('nav-servicios').hidden = !puede('servicios.gestionar');
   document.getElementById('nav-usuarios').hidden = !puede('empleados.gestionar');
-  document.getElementById('nav-clientes').hidden = !puede('crm.ver_historial');
+  // Los clientes no dependen de ningún módulo: basta con poder
+  // administrarlos, manejar la agenda o atender casos.
+  document.getElementById('nav-clientes').hidden =
+    !puede('clientes.gestionar') && !puede('reservas.aprobar') && !puede('casos.gestionar');
 
   // Enlaces de la barra superior
   document.getElementById('nav-admin').hidden = !esPlataforma;
@@ -92,6 +95,13 @@ function pintar() {
       accesos.append(acceso('crm.html', 'CRM',
         'Casos de servicio, interacciones e historial del cliente.'));
     }
+  
+  // Los clientes atraviesan los dos módulos, así que su acceso no
+  // depende de ninguno.
+  if (puede('clientes.gestionar') || puede('reservas.aprobar') || puede('casos.gestionar')) {
+    accesos.append(acceso('clientes.html', 'Clientes',
+      'Busca a un cliente y consulta su ficha completa.'));
+  }
 
   accesos.append(acceso('perfil.html', 'Mi perfil',
     'Tus datos personales y tu contraseña.'));

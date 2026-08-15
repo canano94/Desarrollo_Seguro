@@ -81,6 +81,18 @@
               <span class="indicador__numero" id="p-casos">0</span>
               <span class="indicador__texto">Casos abiertos</span>
             </div>
+            <div class="acciones fila-botones" id="acciones-cliente" hidden>
+            <button type="button" class="boton boton--borde" id="btn-editar-cliente">Editar datos</button>
+            <button type="button" class="boton boton--borde" id="btn-clave-cliente">Restablecer contraseña</button>
+          </div>
+
+          <form id="form-editar-cliente" class="fila-form" novalidate hidden>
+            <div class="campo"><label for="ec-telefono">Teléfono</label><input id="ec-telefono" type="tel" maxlength="30"></div>
+            <div class="campo"><label for="ec-documento">Documento</label><input id="ec-documento" type="text" maxlength="30"></div>
+            <div class="campo"><label for="ec-cargo">Cargo</label><input id="ec-cargo" type="text" maxlength="80"></div>
+            <button type="submit" class="boton boton--mini">Guardar</button>
+            <button type="button" class="boton boton--texto boton--mini" id="ec-cancelar">Cancelar</button>
+          </form>
           </div>
         </section>
 

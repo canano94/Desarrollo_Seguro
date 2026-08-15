@@ -332,7 +332,7 @@ async function buscarClientes(termino) {
 
   try {
     // encodeURIComponent evita que un término con & o = rompa la URL.
-    const { clientes } = await pedir(`/crm/clientes?q=${encodeURIComponent(termino)}`);
+    const { clientes } = await pedir(`/clientes?q=${encodeURIComponent(termino)}`);
 
     for (const c of clientes) {
       const li = document.createElement('li');
@@ -376,7 +376,7 @@ async function buscarClientes(termino) {
  *  navega distinto. Trae los primeros 20 sin filtro. */
 async function cargarClientesHistorial() {
   if (!puede('crm.ver_historial')) return;
-  const { clientes } = await pedir('/crm/clientes');
+  const { clientes } = await pedir('/clientes');
   const select = document.getElementById('h-cliente');
   select.replaceChildren(opcion('', 'Elige un cliente…'));
   for (const c of clientes) {
@@ -397,7 +397,7 @@ async function cargarHistorial(idCliente) {
   if (!idCliente) return;
 
   try {
-    const datos = await pedir(`/crm/clientes/${idCliente}/historial`);
+    const datos = await pedir(`/clientes/${idCliente}/historial`);
 
     // Ficha del cliente
     const ficha = document.createElement('section');

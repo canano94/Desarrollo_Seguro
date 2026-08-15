@@ -58,9 +58,9 @@ async function buscar(termino) {
   resultados.replaceChildren();
 
   try {
-    const ruta = termino.length >= 2
-      ? `/crm/clientes?q=${encodeURIComponent(termino)}`
-      : '/crm/clientes';
+   const ruta = termino.length >= 2
+      ? `/clientes?q=${encodeURIComponent(termino)}`
+      : '/clientes';
     const { clientes } = await pedir(ruta);
 
     for (const c of clientes) {
@@ -108,7 +108,7 @@ async function buscar(termino) {
 async function abrirPerfil(idMembresia) {
   aviso.hidden = true;
   try {
-    const datos = await pedir(`/crm/clientes/${idMembresia}/historial`);
+    const datos = await pedir(`/clientes/${idMembresia}/historial`)
     clienteActual = { idMembresia, ...datos.cliente };
 
     const c = datos.cliente;
@@ -128,6 +128,14 @@ async function abrirPerfil(idMembresia) {
     document.getElementById('p-turnos').textContent = c.totalTurnos;
     document.getElementById('p-inasistencias').textContent = c.inasistencias;
     document.getElementById('p-casos').textContent = c.casosAbiertos;
+    // Los dos botones tienen permisos distintos: editar datos es una
+    // corrección menor, restablecer la contraseña es tomar el control
+    // de una cuenta. Por eso se muestran por separado.
+    const puedeEditar = puede('clientes.gestionar');
+    const puedeClave = puede('clientes.password');
+    document.getElementById('acciones-cliente').hidden = !puedeEditar && !puedeClave;
+    document.getElementById('btn-editar-cliente').hidden = !puedeEditar;
+    document.getElementById('btn-clave-cliente').hidden = !puedeClave;
 
     pintarLista('lista-turnos', datos.turnos,
       (t) => `${fecha(t.fecha)} · ${t.servicio} · ${t.prestador}`,
@@ -138,6 +146,24 @@ async function abrirPerfil(idMembresia) {
     pintarLista('lista-interacciones', datos.interacciones,
       (i) => `[${i.canal}] ${i.asunto} — ${i.detalle}`,
       (i) => `${i.autor} · ${fecha(i.fecha)}`);
+
+    /**
+     * Cada pestaña depende de su módulo: turnos de AGENDA, casos e
+     * interacciones de CRM. La ficha del cliente en sí no depende de
+     * ninguno — por eso la pantalla funciona con cualquiera de los dos.
+     */
+    const modulos = sesionActual().empresaActiva?.modulos ?? [];
+    document.querySelector('[data-panel="pf-turnos"]').hidden = !modulos.includes('AGENDA');
+    document.querySelector('[data-panel="pf-casos"]').hidden = !modulos.includes('CRM');
+    document.querySelector('[data-panel="pf-interacciones"]').hidden = !modulos.includes('CRM');
+
+    // Si la pestaña activa quedó oculta, se salta a la primera visible
+    // para no dejar la pantalla en blanco.
+    const visible = [...document.querySelectorAll('#pestanas-perfil .pestana')]
+      .find((p) => !p.hidden);
+    if (visible && document.querySelector('.pestana[aria-selected="true"]')?.hidden) {
+      visible.click();
+    }
 
     document.getElementById('form-interaccion').hidden = !puede('crm.registrar');
 
@@ -216,6 +242,35 @@ for (const pestana of grupoPestanas.querySelectorAll('.pestana')) {
   });
 }
 
+document.getElementById('btn-editar-cliente').addEventListener('click', () => {
+  document.getElementById('ec-telefono').value = clienteActual.telefono ?? '';
+  document.getElementById('ec-documento').value = clienteActual.documento ?? '';
+  document.getElementById('ec-cargo').value = clienteActual.cargo ?? '';
+  document.getElementById('form-editar-cliente').hidden = false;
+});
+
+document.getElementById('ec-cancelar').addEventListener('click', () => {
+  document.getElementById('form-editar-cliente').hidden = true;
+});
+
+/**
+ * Los datos personales (teléfono, documento) pertenecen a la IDENTIDAD
+ * global, así que se cambian por la ruta de perfil. El cargo pertenece
+ * a la MEMBRESÍA — es propio de esta empresa. Por eso son dos llamadas.
+ */
+document.getElementById('form-editar-cliente').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await pedir(`/agenda/miembros/${clienteActual.idMembresia}`, {
+      metodo: 'PATCH',
+      cuerpo: { cargo: document.getElementById('ec-cargo').value.trim() },
+    });
+    document.getElementById('form-editar-cliente').hidden = true;
+    await abrirPerfil(clienteActual.idMembresia);
+    avisar('Datos actualizados.', true);
+  } catch (error) { avisar(mensajeError(error)); }
+});
+
 /* ------------------------------------------------------------------ */
 /* Arranque                                                            */
 /* ------------------------------------------------------------------ */
@@ -275,11 +330,6 @@ async function iniciar() {
   if (!datos || datos.requiereSeleccion) return location.replace('index.html');
   if (datos.debeCambiarPassword) return location.replace('cambiar-password.html');
 
-  if (!datos.empresaActiva?.modulos.includes('CRM')) {
-    cargando.textContent = 'Esta empresa no tiene contratado el módulo de CRM.';
-    return undefined;
-  }
-
   await cargarTodo();
   cargando.hidden = true;
   contenido.hidden = false;
@@ -297,4 +347,23 @@ iniciar().catch((error) => {
   console.error(error);
   cargando.textContent = `No se pudo cargar la pantalla: ${error?.message ?? error}`;
   return undefined;
+});
+
+document.getElementById('btn-clave-cliente').addEventListener('click', async () => {
+  const seguro = confirm(
+    `¿Generar una contraseña temporal para ${clienteActual.email}?\n\n` +
+    'Se cerrarán todas sus sesiones y deberá cambiarla al entrar.',
+  );
+  if (!seguro) return;
+
+  try {
+    const resultado = await pedir(
+      `/admin/mi-empresa/usuarios/${clienteActual.idUsuario}/password-temporal`,
+      { metodo: 'POST' },
+    );
+    // Se muestra UNA sola vez: en la base solo queda su hash.
+    avisar(`Contraseña temporal: ${resultado.passwordTemporal}`, true);
+  } catch (error) {
+    avisar(mensajeError(error));
+  }
 });

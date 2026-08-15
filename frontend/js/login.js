@@ -18,8 +18,17 @@ function limpiar(elemento) {
   elemento.textContent = '';
 }
 
+/**
+ * Traduce el código del error a un mensaje entendible.
+ *
+ * El ?? final es la red de seguridad: si el error no trae ni código ni
+ * mensaje —por ejemplo un fallo de red— igual mostramos algo. Sin eso,
+ * la caja de aviso aparecía vacía y no había forma de saber qué pasó.
+ */
 function traducirError(error) {
-  switch (error.codigo) {
+  switch (error?.codigo) {
+    case 'CREDENCIALES_INVALIDAS':
+      return 'Correo o contraseña incorrectos.';
     case 'CUENTA_BLOQUEADA':
       return 'La cuenta está bloqueada por intentos fallidos. Espera unos minutos.';
     case 'DEMASIADOS_INTENTOS':
@@ -28,8 +37,12 @@ function traducirError(error) {
       return 'Debes cambiar tu contraseña temporal antes de continuar.';
     case 'SIN_MEMBRESIAS':
       return 'Tu cuenta no está vinculada a ninguna empresa activa.';
+    case 'CUENTA_NO_ACTIVA':
+      return 'La cuenta no está habilitada. Contacta al administrador.';
+    case 'SIN_CONEXION':
+      return 'No se pudo conectar con el servidor. Revisa que la API esté corriendo.';
     default:
-      return error.mensaje;
+      return error?.mensaje ?? 'No se pudo iniciar sesión. Intenta de nuevo.';
   }
 }
 

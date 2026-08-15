@@ -1,3 +1,12 @@
+/* =====================================================================
+   HOJA DE ESTILOS — Plataforma SaaS de agendamiento y CRM
+
+   Convención de nombres: bloque__elemento y bloque--modificador (BEM).
+   El prefijo del bloque evita que dos cosas distintas terminen
+   llamándose igual — pasó dos veces con .acceso y .panel, y en ambos
+   casos una pantalla pisó los estilos de la otra.
+   ===================================================================== */
+
 :root {
   /* Sin esto, un navegador en modo oscuro pinta los controles nativos
      (select, input, checkbox) con SU paleta y quedan texto claro sobre
@@ -13,6 +22,8 @@
   --agenda-clara: #e4efeb;
   --alerta: #a03a26;
   --alerta-clara: #f7e8e4;
+  --ambar: #BA7517;
+  --ambar-claro: #FBF0E5;
   --texto: #101c26;
   --texto-tenue: #5c6b74;
 
@@ -54,10 +65,19 @@ h2 { font-size: 1.25rem; }
 
 .mono { font-family: var(--mono); font-size: 0.875rem; }
 
-/* ---------- Acceso (pantalla de login, dos columnas) ----------
-   OJO: .panel de aquí abajo es el costado oscuro del login.
-   Los contenedores de pestañas usan .contenido-pestana, NO .panel,
-   justo para no chocar con este bloque. */
+.visualmente-oculto {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0);
+  white-space: nowrap; border: 0;
+}
+
+/* =====================================================================
+   PANTALLA DE ACCESO (login y cambio de contraseña)
+   OJO: .panel de aquí es el costado oscuro del login. Los contenedores
+   de pestañas usan .contenido-pestana, NO .panel, para no chocar.
+   ===================================================================== */
 
 .pagina-acceso { min-height: 100vh; }
 
@@ -112,6 +132,7 @@ h2 { font-size: 1.25rem; }
 .franja__hora--tomada { color: var(--papel); }
 .franja__hora--tomada i { background: var(--agenda); height: 10px; border-radius: 1px; }
 
+/* La animación se desactiva si el sistema pide menos movimiento. */
 @media (prefers-reduced-motion: no-preference) {
   .franja__hora { animation: entra 0.5s ease both; }
   .franja__hora:nth-child(2) { animation-delay: 0.06s; }
@@ -153,7 +174,34 @@ h2 { font-size: 1.25rem; }
   .formulario { padding: 2rem 1.5rem; }
 }
 
-/* ---------- Campos ---------- */
+/* Lista de empresas cuando alguien pertenece a más de una. */
+.empresas { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.625rem; }
+
+.empresa {
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1875rem;
+  padding: 0.875rem 1rem;
+  background: var(--superficie);
+  border: 1px solid var(--linea);
+  border-left: 3px solid var(--agenda);
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.empresa:hover { border-color: var(--agenda); border-left-color: var(--agenda); }
+.empresa:focus-visible { outline: 2px solid var(--agenda); outline-offset: 2px; }
+.empresa[disabled] { opacity: 0.55; cursor: progress; }
+
+.empresa__nombre { font-weight: 600; font-size: 1rem; }
+.empresa__detalle { font-family: var(--mono); font-size: 0.75rem; color: var(--texto-tenue); }
+
+/* =====================================================================
+   FORMULARIOS
+   ===================================================================== */
 
 .campo { margin-bottom: 1.25rem; }
 
@@ -194,7 +242,71 @@ h2 { font-size: 1.25rem; }
   gap: 0 1.25rem;
 }
 
-/* ---------- Botones ---------- */
+/* Para <select> y <textarea>, que no heredan de .campo input. */
+.entrada {
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  font-family: inherit;
+  font-size: 1rem;
+  color: var(--texto);
+  background: var(--superficie);
+  border: 1px solid var(--linea);
+  border-radius: var(--radio);
+}
+
+.entrada:focus-visible { outline: 2px solid var(--agenda); outline-offset: 1px; }
+
+.entrada--mini {
+  width: auto;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.entrada--elegido { background: var(--agenda-clara); color: var(--agenda); font-weight: 500; }
+
+textarea.entrada { font-family: inherit; resize: vertical; }
+select[multiple] { padding: 0.25rem; }
+
+/* Formulario en una sola línea, para agregar items rápido. */
+.fila-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--linea);
+}
+
+.fila-form .campo { margin-bottom: 0; flex: 1 1 10rem; }
+
+.grupo {
+  border: 1px solid var(--linea);
+  border-radius: var(--radio);
+  padding: 1rem;
+  margin: 0 0 1.25rem;
+}
+
+.grupo legend {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--texto-tenue);
+  padding: 0 0.375rem;
+}
+
+.casilla {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-right: 1.25rem;
+  font-size: 0.9375rem;
+}
+
+/* =====================================================================
+   BOTONES
+   ===================================================================== */
 
 .boton {
   font-family: inherit;
@@ -223,9 +335,56 @@ h2 { font-size: 1.25rem; }
 }
 .boton--texto:hover { background: transparent; color: var(--texto); }
 
-.acciones { margin-top: 0.5rem; }
+.boton--mini { font-size: 0.75rem; padding: 0.25rem 0.625rem; }
 
-/* ---------- Avisos ---------- */
+.acciones { margin-top: 0.5rem; }
+.fila-botones { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+.volver {
+  background: none;
+  border: 0;
+  padding: 0.25rem 0;
+  margin-bottom: 1rem;
+  font-family: inherit;
+  font-size: 0.875rem;
+  color: var(--texto-tenue);
+  cursor: pointer;
+}
+
+.volver:hover { color: var(--texto); }
+.volver:focus-visible { outline: 2px solid var(--agenda); outline-offset: 2px; }
+
+/* Botones de icono: SVG inline con aria-label, no imágenes. */
+.icono {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radio);
+  color: var(--texto-tenue);
+  cursor: pointer;
+}
+
+.icono svg { width: 18px; height: 18px; }
+
+.icono svg path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.icono:hover { background: var(--papel); color: var(--texto); border-color: var(--linea); }
+.icono:focus-visible { outline: 2px solid var(--agenda); outline-offset: 1px; }
+.icono--alerta:hover { color: var(--alerta); }
+
+/* =====================================================================
+   AVISOS
+   ===================================================================== */
 
 .aviso {
   margin: 0 0 1rem;
@@ -242,7 +401,19 @@ h2 { font-size: 1.25rem; }
   color: var(--agenda);
 }
 
-/* ---------- Tablero ---------- */
+/* Aviso que además lleva botones de acción. */
+.aviso--con-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.aviso--con-acciones .fila-botones:empty { display: none; }
+
+/* =====================================================================
+   ESTRUCTURA DE PÁGINA
+   ===================================================================== */
 
 .cargando {
   min-height: 100vh;
@@ -254,6 +425,7 @@ h2 { font-size: 1.25rem; }
 
 .barra {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
@@ -268,17 +440,42 @@ h2 { font-size: 1.25rem; }
   margin: 0;
 }
 
-.barra__derecha { display: flex; align-items: center; gap: 0.75rem; }
+.barra__nav { display: flex; flex-wrap: wrap; gap: 1rem; margin-right: auto; margin-left: 1.5rem; }
 
+.barra__nav a {
+  color: #8fa3ad;
+  text-decoration: none;
+  font-size: 0.875rem;
+  padding-bottom: 2px;
+  border-bottom: 2px solid transparent;
+}
+
+.barra__nav a:hover { color: var(--papel); }
+.barra__nav a[aria-current="page"] { color: var(--papel); border-bottom-color: var(--agenda); }
+.barra__nav a:focus-visible { outline: 2px solid var(--agenda); outline-offset: 3px; }
+
+.barra__derecha { display: flex; align-items: center; gap: 0.75rem; }
 .barra__usuario { font-size: 0.875rem; color: #8fa3ad; }
 
 /* La barra es oscura y su color se hereda. Estos elementos viven dentro
-   de ella pero tienen su propio fondo, así que fijan su color a mano
-   para no quedar en texto claro sobre fondo claro. */
+   de ella pero tienen fondo propio, así que fijan su color a mano para
+   no quedar en texto claro sobre fondo claro. */
 .barra .ficha { background: var(--tinta-suave); color: var(--papel); }
-
 .barra .boton--texto { color: #8fa3ad; }
 .barra .boton--texto:hover { color: var(--papel); }
+
+.selector {
+  font-family: inherit;
+  font-size: 0.875rem;
+  padding: 0.3125rem 0.5rem;
+  color: var(--papel);
+  background: var(--tinta-suave);
+  border: 1px solid var(--tinta-suave);
+  border-radius: var(--radio);
+  max-width: 14rem;
+}
+
+.selector:focus-visible { outline: 2px solid var(--agenda); outline-offset: 2px; }
 
 .tablero {
   max-width: 46rem;
@@ -289,6 +486,8 @@ h2 { font-size: 1.25rem; }
   gap: 1.25rem;
 }
 
+.tablero--ancho { max-width: 64rem; }
+
 .tarjeta {
   background: var(--superficie);
   border: 1px solid var(--linea);
@@ -297,8 +496,85 @@ h2 { font-size: 1.25rem; }
 }
 
 .tarjeta form { margin-top: 1.25rem; }
-
 .tarjeta--identidad { border-left: 3px solid var(--agenda); }
+
+.encabezado-seccion {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+}
+
+.subtitulo {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 0.8125rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--texto-tenue);
+  margin: 2rem 0 0.75rem;
+  padding-bottom: 0.375rem;
+  border-bottom: 1px solid var(--linea);
+}
+
+.detalle__cabecera {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+@media (max-width: 520px) {
+  .tarjeta { padding: 1.25rem; }
+}
+
+/* =====================================================================
+   PESTAÑAS
+   ===================================================================== */
+
+.pestanas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--linea);
+}
+
+.pestana {
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 0.5rem 0.875rem;
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--texto-tenue);
+  cursor: pointer;
+}
+
+.pestana:hover { color: var(--texto); }
+.pestana[aria-selected="true"] { color: var(--texto); border-bottom-color: var(--agenda); }
+.pestana:focus-visible { outline: 2px solid var(--agenda); outline-offset: 2px; }
+
+.pestanas--grandes .pestana {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 1.0625rem;
+  letter-spacing: -0.01em;
+  padding: 0.5rem 1rem 0.75rem;
+}
+
+/* Se llama así y no .panel porque esa clase ya la usa el costado
+   oscuro del login: repetirla pintaba de negro el contenido. */
+.contenido-pestana { display: block; }
+
+/* =====================================================================
+   DATOS Y FICHAS
+   ===================================================================== */
 
 .datos {
   display: flex;
@@ -330,110 +606,40 @@ h2 { font-size: 1.25rem; }
   white-space: nowrap;
 }
 
-.permisos { margin-top: 1.5rem; }
+.ficha--alerta { background: var(--alerta-clara); color: var(--alerta); }
+.ficha--tenue { background: var(--papel); color: var(--texto-tenue); }
 
-.permisos summary {
-  cursor: pointer;
-  font-size: 0.875rem;
-  color: var(--texto-tenue);
-}
-
-.permisos summary:focus-visible { outline: 2px solid var(--agenda); outline-offset: 2px; }
-
-.permisos ul {
-  list-style: none;
-  margin: 0.75rem 0 0;
-  padding: 0;
-  columns: 2;
-  column-gap: 1.5rem;
-}
-
-.permisos li {
-  color: var(--texto-tenue);
-  padding: 0.125rem 0;
-  break-inside: avoid;
-}
-
-@media (max-width: 520px) {
-  .permisos ul { columns: 1; }
-  .tarjeta { padding: 1.25rem; }
-}
-
-/* ---------- Selector de empresa ---------- */
-
-.visualmente-oculto {
-  position: absolute;
-  width: 1px; height: 1px;
-  padding: 0; margin: -1px;
-  overflow: hidden; clip: rect(0 0 0 0);
-  white-space: nowrap; border: 0;
-}
-
-.selector {
-  font-family: inherit;
-  font-size: 0.875rem;
-  padding: 0.3125rem 0.5rem;
-  color: var(--papel);
-  background: var(--tinta-suave);
-  border: 1px solid var(--tinta-suave);
-  border-radius: var(--radio);
-  max-width: 14rem;
-}
-
-.selector:focus-visible { outline: 2px solid var(--agenda); outline-offset: 2px; }
-
-/* ---------- Lista de empresas en el login ---------- */
-
-.empresas { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.625rem; }
-
-.empresa {
-  width: 100%;
-  text-align: left;
-  font-family: inherit;
+/* Indicadores numéricos del perfil de cliente. */
+.indicadores {
   display: flex;
-  flex-direction: column;
-  gap: 0.1875rem;
-  padding: 0.875rem 1rem;
-  background: var(--superficie);
-  border: 1px solid var(--linea);
-  border-left: 3px solid var(--agenda);
-  border-radius: 0;
-  cursor: pointer;
+  flex-wrap: wrap;
+  gap: 2rem;
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--linea);
 }
 
-.empresa:hover { border-color: var(--agenda); border-left-color: var(--agenda); }
-.empresa:focus-visible { outline: 2px solid var(--agenda); outline-offset: 2px; }
-.empresa[disabled] { opacity: 0.55; cursor: progress; }
+.indicador { display: flex; flex-direction: column; gap: 2px; }
 
-.empresa__nombre { font-weight: 600; font-size: 1rem; }
+.indicador__numero {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 1.75rem;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
 
-.empresa__detalle {
-  font-family: var(--mono);
-  font-size: 0.75rem;
+.indicador__texto {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--texto-tenue);
 }
 
-/* ---------- Navegación ---------- */
-
-.barra { flex-wrap: wrap; }
-
-.barra__nav { display: flex; gap: 1rem; margin-right: auto; margin-left: 1.5rem; }
-
-.barra__nav a {
-  color: #8fa3ad;
-  text-decoration: none;
-  font-size: 0.875rem;
-  padding-bottom: 2px;
-  border-bottom: 2px solid transparent;
-}
-
-.barra__nav a:hover { color: var(--papel); }
-.barra__nav a[aria-current="page"] { color: var(--papel); border-bottom-color: var(--agenda); }
-.barra__nav a:focus-visible { outline: 2px solid var(--agenda); outline-offset: 3px; }
-
-.tablero--ancho { max-width: 64rem; }
-
-/* ---------- Tablas ---------- */
+/* =====================================================================
+   TABLAS
+   ===================================================================== */
 
 .tabla-envoltura { overflow-x: auto; margin-top: 1.25rem; }
 
@@ -454,22 +660,34 @@ h2 { font-size: 1.25rem; }
 .tabla td {
   padding: 0.625rem 0.75rem 0.625rem 0;
   border-bottom: 1px solid var(--linea);
-  vertical-align: top;
+  vertical-align: middle;
 }
 
 .tabla tr:last-child td { border-bottom: 0; }
 
-.membresias { display: flex; flex-direction: column; gap: 0.125rem; }
-.membresias__plataforma { color: var(--agenda); font-weight: 500; }
+/* Los botones de acción de una fila van juntos y no se estiran. */
+.tabla td .boton--mini { margin-right: 0.375rem; }
+.tabla td .boton--mini:last-child { margin-right: 0; }
 
-/* ---------- Listas de items ---------- */
+.fila-clicable { cursor: pointer; }
+.fila-clicable:hover td { background: var(--papel); }
+.fila-tenue { opacity: 0.55; }
+
+.fila-activa td {
+  background: var(--agenda-clara);
+  box-shadow: inset 3px 0 0 var(--agenda);
+}
+
+/* =====================================================================
+   LISTAS DE ITEMS (prestadores, servicios, personas)
+   ===================================================================== */
 
 .items { list-style: none; margin: 1.25rem 0 0; padding: 0; display: grid; gap: 0.375rem; }
 
 .items li {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 0.75rem;
   background: var(--papel);
@@ -478,169 +696,16 @@ h2 { font-size: 1.25rem; }
 
 .items li:empty { display: none; }
 
+/* El detalle empuja los botones al extremo derecho, y estos quedan
+   agrupados sin importar cuánto ocupe el texto de la izquierda. Antes
+   cada botón llevaba margin-left:auto por separado y se desalineaban. */
+.items li .item__detalle { margin-right: auto; }
+.items li .boton { flex-shrink: 0; }
+
 .item__titulo { font-weight: 600; font-size: 0.9375rem; }
 .item__detalle { font-family: var(--mono); font-size: 0.75rem; color: var(--texto-tenue); }
 
-/* ---------- Formularios en fila ---------- */
-
-.fila-form {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 0.75rem;
-  margin-top: 1.25rem;
-  padding-top: 1.25rem;
-  border-top: 1px solid var(--linea);
-}
-
-.fila-form .campo { margin-bottom: 0; flex: 1 1 10rem; }
-
-.entrada {
-  width: 100%;
-  color: var(--texto);
-  background: var(--superficie);
-  padding: 0.625rem 0.75rem;
-  font-family: inherit;
-  font-size: 1rem;
-  color: var(--texto);
-  background: var(--superficie);
-  border: 1px solid var(--linea);
-  border-radius: var(--radio);
-}
-
-.entrada:focus-visible { outline: 2px solid var(--agenda); outline-offset: 1px; }
-
-.boton--mini { font-size: 0.75rem; padding: 0.25rem 0.625rem; margin-right: 0.375rem; }
-
-.grupo {
-  border: 1px solid var(--linea);
-  border-radius: var(--radio);
-  padding: 1rem;
-  margin: 0 0 1.25rem;
-}
-
-.grupo legend {
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--texto-tenue);
-  padding: 0 0.375rem;
-}
-
-.casilla {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  margin-right: 1.25rem;
-  font-size: 0.9375rem;
-}
-
-/* ---------- Estados de reserva ---------- */
-
-.estado-confirmada { background: var(--agenda-clara); color: var(--agenda); }
-.estado-rechazada, .estado-cancelada { background: var(--alerta-clara); color: var(--alerta); }
-
-/* ---------- Accesos del inicio ---------- */
-
-/* Tarjetas de la pantalla de inicio.
-   Se llaman .atajo y NO .acceso: esa clase ya la usa el layout de dos
-   columnas del login, y repetir el nombre hacía que este bloque lo
-   pisara y el formulario se apilara hacia abajo. */
-.accesos { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.75rem; }
-
-.atajo {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  padding: 1.25rem 1.5rem;
-  background: var(--superficie);
-  border: 1px solid var(--linea);
-  border-left: 3px solid var(--agenda);
-  border-radius: var(--radio);
-  text-decoration: none;
-  color: var(--texto);
-}
-
-.atajo:hover { border-color: var(--agenda); }
-.atajo:focus-visible { outline: 2px solid var(--agenda); outline-offset: 2px; }
-
-.atajo__titulo {
-  font-family: var(--display);
-  font-weight: 700;
-  font-size: 1.125rem;
-  letter-spacing: -0.01em;
-  color: var(--texto);
-}
-
-.atajo__detalle { font-size: 0.9375rem; color: var(--texto-tenue); }
-
-/* ---------- Vista maestro-detalle ---------- */
-
-.fila-clicable { cursor: pointer; }
-.fila-clicable:hover td { background: var(--papel); }
-
-.fila-activa td {
-  background: var(--agenda-clara);
-  box-shadow: inset 3px 0 0 var(--agenda);
-}
-
-.detalle__cabecera {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1.25rem;
-}
-
-.subtitulo {
-  font-family: var(--display);
-  font-weight: 700;
-  font-size: 0.8125rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--texto-tenue);
-  margin: 2rem 0 0.75rem;
-  padding-bottom: 0.375rem;
-  border-bottom: 1px solid var(--linea);
-}
-
-.fila-botones { display: flex; gap: 0.625rem; }
-
-.entrada--mini {
-  width: auto;
-  font-size: 0.75rem;
-  padding: 0.25rem 0.5rem;
-  margin-right: 0.375rem;
-}
-
-/* ---------- Encabezado de sección ---------- */
-
-.encabezado-seccion {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
-  margin-bottom: 1.5rem;
-}
-
-.volver {
-  background: none;
-  border: 0;
-  padding: 0.25rem 0;
-  margin-bottom: 1rem;
-  font-family: inherit;
-  font-size: 0.875rem;
-  color: var(--texto-tenue);
-  cursor: pointer;
-}
-
-.volver:hover { color: var(--texto); }
-.volver:focus-visible { outline: 2px solid var(--agenda); outline-offset: 2px; }
-
-/* ---------- Fichas de empresa ---------- */
-
+/* Listas de fichas grandes: empresas, clientes. */
 .fichas-empresa { list-style: none; margin: 0 0 1.5rem; padding: 0; display: grid; gap: 0.5rem; }
 
 .ficha-empresa {
@@ -688,82 +753,63 @@ h2 { font-size: 1.25rem; }
   border-left: 1px solid var(--linea);
 }
 
-.ficha--alerta { background: var(--alerta-clara); color: var(--alerta); }
+/* Listas de texto con autor y fecha: observaciones, interacciones. */
+.observaciones { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
 
-/* Estados de reserva y de empresa, sobre fondo claro. */
-.ficha--tenue { background: var(--papel); color: var(--texto-tenue); }
-
-/* ---------- Botones de icono ---------- */
-
-.icono {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  background: none;
-  border: 1px solid transparent;
-  border-radius: var(--radio);
-  color: var(--texto-tenue);
-  cursor: pointer;
-}
-
-.icono svg { width: 18px; height: 18px; }
-
-.icono svg path {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.75;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.icono:hover { background: var(--papel); color: var(--texto); border-color: var(--linea); }
-.icono:focus-visible { outline: 2px solid var(--agenda); outline-offset: 1px; }
-.icono--alerta:hover { color: var(--alerta); }
-
-/* ---------- Pestañas ---------- */
-
-.pestanas {
+.observaciones li {
   display: flex;
-  gap: 0.25rem;
-  margin-bottom: 1.25rem;
-  border-bottom: 1px solid var(--linea);
+  flex-direction: column;
+  gap: 2px;
+  padding: 0.5rem 0.75rem;
+  background: var(--superficie);
+  border-left: 2px solid var(--linea);
+  font-size: 0.875rem;
 }
 
-.pestana {
+.observaciones__meta { font-family: var(--mono); font-size: 0.6875rem; color: var(--texto-tenue); }
+.observaciones__vacio { color: var(--texto-tenue); font-style: italic; border-left-color: transparent; }
+
+/* =====================================================================
+   BUSCADOR CON RESULTADOS
+   ===================================================================== */
+
+.resultados {
+  list-style: none;
+  margin: 0.375rem 0 0;
+  padding: 0;
+  border: 1px solid var(--linea);
+  border-radius: var(--radio);
+  max-height: 14rem;
+  overflow-y: auto;
+  background: var(--superficie);
+}
+
+.resultado {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
   background: none;
   border: 0;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  padding: 0.5rem 0.875rem;
+  border-bottom: 1px solid var(--linea);
   font-family: inherit;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--texto-tenue);
+  text-align: left;
   cursor: pointer;
+  color: var(--texto);
 }
 
-.pestana:hover { color: var(--texto); }
-.pestana[aria-selected="true"] { color: var(--texto); border-bottom-color: var(--agenda); }
-.pestana:focus-visible { outline: 2px solid var(--agenda); outline-offset: 2px; }
+.resultado:hover { background: var(--agenda-clara); }
+.resultado:focus-visible { outline: 2px solid var(--agenda); outline-offset: -2px; }
+.resultado__datos { font-family: var(--mono); font-size: 0.6875rem; color: var(--texto-tenue); }
+.resultado__vacio { padding: 0.5rem 0.75rem; color: var(--texto-tenue); font-size: 0.875rem; }
 
-/* Contenedor de cada pestaña. Se llama así y no .panel porque esa
-   clase ya la usa el costado oscuro del login: repetirla pintaba de
-   negro el contenido de la agenda. */
-.contenido-pestana { display: block; }
+#c-cliente-elegido-caja { display: flex; align-items: center; gap: 0.5rem; }
 
-.pestanas--grandes .pestana {
-  font-family: var(--display);
-  font-weight: 700;
-  font-size: 1.0625rem;
-  letter-spacing: -0.01em;
-  padding: 0.5rem 1rem 0.75rem;
-}
-
-.fila-tenue { opacity: 0.55; }
-
-/* ---------- Calendario semanal ---------- */
+/* =====================================================================
+   CALENDARIO SEMANAL
+   Siete columnas con CSS Grid, sin librerías externas.
+   ===================================================================== */
 
 .calendario-envoltura { overflow-x: auto; margin: 0 -0.25rem; }
 
@@ -807,7 +853,6 @@ h2 { font-size: 1.25rem; }
 
 .dia__numero { font-family: var(--display); font-weight: 700; font-size: 1rem; }
 .dia--hoy .dia__numero { color: var(--agenda); }
-
 .dia__vacio { color: var(--linea); font-size: 0.875rem; text-align: center; margin-top: 1rem; }
 
 .turno {
@@ -834,38 +879,19 @@ h2 { font-size: 1.25rem; }
 .turno__cliente { font-size: 0.75rem; color: var(--texto-tenue); }
 
 .turno--confirmada { border-left-color: var(--agenda); background: var(--agenda-clara); }
-.turno--pendiente { border-left-color: #BA7517; }
+.turno--pendiente { border-left-color: var(--ambar); }
+.turno--completada { border-left-color: var(--tinta); }
 .turno--rechazada, .turno--cancelada, .turno--no_asistio {
   border-left-color: var(--alerta);
   opacity: 0.6;
 }
-.turno--completada { border-left-color: var(--tinta); }
 
 @media (max-width: 640px) {
   .calendario { min-width: 640px; grid-template-columns: repeat(7, minmax(90px, 1fr)); }
   .dia { min-height: 120px; padding: 0.375rem; }
 }
 
-
-/* ---------- Utilidad final ----------
-   Va de últimas a propósito: el atributo hidden debe ganarle a
-   cualquier regla de display definida más arriba. */
-[hidden] { display: none !important; }
-
-/* Aviso que puede llevar botones de acción además del texto. */
-.aviso--con-acciones {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.aviso--con-acciones .fila-botones:empty { display: none; }
-
-.items li .boton--mini { margin-left: auto; }
-
-/* ---------- Detalle del turno seleccionado ---------- */
-
+/* Detalle del turno seleccionado. */
 .detalle-turno {
   margin-top: 1.5rem;
   padding: 1.25rem;
@@ -886,33 +912,7 @@ h2 { font-size: 1.25rem; }
 .detalle-turno .fila-form { border-top: 0; padding-top: 0.875rem; margin-top: 0.875rem; }
 .detalle-turno .subtitulo { margin-top: 1.25rem; }
 
-.observaciones { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
-
-.observaciones li {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 0.5rem 0.75rem;
-  background: var(--superficie);
-  border-left: 2px solid var(--linea);
-  font-size: 0.875rem;
-}
-
-.observaciones__meta { font-family: var(--mono); font-size: 0.6875rem; color: var(--texto-tenue); }
-.observaciones__vacio { color: var(--texto-tenue); font-style: italic; border-left-color: transparent; }
-
-.ocupadas {
-  flex-basis: 100%;
-  margin: 0.5rem 0 0;
-  font-family: var(--mono);
-  font-size: 0.75rem;
-  color: var(--texto-tenue);
-}
-
-select[multiple] { padding: 0.25rem; }
-
-/* ---------- Reservar en tres pasos ---------- */
-
+/* Reservar en tres pasos: servicio, día, hora libre. */
 .reservar {
   margin-top: 1.5rem;
   padding-top: 1.5rem;
@@ -922,12 +922,7 @@ select[multiple] { padding: 0.25rem; }
 .reservar .fila-form { border-top: 0; padding-top: 0; margin-top: 0; }
 .reservar .subtitulo { margin-top: 0; }
 
-.horas {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.375rem;
-  margin-top: 0.75rem;
-}
+.horas { display: flex; flex-wrap: wrap; gap: 0.375rem; margin-top: 0.75rem; }
 
 .hora {
   font-family: var(--mono);
@@ -940,16 +935,69 @@ select[multiple] { padding: 0.25rem; }
   cursor: pointer;
 }
 
-.hora:hover {
-  background: var(--agenda-clara);
-  border-color: var(--agenda);
-  color: var(--agenda);
-}
-
+.hora:hover { background: var(--agenda-clara); border-color: var(--agenda); color: var(--agenda); }
 .hora:focus-visible { outline: 2px solid var(--agenda); outline-offset: 1px; }
 .hora[disabled] { opacity: 0.45; cursor: progress; }
 
-/* ---------- Editor de roles ---------- */
+/* =====================================================================
+   CRM: casos, prioridades y estados
+   ===================================================================== */
+
+.dc-descripcion {
+  margin: 1rem 0;
+  padding: 0.875rem 1rem;
+  background: var(--papel);
+  border-left: 2px solid var(--linea);
+  font-size: 0.9375rem;
+  white-space: pre-wrap;
+}
+
+.prioridad-critica { background: var(--alerta-clara); color: var(--alerta); font-weight: 600; }
+.prioridad-alta { background: var(--ambar-claro); color: var(--ambar); }
+.prioridad-media, .prioridad-baja { background: var(--papel); color: var(--texto-tenue); }
+
+.estado-abierto { background: var(--ambar-claro); color: var(--ambar); }
+.estado-en_proceso { background: var(--agenda-clara); color: var(--agenda); }
+.estado-escalado { background: var(--alerta-clara); color: var(--alerta); }
+.estado-resuelto, .estado-cerrado { background: var(--papel); color: var(--texto-tenue); }
+
+/* =====================================================================
+   ACCESOS DE LA PANTALLA DE INICIO
+   Se llaman .atajo y NO .acceso: esa clase ya la usa el layout de dos
+   columnas del login, y repetir el nombre apilaba el formulario.
+   ===================================================================== */
+
+.accesos { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.75rem; }
+
+.atajo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 1.25rem 1.5rem;
+  background: var(--superficie);
+  border: 1px solid var(--linea);
+  border-left: 3px solid var(--agenda);
+  border-radius: var(--radio);
+  text-decoration: none;
+  color: var(--texto);
+}
+
+.atajo:hover { border-color: var(--agenda); }
+.atajo:focus-visible { outline: 2px solid var(--agenda); outline-offset: 2px; }
+
+.atajo__titulo {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 1.125rem;
+  letter-spacing: -0.01em;
+  color: var(--texto);
+}
+
+.atajo__detalle { font-size: 0.9375rem; color: var(--texto-tenue); }
+
+/* =====================================================================
+   EDITOR DE ROLES
+   ===================================================================== */
 
 .rol-tarjeta { margin-bottom: 1rem; }
 .rol-tarjeta .encabezado-seccion { margin-bottom: 1rem; }
@@ -974,92 +1022,10 @@ select[multiple] { padding: 0.25rem; }
   padding-left: 1rem;
 }
 
-/* ---------- CRM ---------- */
+/* =====================================================================
+   UTILIDAD FINAL
+   Va de últimas a propósito: el atributo hidden debe ganarle a
+   cualquier regla de display definida más arriba en el archivo.
+   ===================================================================== */
 
-.dc-descripcion {
-  margin: 1rem 0;
-  padding: 0.875rem 1rem;
-  background: var(--papel);
-  border-left: 2px solid var(--linea);
-  font-size: 0.9375rem;
-  white-space: pre-wrap;
-}
-
-textarea.entrada { font-family: inherit; resize: vertical; }
-
-.prioridad-critica { background: var(--alerta-clara); color: var(--alerta); font-weight: 600; }
-.prioridad-alta { background: #FBF0E5; color: #BA7517; }
-.prioridad-media { background: var(--papel); color: var(--texto-tenue); }
-.prioridad-baja { background: var(--papel); color: var(--texto-tenue); }
-
-.estado-abierto { background: #FBF0E5; color: #BA7517; }
-.estado-en_proceso { background: var(--agenda-clara); color: var(--agenda); }
-.estado-escalado { background: var(--alerta-clara); color: var(--alerta); }
-.estado-resuelto, .estado-cerrado { background: var(--papel); color: var(--texto-tenue); }
-
-/* ---------- Buscador con resultados ---------- */
-
-.resultados {
-  list-style: none;
-  margin: 0.375rem 0 0;
-  padding: 0;
-  border: 1px solid var(--linea);
-  border-radius: var(--radio);
-  max-height: 14rem;
-  overflow-y: auto;
-  background: var(--superficie);
-}
-
-.resultado {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  width: 100%;
-  padding: 0.5rem 0.75rem;
-  background: none;
-  border: 0;
-  border-bottom: 1px solid var(--linea);
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-  color: var(--texto);
-}
-
-.resultado:hover { background: var(--agenda-clara); }
-.resultado:focus-visible { outline: 2px solid var(--agenda); outline-offset: -2px; }
-.resultado__datos { font-family: var(--mono); font-size: 0.6875rem; color: var(--texto-tenue); }
-.resultado__vacio { padding: 0.5rem 0.75rem; color: var(--texto-tenue); font-size: 0.875rem; }
-
-#c-cliente-elegido-caja { display: flex; align-items: center; gap: 0.5rem; }
-.entrada--elegido { background: var(--agenda-clara); color: var(--agenda); font-weight: 500; }
-
-/* ---------- Indicadores del perfil de cliente ---------- */
-
-.indicadores {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2rem;
-  margin-top: 1.5rem;
-  padding-top: 1.25rem;
-  border-top: 1px solid var(--linea);
-}
-
-.indicador { display: flex; flex-direction: column; gap: 2px; }
-
-.indicador__numero {
-  font-family: var(--display);
-  font-weight: 700;
-  font-size: 1.75rem;
-  line-height: 1;
-  letter-spacing: -0.02em;
-}
-
-.indicador__texto {
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--texto-tenue);
-}
-
-.items li .boton--borde { margin-left: auto; }
+[hidden] { display: none !important; }

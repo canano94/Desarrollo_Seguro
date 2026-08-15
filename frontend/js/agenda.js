@@ -475,7 +475,10 @@ function aplicarPermisos() {
 
   document.getElementById('nav-servicios').hidden = !puede('servicios.gestionar');
   document.getElementById('nav-usuarios').hidden = !puede('empleados.gestionar');
-  document.getElementById('nav-clientes').hidden = !puede('crm.ver_historial');
+  // Los clientes no dependen de ningún módulo: basta con poder
+  // administrarlos, manejar la agenda o atender casos.
+  document.getElementById('nav-clientes').hidden =
+    !puede('clientes.gestionar') && !puede('reservas.aprobar') && !puede('casos.gestionar');
   document.getElementById('nav-crm').hidden = !modulos.includes('CRM');
   document.getElementById('nav-admin').hidden =
     !datos.rolesPlataforma?.includes('SUPER_ADMIN');

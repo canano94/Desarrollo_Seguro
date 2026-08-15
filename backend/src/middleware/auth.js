@@ -181,3 +181,19 @@ export function exigirPlataforma(req, _res, next) {
   }
   return next();
 }
+
+/**
+ * Basta con UNO de los permisos, a diferencia de exigirPermisos que
+ * los exige todos. Útil cuando una misma ruta sirve a dos casos:
+ * editar un empleado ('empleados.gestionar') o un cliente
+ * ('clientes.gestionar').
+ */
+export function exigirAlgunPermiso(...permisos) {
+  return (req, _res, next) => {
+    if (!req.usuario) return next(new AppError(401, 'SIN_TOKEN', 'Falta el token de acceso.'));
+    if (!permisos.some((p) => req.usuario.permisos.includes(p))) {
+      return next(new AppError(403, 'SIN_PERMISO', 'No tienes permiso para esta operación.'));
+    }
+    return next();
+  };
+}
