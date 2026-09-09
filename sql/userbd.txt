@@ -1,0 +1,23 @@
+Admin
+
+Host: localhost
+Puerto: 5433
+Base de datos: agendamiento_crm
+Usuario: api_agendamiento
+Contraseña: TuClaveSegura2026
+
+Supersu
+Host	localhost
+Puerto	5433
+Base de datos de mantenimiento	agendamiento_crm
+Usuario	postgres
+Contraseña	OtraClaveAdmin2026
+
+
+cd C:\ProyectosU\Desarrollo_Seguro
+.\oc TOOKEMLOGIN
+$pg = (.\oc get pods -o name | Select-String postgresql) -replace 'pod/',''
+.\oc port-forward $pg 5433:5432
+
+
+.\oc get pods

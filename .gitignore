@@ -4,28 +4,24 @@ node_modules/
 # Secretos: NUNCA al repositorio.
 # Si alguno se sube por error, no basta con borrarlo en el siguiente
 # commit: queda en el historial y hay que ROTAR la contraseña de la
-# base de datos y el JWT_SECRET.
-backend/.env
+# base y el JWT_SECRET.
 .env
 .env.local
+.env.production
 
 # Lo genera el contenedor al arrancar (env-entrypoint.sh).
 # El de local apunta a localhost y pisaría el del despliegue.
 frontend/env.js
 
-# Ejecutable de OpenShift: cada quien descarga el suyo.
-bd_open/oc.exe
+# Herramientas y respaldos locales
 oc.exe
-
-# Volcados y notas locales con credenciales
-bd_open/dump_esquema.sql
-bd_open/userbd.txt
 respaldo_*.sql
 dump_*.sql
-
-# Registros y basura del editor
 *.log
 npm-debug.log*
+
+# Editor y sistema operativo
 .vscode/
 .idea/
 Thumbs.db
+Desktop.ini
