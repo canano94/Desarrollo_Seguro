@@ -9,7 +9,7 @@
 --    4. Corrección de tildes corrompidas por la codificación
 -- =====================================================================
 
-SET search_path TO app, public;
+SET search_path TO app, public, extensions;
 
 -- ---------------------------------------------------------------------
 -- 1. Permiso para restablecer la contraseña de un cliente

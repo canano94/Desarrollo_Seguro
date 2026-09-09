@@ -15,7 +15,7 @@
 --  seguiría buscándolo y dejaría gente sin acceso sin explicación.
 -- =====================================================================
 
-SET search_path TO app, public;
+SET search_path TO app, public, extensions;
 
 -- La columna ya existía en el script 03 original, pero el rediseño del
 -- 06 recreó los roles sin ella. IF NOT EXISTS la hace idempotente.

@@ -21,7 +21,7 @@
 --    5. Quién puede llamarlas se decide en la API con exigirPlataforma.
 -- =====================================================================
 
-SET search_path TO app, public;
+SET search_path TO app, public, extensions;
 
 -- ---------------------------------------------------------------------
 -- Empresas con su resumen

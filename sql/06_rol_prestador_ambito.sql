@@ -24,7 +24,7 @@
 --  El vínculo entre ambas es app.membresia_prestadores.
 -- =====================================================================
 
-SET search_path TO app, public;
+SET search_path TO app, public, extensions;
 
 -- ---------------------------------------------------------------------
 -- 1. Rol PRESTADOR

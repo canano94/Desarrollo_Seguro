@@ -29,7 +29,7 @@ CREATE EXTENSION IF NOT EXISTS citext;
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 
 CREATE SCHEMA app;
-SET search_path TO app, public;
+SET search_path TO app, public, extensions;
 
 
 -- =====================================================================

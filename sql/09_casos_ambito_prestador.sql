@@ -9,7 +9,7 @@
 --  y esos van al administrador.
 -- =====================================================================
 
-SET search_path TO app, public;
+SET search_path TO app, public, extensions;
 
 ALTER TABLE app.casos_servicio
     ADD COLUMN IF NOT EXISTS id_prestador uuid;

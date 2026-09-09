@@ -357,18 +357,21 @@ async function cargarServicios() {
   }
 }
 
-/** 
- * Similar al anterior. Solo carga a los miembros con rol 'CLIENTE' para llenar 
- * el buscador si se va a reservar a nombre de otra persona.
+/**
+ * Clientes para el desplegable de "reservar a nombre de otro".
+ *
+ * Antes usaba /agenda/miembros, que exige 'empleados.gestionar' — un
+ * permiso de administración que un empleado no tiene aunque sí pueda
+ * agendar. El endpoint de clientes es el correcto.
  */
 async function cargarMiembros() {
   if (!puede('reservas.aprobar')) return;
-  ({ miembros } = await pedir('/agenda/miembros'));
 
+  const { clientes } = await pedir('/clientes');
   const select = document.getElementById('r-cliente');
   select.replaceChildren();
-  for (const m of miembros.filter((x) => x.roles.includes('CLIENTE'))) {
-    select.append(opcion(m.idMembresia, `${m.nombres} ${m.apellidos}`));
+  for (const c of clientes) {
+    select.append(opcion(c.idMembresia, `${c.nombres} ${c.apellidos} — ${c.email}`));
   }
 }
 

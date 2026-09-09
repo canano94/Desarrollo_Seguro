@@ -16,7 +16,7 @@
 --    cambiarla.
 -- =====================================================================
 
-SET search_path TO app, public;
+SET search_path TO app, public, extensions;
 
 ALTER TABLE app.usuarios
     ADD COLUMN IF NOT EXISTS debe_cambiar_password boolean NOT NULL DEFAULT false;

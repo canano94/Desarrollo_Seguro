@@ -9,7 +9,7 @@
 --  plataforma. Es una fuga sutil de información de negocio.
 -- =====================================================================
 
-SET search_path TO app, public;
+SET search_path TO app, public, extensions;
 
 CREATE TABLE IF NOT EXISTS app.contador_casos (
     id_empresa uuid PRIMARY KEY REFERENCES app.empresas(id_empresa) ON DELETE CASCADE,
