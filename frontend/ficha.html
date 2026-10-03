@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <title>Hoja de servicio del equipo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/equipos.css">
+</head>
+<body class="ficha">
+  <main class="ficha__hoja" aria-live="polite">
+    <p class="ficha__marca">Hoja de servicio</p>
+
+    <div id="f-cargando" class="ficha__estado-carga">Consultando el equipo…</div>
+
+    <div id="f-error" hidden>
+      <h1 class="ficha__equipo">No encontramos este equipo</h1>
+      <p class="ficha__texto">El código puede estar dañado o el equipo ya no está activo. Comunícate con la empresa que te presta el servicio.</p>
+    </div>
+
+    <article id="f-contenido" hidden>
+      <header class="ficha__cabecera">
+        <h1 class="ficha__equipo" id="f-equipo"></h1>
+        <p class="ficha__texto" id="f-modelo"></p>
+      </header>
+
+      <section class="ficha__proximo" id="f-proximo">
+        <p class="ficha__rotulo">Próximo mantenimiento</p>
+        <p class="ficha__fecha" id="f-proxima-fecha"></p>
+        <p class="ficha__aviso" id="f-proxima-estado"></p>
+      </section>
+
+      <dl class="ficha__datos">
+        <div>
+          <dt>Último mantenimiento</dt>
+          <dd id="f-ultimo"></dd>
+        </div>
+        <div id="f-ubicacion-fila">
+          <dt>Ubicación</dt>
+          <dd id="f-ubicacion"></dd>
+        </div>
+      </dl>
+    </article>
+  </main>
+
+  <script type="module" src="js/ficha.js"></script>
+</body>
+</html>

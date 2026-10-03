@@ -16,12 +16,14 @@
     <header class="barra">
       <p class="barra__marca">Agenda</p>
       <nav class="barra__nav">
-        <a href="inicio.html">Inicio</a>
-        <a href="agenda.html" id="nav-agenda" hidden>Agenda</a>
+        <a href="inicio.html" >Inicio</a>
+        <a href="agenda.html" id="nav-agenda" hidden >Agenda</a>
         <a href="servicios.html" id="nav-servicios" hidden>Servicios</a>
         <a href="usuarios.html" id="nav-usuarios" hidden>Personas</a>
-        <a href="clientes.html" aria-current="page">Clientes</a>
+        <a href="clientes.html" id="nav-clientes" hidden aria-current="page">Clientes</a>
         <a href="crm.html" id="nav-crm" hidden>CRM</a>
+        <a href="equipos.html" id="nav-equipos" hidden>Equipos</a>
+        <a href="configuracion.html" id="nav-config" hidden>Configuración</a>
         <a href="perfil.html">Perfil</a>
         <a href="admin.html" id="nav-admin" hidden>Plataforma</a>
       </nav>
@@ -42,7 +44,55 @@
             <h1>Clientes</h1>
             <p class="apoyo">Busca por nombre, correo, teléfono o documento.</p>
           </div>
+          <button type="button" class="boton" id="btn-nuevo-cliente" hidden>Nuevo cliente</button>
         </div>
+
+        <!-- Crear ficha -->
+        <section class="tarjeta" id="panel-nuevo-cliente" hidden>
+          <h2>Nuevo cliente</h2>
+          <p class="pista">Solo el nombre es obligatorio. El resto se puede completar después.</p>
+          <form id="form-nuevo-cliente" novalidate>
+            <div class="rejilla">
+              <div class="campo">
+                <label for="nc-nombres">Nombres</label>
+                <input id="nc-nombres" type="text" maxlength="100" required autocomplete="off">
+              </div>
+              <div class="campo">
+                <label for="nc-apellidos">Apellidos</label>
+                <input id="nc-apellidos" type="text" maxlength="100" autocomplete="off">
+              </div>
+              <div class="campo">
+                <label for="nc-tipo-doc">Tipo de documento</label>
+                <select id="nc-tipo-doc" class="entrada"></select>
+              </div>
+              <div class="campo">
+                <label for="nc-documento">Número de documento</label>
+                <input id="nc-documento" type="text" maxlength="30" autocomplete="off">
+              </div>
+              <div class="campo">
+                <label for="nc-email">Correo</label>
+                <input id="nc-email" type="email" maxlength="150" autocomplete="off">
+                <p class="pista">Necesario si más adelante le das acceso a la plataforma.</p>
+              </div>
+              <div class="campo">
+                <label for="nc-telefono">Teléfono</label>
+                <input id="nc-telefono" type="tel" maxlength="30" autocomplete="off">
+              </div>
+              <div class="campo">
+                <label for="nc-direccion">Dirección</label>
+                <input id="nc-direccion" type="text" maxlength="200" autocomplete="off">
+              </div>
+              <div class="campo">
+                <label for="nc-ciudad">Ciudad</label>
+                <input id="nc-ciudad" type="text" maxlength="80" autocomplete="off">
+              </div>
+            </div>
+            <div class="fila-botones">
+              <button type="submit" class="boton" id="nc-guardar">Crear cliente</button>
+              <button type="button" class="boton boton--texto" id="nc-cancelar">Cancelar</button>
+            </div>
+          </form>
+        </section>
 
         <div class="campo">
           <label for="buscar">Buscar cliente</label>
@@ -63,6 +113,7 @@
 
           <dl class="datos">
             <div><dt>Documento</dt><dd id="p-documento"></dd></div>
+            <div><dt>Dirección</dt><dd id="p-direccion"></dd></div>
             <div><dt>Cliente desde</dt><dd id="p-desde"></dd></div>
             <div><dt>Estado</dt><dd id="p-estado" class="fichas"></dd></div>
           </dl>
@@ -81,19 +132,56 @@
               <span class="indicador__numero" id="p-casos">0</span>
               <span class="indicador__texto">Casos abiertos</span>
             </div>
-            <div class="acciones fila-botones" id="acciones-cliente" hidden>
-            <button type="button" class="boton boton--borde" id="btn-editar-cliente">Editar datos</button>
-            <button type="button" class="boton boton--borde" id="btn-clave-cliente">Restablecer contraseña</button>
           </div>
 
-          <form id="form-editar-cliente" class="fila-form" novalidate hidden>
-            <div class="campo"><label for="ec-telefono">Teléfono</label><input id="ec-telefono" type="tel" maxlength="30"></div>
-            <div class="campo"><label for="ec-documento">Documento</label><input id="ec-documento" type="text" maxlength="30"></div>
-            <div class="campo"><label for="ec-cargo">Cargo</label><input id="ec-cargo" type="text" maxlength="80"></div>
-            <button type="submit" class="boton boton--mini">Guardar</button>
-            <button type="button" class="boton boton--texto boton--mini" id="ec-cancelar">Cancelar</button>
-          </form>
+          <div class="acciones fila-botones" id="acciones-cliente" hidden>
+            <button type="button" class="boton boton--borde" id="btn-editar-cliente" hidden>Editar ficha</button>
+            <button type="button" class="boton boton--borde" id="btn-acceso-cliente" hidden>Dar acceso a la plataforma</button>
+            <button type="button" class="boton boton--borde" id="btn-clave-cliente" hidden>Restablecer contraseña</button>
           </div>
+
+          <!-- Editar ficha -->
+          <form id="form-editar-cliente" novalidate hidden>
+            <div class="rejilla">
+              <div class="campo">
+                <label for="ec-nombres">Nombres</label>
+                <input id="ec-nombres" type="text" maxlength="100" required>
+              </div>
+              <div class="campo">
+                <label for="ec-apellidos">Apellidos</label>
+                <input id="ec-apellidos" type="text" maxlength="100">
+              </div>
+              <div class="campo">
+                <label for="ec-tipo-doc">Tipo de documento</label>
+                <select id="ec-tipo-doc" class="entrada"></select>
+              </div>
+              <div class="campo">
+                <label for="ec-documento">Número de documento</label>
+                <input id="ec-documento" type="text" maxlength="30">
+              </div>
+              <div class="campo">
+                <label for="ec-email">Correo de contacto</label>
+                <input id="ec-email" type="email" maxlength="150">
+                <p class="pista" id="ec-email-nota" hidden>Este cliente ya entra a la plataforma: cambiar este correo no cambia su usuario de ingreso.</p>
+              </div>
+              <div class="campo">
+                <label for="ec-telefono">Teléfono</label>
+                <input id="ec-telefono" type="tel" maxlength="30">
+              </div>
+              <div class="campo">
+                <label for="ec-direccion">Dirección</label>
+                <input id="ec-direccion" type="text" maxlength="200">
+              </div>
+              <div class="campo">
+                <label for="ec-ciudad">Ciudad</label>
+                <input id="ec-ciudad" type="text" maxlength="80">
+              </div>
+            </div>
+            <div class="fila-botones">
+              <button type="submit" class="boton boton--mini">Guardar</button>
+              <button type="button" class="boton boton--texto boton--mini" id="ec-cancelar">Cancelar</button>
+            </div>
+          </form>
         </section>
 
         <div class="pestanas" role="tablist" id="pestanas-perfil">

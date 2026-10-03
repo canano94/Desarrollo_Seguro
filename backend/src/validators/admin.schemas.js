@@ -14,6 +14,16 @@ const slug = z
 const email = z.string().trim().toLowerCase().email().max(254);
 
 /**
+ * Códigos de módulo. Ya no es una lista fija en el código: el catálogo
+ * oficial es la tabla app.modulos, y el service verifica que existan.
+ * Aquí solo se valida el FORMATO, para que nada raro llegue a la base.
+ */
+const listaModulos = z
+  .array(z.string().trim().toUpperCase().regex(/^[A-Z_]{2,30}$/, 'Código de módulo inválido.'))
+  .min(1, 'Elige al menos un módulo.')
+  .max(20);
+
+/**
  * Función que genera una validación para textos genéricos.
  * Recorta espacios en blanco, limita el tamaño máximo y elimina caracteres de control.
  */
@@ -48,7 +58,7 @@ export const crearEmpresaSchema = z
     nit: z.string().trim().max(30).optional().or(z.literal('')),
     emailContacto: email,
     telefono: z.string().trim().max(30).optional().or(z.literal('')),
-    modulos: z.array(z.enum(['AGENDA', 'CRM'])).min(1, 'Elige al menos un módulo.'),
+    modulos: listaModulos,
     administrador: z
       .object({
         email,
@@ -111,7 +121,7 @@ export const cambiarEstadoEmpresaSchema = z
  */
 export const modulosEmpresaSchema = z
   .object({
-    modulos: z.array(z.enum(['AGENDA', 'CRM'])).min(1, 'Elige al menos un módulo.'),
+    modulos: listaModulos,
   })
   .strict();
 

@@ -53,6 +53,7 @@ function acceso(href, titulo, descripcion) {
 function pintar() {
   const datos = sesionActual();
   const empresa = datos.empresaActiva;
+  const modulos = empresa?.modulos ?? [];
   const permisos = empresa?.permisos ?? [];
   const puede = (p) => permisos.includes(p);
   const esPlataforma = datos.rolesPlataforma?.includes('SUPER_ADMIN');
@@ -69,6 +70,7 @@ function pintar() {
   // Condicionales del Menú de Navegación Global (Header)
   document.getElementById('nav-servicios').hidden = !puede('servicios.gestionar');
   document.getElementById('nav-usuarios').hidden = !puede('empleados.gestionar');
+  document.getElementById('nav-equipos').hidden = !modulos.includes('EQUIPOS');
   
   // Condicional compuesta: Si no atiende citas ni resuelve quejas ni maneja usuarios,
   // la pestaña de Clientes entera no tiene utilidad visual para él.

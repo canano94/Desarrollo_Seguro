@@ -80,6 +80,8 @@ router.put('/empresas/:idEmpresa/modulos', exigirPlataforma,
 router.get('/empresas/:idEmpresa/miembros', exigirPlataforma,
   validarParamUuid('idEmpresa'), ctrl.miembrosDeEmpresa);
 
+router.get('/modulos', ctrl.listarModulos);
+
 router.post('/empresas/:idEmpresa/miembros', exigirPlataforma,
   validarParamUuid('idEmpresa'), validar(miembroEmpresaSchema), ctrl.agregarMiembro);
 

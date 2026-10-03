@@ -1,0 +1,222 @@
+/* ==================================================================
+   Módulo de equipos — complementa css/estilos.css
+   ================================================================== */
+
+:root {
+  --eq-tinta: #14212b;
+  --eq-tenue: #5f6a72;
+  --eq-linea: #d9d9d0;
+  --eq-papel: #f1f1ec;
+  --eq-verde: #1d6b57;
+  --eq-ambar: #8f5600;
+  --eq-rojo: #9e2f26;
+}
+
+.tenue { color: var(--eq-tenue); }
+
+/* Filas clicables de las tablas */
+.fila-clic { cursor: pointer; }
+.fila-clic:hover td { background: rgba(29, 107, 87, 0.06); }
+.fila-clic:focus-visible { outline: 2px solid var(--eq-verde); outline-offset: -2px; }
+
+/* Estado del próximo mantenimiento */
+.estado-al-dia { color: var(--eq-verde); }
+.estado-pronto { color: var(--eq-ambar); font-weight: 600; }
+.estado-vencido { color: var(--eq-rojo); font-weight: 600; }
+
+/* Datos del equipo en el detalle */
+.datos-equipo {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 1rem 2rem;
+  margin: 1.25rem 0 0;
+}
+.datos-equipo dt {
+  font-size: 0.8rem;
+  color: var(--eq-tenue);
+  margin-bottom: 0.15rem;
+}
+.datos-equipo dd { margin: 0; font-weight: 500; }
+
+.subtitulo-menor {
+  font-size: 0.95rem;
+  margin: 1.25rem 0 0.5rem;
+}
+
+.casilla {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+}
+
+/* Detalle de un mantenimiento */
+.detalle-mant {
+  margin-top: 1rem;
+  padding: 1rem 1.25rem;
+  border-left: 3px solid var(--eq-verde);
+  background: rgba(29, 107, 87, 0.04);
+}
+.detalle-mant__obs {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0.5rem 0 0;
+  max-width: 70ch;
+}
+
+/* Etiqueta del QR (lo que se imprime) */
+.qr-etiqueta {
+  display: flex;
+  gap: 1.25rem;
+  align-items: center;
+  width: fit-content;
+  padding: 1rem 1.25rem;
+  margin: 1rem 0;
+  border: 1px solid var(--eq-linea);
+  border-radius: 6px;
+  background: #fff;
+}
+.qr-etiqueta__codigo { width: 9rem; height: 9rem; flex: none; }
+.qr-etiqueta__codigo svg { width: 100%; height: 100%; display: block; }
+.qr-etiqueta__texto p { margin: 0 0 0.25rem; }
+.qr-etiqueta__titulo {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-weight: 700;
+  font-size: 1.15rem;
+}
+.qr-etiqueta__ayuda { font-size: 0.8rem; color: var(--eq-tenue); }
+
+@media print {
+  body.imprimiendo-qr * { visibility: hidden; }
+  body.imprimiendo-qr #qr-imprimible,
+  body.imprimiendo-qr #qr-imprimible * { visibility: visible; }
+  body.imprimiendo-qr #qr-imprimible {
+    position: absolute;
+    left: 0;
+    top: 0;
+    margin: 0;
+    border: 1px solid #000;
+  }
+}
+
+/* ==================================================================
+   Ficha pública (ficha.html) — pensada para leerse en el celular
+   ================================================================== */
+
+body.ficha {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--eq-papel);
+  color: var(--eq-tinta);
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  line-height: 1.5;
+}
+
+.ficha__hoja {
+  max-width: 28rem;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem;
+}
+
+.ficha__marca {
+  margin: 0 0 2.5rem;
+  font-size: 0.9rem;
+  color: var(--eq-tenue);
+  border-bottom: 1px solid var(--eq-linea);
+  padding-bottom: 0.75rem;
+}
+
+.ficha__estado-carga { color: var(--eq-tenue); }
+
+.ficha__equipo {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-weight: 700;
+  font-size: 2rem;
+  line-height: 1.1;
+  margin: 0 0 0.35rem;
+}
+
+.ficha__texto { margin: 0; color: var(--eq-tenue); }
+
+.ficha__cabecera { margin-bottom: 2rem; }
+
+/* El bloque protagonista: cuándo toca la próxima revisión */
+.ficha__proximo {
+  padding: 1.25rem 1.25rem 1.25rem 1.5rem;
+  border-left: 6px solid var(--eq-verde);
+  background: #fff;
+  border-radius: 0 6px 6px 0;
+}
+.ficha__proximo[data-estado='pronto'] { border-left-color: var(--eq-ambar); }
+.ficha__proximo[data-estado='vencido'] { border-left-color: var(--eq-rojo); }
+.ficha__proximo[data-estado='sin-fecha'] { border-left-color: var(--eq-linea); }
+
+.ficha__rotulo { margin: 0; font-size: 0.9rem; color: var(--eq-tenue); }
+
+.ficha__fecha {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-weight: 700;
+  font-size: 2.25rem;
+  line-height: 1.1;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.ficha__aviso { margin: 0; font-weight: 500; }
+.ficha__proximo[data-estado='al-dia'] .ficha__aviso { color: var(--eq-verde); }
+.ficha__proximo[data-estado='pronto'] .ficha__aviso { color: var(--eq-ambar); }
+.ficha__proximo[data-estado='vencido'] .ficha__aviso { color: var(--eq-rojo); }
+
+.ficha__datos { margin: 2rem 0 0; }
+.ficha__datos > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--eq-linea);
+}
+.ficha__datos dt { color: var(--eq-tenue); }
+.ficha__datos dd { margin: 0; font-weight: 500; text-align: right; }
+
+/* ==================================================================
+   Configuración (configuracion.html)
+   ================================================================== */
+
+.config-seccion { margin-bottom: 2.5rem; }
+.config-seccion > h2 { margin-bottom: 0.25rem; }
+.config-seccion > .apoyo { margin-bottom: 1.25rem; max-width: 65ch; }
+.config-seccion .tarjeta { margin-bottom: 1.25rem; }
+
+.config-lista {
+  list-style: none;
+  margin: 1rem 0;
+  padding: 0;
+  border-top: 1px solid var(--eq-linea);
+}
+
+.config-fila {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--eq-linea);
+}
+.config-fila input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 0.4rem 0.5rem;
+  border-radius: 4px;
+  font: inherit;
+  color: inherit;
+}
+.config-fila input:hover { border-color: var(--eq-linea); }
+.config-fila input:focus { border-color: var(--eq-verde); background: #fff; outline: none; }
+.config-fila--inactiva input { color: var(--eq-tenue); text-decoration: line-through; }
+
+.config-agregar {
+  display: flex;
+  gap: 0.75rem;
+  max-width: 28rem;
+}
+.config-agregar input { flex: 1; min-width: 0; }

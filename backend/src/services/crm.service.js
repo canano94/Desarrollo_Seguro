@@ -1,5 +1,10 @@
 import { conEmpresa } from '../db/pool.js';
 import { AppError } from '../utils/errors.js';
+import {
+  idClienteDeMembresia,
+  SQL_CLIENTE_DE_MEMBRESIA_P2,
+  nombreCompleto,
+} from './clientes.service.js';
 
 /**
  * TODO en este archivo corre dentro de conEmpresa(), igual que agenda.
@@ -10,13 +15,16 @@ import { AppError } from '../utils/errors.js';
  * Un caso pertenece a la empresa, no a una sede — "la atención
  * telefónica fue mala" no es de Chapinero ni de Usaquén. Lo que sí
  * cambia por rol es el ALCANCE: un empleado ve solo los suyos.
+ *
+ * DESDE LA SEPARACIÓN DE CLIENTES: c.id_cliente apunta a app.clientes
+ * (la ficha), no a una membresía. El PERSONAL (asignado, autor de una
+ * interacción, empleado de un turno) sigue siendo membresía + usuario.
  */
 
 // ================================================================== //
 // CASOS DE SERVICIO (PQR)                                            //
 // ================================================================== //
 
-/**
 /**
  * @param alcance 'propios'  -> CLIENTE: solo los que radicó
  *                'asignados'-> EMPLEADO: solo los que le asignaron
@@ -28,19 +36,19 @@ export async function listarCasos(idEmpresa, idMembresia, alcance, ambito = []) 
     const { rows } = await client.query(
       `SELECT c.id_caso, c.numero_caso, c.tipo, c.prioridad, c.estado,
               c.asunto, c.created_at, c.fecha_cierre,
-              uc.nombres || ' ' || uc.apellidos AS cliente,
-              ua.nombres || ' ' || ua.apellidos AS asignado,
+              CONCAT_WS(' ', cl.nombres, cl.apellidos) AS cliente,
+              CONCAT_WS(' ', ua.nombres, ua.apellidos) AS asignado,
               p.nombre AS prestador,
               (SELECT count(*) FROM app.interacciones_crm i
                 WHERE i.id_caso = c.id_caso) AS interacciones
          FROM app.casos_servicio c
-         JOIN app.membresias mc ON mc.id_membresia = c.id_cliente
-         JOIN app.usuarios   uc ON uc.id_usuario   = mc.id_usuario
+         JOIN app.clientes cl ON cl.id_cliente = c.id_cliente
          LEFT JOIN app.membresias ma ON ma.id_membresia = c.id_asignado
          LEFT JOIN app.usuarios   ua ON ua.id_usuario   = ma.id_usuario
          LEFT JOIN app.prestadores p ON p.id_prestador = c.id_prestador
         WHERE CASE $1::text
-                WHEN 'propios'   THEN c.id_cliente  = $2::uuid
+                -- El cliente llega con su membresía; se traduce a su ficha.
+                WHEN 'propios'   THEN c.id_cliente  = ${SQL_CLIENTE_DE_MEMBRESIA_P2}
                 WHEN 'asignados' THEN c.id_asignado = $2::uuid
                 -- Un prestador ve los de sus sedes MÁS los generales
                 -- (sin sede), porque también podrían tocarle a él.
@@ -80,11 +88,10 @@ export async function detalleCaso(idEmpresa, idCaso) {
       `SELECT c.id_caso, c.numero_caso, c.tipo, c.prioridad, c.estado,
               c.asunto, c.descripcion, c.created_at, c.fecha_cierre,
               c.id_cliente, c.id_asignado, c.id_reserva,
-              uc.nombres || ' ' || uc.apellidos AS cliente,
-              ua.nombres || ' ' || ua.apellidos AS asignado
+              CONCAT_WS(' ', cl.nombres, cl.apellidos) AS cliente,
+              CONCAT_WS(' ', ua.nombres, ua.apellidos) AS asignado
          FROM app.casos_servicio c
-         JOIN app.membresias mc ON mc.id_membresia = c.id_cliente
-         JOIN app.usuarios   uc ON uc.id_usuario   = mc.id_usuario
+         JOIN app.clientes cl ON cl.id_cliente = c.id_cliente
          LEFT JOIN app.membresias ma ON ma.id_membresia = c.id_asignado
          LEFT JOIN app.usuarios   ua ON ua.id_usuario   = ma.id_usuario
         WHERE c.id_caso = $1`,
@@ -99,7 +106,7 @@ export async function detalleCaso(idEmpresa, idCaso) {
 
     const { rows: interacciones } = await client.query(
       `SELECT i.id_interaccion, i.canal, i.asunto, i.detalle, i.fecha_interaccion,
-              u.nombres || ' ' || u.apellidos AS autor
+              CONCAT_WS(' ', u.nombres, u.apellidos) AS autor
          FROM app.interacciones_crm i
          JOIN app.membresias m ON m.id_membresia = i.id_registrada_por
          JOIN app.usuarios   u ON u.id_usuario   = m.id_usuario
@@ -110,19 +117,15 @@ export async function detalleCaso(idEmpresa, idCaso) {
 
     /**
      * Si el caso nació de un turno, traemos ese turno CON sus
-     * observaciones internas.
-     *
-     * ¿Por qué esto es útil para quien resuelve?
-     * Un cliente se queja de un servicio; el resolutor abre el caso y
-     * ve de una vez qué anotó el empleado ese día. Sin esto tendría que
-     * ir a la agenda, buscar la fecha y cruzar los datos a mano.
+     * observaciones internas, para que quien resuelve vea qué anotó el
+     * empleado ese día sin ir a buscarlo a la agenda.
      */
     let reserva = null;
     if (c.id_reserva) {
       const { rows: reservas } = await client.query(
         `SELECT r.id_reserva, r.fecha_inicio, r.estado,
                 s.nombre AS servicio, p.nombre AS prestador,
-                ue.nombres || ' ' || ue.apellidos AS empleado
+                CONCAT_WS(' ', ue.nombres, ue.apellidos) AS empleado
            FROM app.reservas r
            JOIN app.servicios   s ON s.id_servicio  = r.id_servicio
            JOIN app.prestadores p ON p.id_prestador = r.id_prestador
@@ -135,7 +138,7 @@ export async function detalleCaso(idEmpresa, idCaso) {
       if (reservas[0]) {
         const { rows: observaciones } = await client.query(
           `SELECT o.detalle, o.created_at,
-                  u.nombres || ' ' || u.apellidos AS autor
+                  CONCAT_WS(' ', u.nombres, u.apellidos) AS autor
              FROM app.reserva_observaciones o
              JOIN app.membresias m ON m.id_membresia = o.id_autor
              JOIN app.usuarios   u ON u.id_usuario   = m.id_usuario
@@ -196,10 +199,12 @@ export async function detalleCaso(idEmpresa, idCaso) {
  */
 export async function crearCaso(idEmpresa, idMembresiaSolicitante, datos, puedeRadicarAOtros) {
   return conEmpresa(idEmpresa, async (client) => {
-    // Un cliente siempre radica para sí mismo, diga lo que diga el body.
+    // El personal radica a nombre de la ficha que elija. Un cliente
+    // siempre radica para sí mismo: se busca SU ficha a partir de su
+    // membresía, diga lo que diga el body.
     const idCliente = puedeRadicarAOtros && datos.idCliente
       ? datos.idCliente
-      : idMembresiaSolicitante;
+      : await idClienteDeMembresia(client, idMembresiaSolicitante);
 
     const { rows: numeros } = await client.query(
       'SELECT app.fn_siguiente_caso($1) AS numero',
@@ -207,12 +212,8 @@ export async function crearCaso(idEmpresa, idMembresiaSolicitante, datos, puedeR
     );
 
     /**
-     * Si el caso nace de un turno, heredamos su prestador y su empleado.
-     *
-     * ¿Por qué el responsable es el empleado que atendió?
-     * Porque es quien tiene el contexto: sabe qué pasó ese día y dejó
-     * las observaciones. Si el turno no tenía empleado asignado, el caso
-     * queda sin asignar y lo recoge el administrador.
+     * Si el caso nace de un turno, heredamos su prestador y su empleado:
+     * quien atendió es quien tiene el contexto de lo que pasó ese día.
      */
     let idPrestador = null;
     let idAsignado = null;
@@ -227,7 +228,7 @@ export async function crearCaso(idEmpresa, idMembresiaSolicitante, datos, puedeR
       // El personal puede vincular cualquier turno de la empresa; un
       // cliente solo los suyos. Sin esto, alguien podría radicar sobre
       // la cita de otro y leer sus observaciones internas.
-      if (!turno || (!puedeRadicarAOtros && turno.id_cliente !== idMembresiaSolicitante)) {
+      if (!turno || (!puedeRadicarAOtros && turno.id_cliente !== idCliente)) {
         throw new AppError(404, 'RESERVA_NO_ENCONTRADA', 'Ese turno no existe.');
       }
 
@@ -283,8 +284,7 @@ export async function actualizarCaso(idEmpresa, idCaso, datos) {
                                  WHEN $4 = '' THEN NULL
                                  ELSE $4::uuid END,
               -- La fecha de cierre se pone sola al cerrar, y se limpia
-              -- si el caso se reabre. Así no depende de que el frontend
-              -- se acuerde de mandarla.
+              -- si el caso se reabre.
               fecha_cierre = CASE WHEN $2 IN ('RESUELTO','CERRADO') THEN now()
                                   WHEN $2 IS NOT NULL THEN NULL
                                   ELSE fecha_cierre END
@@ -308,6 +308,7 @@ export async function actualizarCaso(idEmpresa, idCaso, datos) {
 // INTERACCIONES                                                      //
 // ================================================================== //
 
+/** datos.idCliente es la FICHA del cliente; quien registra es personal. */
 export async function registrarInteraccion(idEmpresa, idMembresia, datos) {
   return conEmpresa(idEmpresa, async (client) => {
     try {
@@ -349,32 +350,30 @@ export async function registrarInteraccion(idEmpresa, idMembresia, datos) {
 // ================================================================== //
 
 /**
- * ¿Qué hace esta función y por qué es el corazón de un CRM?
- * Reúne en una sola consulta TODO lo que ha pasado con un cliente:
- * sus turnos, sus casos y sus interacciones. Es lo que diferencia un
- * CRM de una simple lista de tickets — quien atiende ve el contexto
- * completo sin ir saltando entre pantallas.
+ * Reúne en una sola vista TODO lo que ha pasado con un cliente: sus
+ * turnos, sus casos y sus interacciones. Es lo que diferencia un CRM de
+ * una simple lista de tickets.
  *
- * Las tres consultas van en paralelo (Promise.all) porque son
- * independientes entre sí: no hay razón para esperar una tras otra.
+ * Ahora parte de la FICHA (app.clientes). Si el cliente además tiene
+ * acceso a la plataforma, se completa con los datos de su usuario
+ * (estado de la cuenta, último ingreso) mediante un LEFT JOIN.
  */
-export async function historialCliente(idEmpresa, idMembresiaCliente) {
+export async function historialCliente(idEmpresa, idCliente) {
   return conEmpresa(idEmpresa, async (client) => {
     const { rows: perfil } = await client.query(
-      `SELECT u.id_usuario, u.nombres, u.apellidos, u.email, u.telefono, u.documento,
-              u.estado, u.ultimo_login, m.cargo, m.estado AS estado_membresia, m.created_at,
-              -- Indicadores rápidos: cuántos turnos, cuántos no asistió,
-              -- cuántos casos abiertos. Es lo primero que quiere saber
-              -- quien atiende antes de hablar con la persona.
-              (SELECT count(*) FROM app.reservas r WHERE r.id_cliente = m.id_membresia) AS total_turnos,
-              (SELECT count(*) FROM app.reservas r WHERE r.id_cliente = m.id_membresia
+      `SELECT cl.id_cliente, cl.id_usuario, cl.nombres, cl.apellidos, cl.email,
+              cl.telefono, cl.tipo_documento, cl.documento, cl.direccion, cl.ciudad,
+              cl.activo, cl.created_at,
+              u.estado, u.ultimo_login,
+              (SELECT count(*) FROM app.reservas r WHERE r.id_cliente = cl.id_cliente) AS total_turnos,
+              (SELECT count(*) FROM app.reservas r WHERE r.id_cliente = cl.id_cliente
                 AND r.estado = 'NO_ASISTIO') AS inasistencias,
-              (SELECT count(*) FROM app.casos_servicio c WHERE c.id_cliente = m.id_membresia
+              (SELECT count(*) FROM app.casos_servicio c WHERE c.id_cliente = cl.id_cliente
                 AND c.estado NOT IN ('RESUELTO','CERRADO')) AS casos_abiertos
-         FROM app.membresias m
-         JOIN app.usuarios u ON u.id_usuario = m.id_usuario
-        WHERE m.id_membresia = $1`,
-      [idMembresiaCliente],
+         FROM app.clientes cl
+         LEFT JOIN app.usuarios u ON u.id_usuario = cl.id_usuario
+        WHERE cl.id_cliente = $1`,
+      [idCliente],
     );
     if (perfil.length === 0) {
       throw new AppError(404, 'CLIENTE_NO_ENCONTRADO', 'Ese cliente no existe en tu empresa.');
@@ -389,39 +388,46 @@ export async function historialCliente(idEmpresa, idMembresiaCliente) {
            JOIN app.prestadores p ON p.id_prestador = r.id_prestador
           WHERE r.id_cliente = $1
           ORDER BY r.fecha_inicio DESC LIMIT 50`,
-        [idMembresiaCliente],
+        [idCliente],
       ),
       client.query(
         `SELECT id_caso, numero_caso, tipo, estado, prioridad, asunto, created_at
            FROM app.casos_servicio
           WHERE id_cliente = $1
           ORDER BY created_at DESC LIMIT 50`,
-        [idMembresiaCliente],
+        [idCliente],
       ),
       client.query(
         `SELECT i.id_interaccion, i.canal, i.asunto, i.detalle, i.fecha_interaccion,
-                u.nombres || ' ' || u.apellidos AS autor
+                CONCAT_WS(' ', u.nombres, u.apellidos) AS autor
            FROM app.interacciones_crm i
            JOIN app.membresias m ON m.id_membresia = i.id_registrada_por
            JOIN app.usuarios   u ON u.id_usuario   = m.id_usuario
           WHERE i.id_cliente = $1
           ORDER BY i.fecha_interaccion DESC LIMIT 50`,
-        [idMembresiaCliente],
+        [idCliente],
       ),
     ]);
 
     const p = perfil[0];
     return {
       cliente: {
+        idCliente: p.id_cliente,
         idUsuario: p.id_usuario,
+        tieneAcceso: p.id_usuario !== null,
         nombres: p.nombres,
         apellidos: p.apellidos,
         email: p.email,
         telefono: p.telefono,
+        tipoDocumento: p.tipo_documento,
         documento: p.documento,
+        direccion: p.direccion,
+        ciudad: p.ciudad,
+        // estado = la cuenta de acceso (null si no tiene);
+        // estadoMembresia se conserva para no romper el frontend actual.
         estado: p.estado,
-        estadoMembresia: p.estado_membresia,
-        cargo: p.cargo,
+        estadoMembresia: p.activo ? 'ACTIVA' : 'INACTIVA',
+        cargo: null,
         clienteDesde: p.created_at,
         ultimoLogin: p.ultimo_login,
         totalTurnos: Number(p.total_turnos),
@@ -456,76 +462,73 @@ export async function historialCliente(idEmpresa, idMembresiaCliente) {
   });
 }
 
-/** Clientes de la empresa, para el selector del historial. */
+/**
+ * Forma común de un cliente en listados y búsquedas.
+ * idMembresia se devuelve con el MISMO valor que idCliente solo para no
+ * romper el frontend que todavía lee ese nombre; el dato correcto es
+ * idCliente. Cuando actualices el front, quita idMembresia.
+ */
+function aCliente(c) {
+  return {
+    idCliente: c.id_cliente,
+    idMembresia: c.id_cliente,
+    nombre: nombreCompleto(c.nombres, c.apellidos),
+    nombres: c.nombres,
+    apellidos: c.apellidos,
+    email: c.email,
+    telefono: c.telefono,
+    documento: c.documento,
+    tieneAcceso: c.id_usuario !== null,
+  };
+}
+
+/** Clientes activos de la empresa, para el selector del historial. */
 export async function listarClientes(idEmpresa) {
   return conEmpresa(idEmpresa, async (client) => {
     const { rows } = await client.query(
-      `SELECT m.id_membresia, u.nombres, u.apellidos, u.email
-         FROM app.membresias m
-         JOIN app.usuarios u ON u.id_usuario = m.id_usuario
-         JOIN app.membresia_roles mr ON mr.id_membresia = m.id_membresia
-         JOIN app.roles r ON r.id_rol = mr.id_rol
-        WHERE r.codigo = 'CLIENTE' AND m.estado = 'ACTIVA'
-        ORDER BY u.nombres, u.apellidos`,
+      `SELECT id_cliente, id_usuario, nombres, apellidos, email, telefono, documento
+         FROM app.clientes
+        WHERE activo
+        ORDER BY nombres, apellidos
+        LIMIT 500`,
     );
-    return rows.map((c) => ({
-      idMembresia: c.id_membresia,
-      nombres: c.nombres,
-      apellidos: c.apellidos,
-      email: c.email,
-    }));
+    return rows.map(aCliente);
   });
 }
 
 /**
  * Busca clientes por nombre, correo, teléfono o documento.
  *
- * El texto viaja PARAMETRIZADO ($1), nunca concatenado al SQL. Es la
- * misma defensa de siempre: si alguien busca "'; DROP TABLE..." el
- * driver lo trata como texto literal, no como instrucción.
+ * El texto viaja PARAMETRIZADO ($1), nunca concatenado al SQL: si
+ * alguien busca "'; DROP TABLE..." el driver lo trata como texto.
  *
  * El LIMIT no es opcional: sin él, una búsqueda de una sola letra
- * traería la base entera y tumbaría el navegador.
+ * traería la base entera.
  */
 export async function buscarClientes(idEmpresa, termino) {
   return conEmpresa(idEmpresa, async (client) => {
     const { rows } = await client.query(
-      `SELECT m.id_membresia, u.nombres, u.apellidos, u.email, u.telefono, u.documento
-         FROM app.membresias m
-         JOIN app.usuarios u ON u.id_usuario = m.id_usuario
-         JOIN app.membresia_roles mr ON mr.id_membresia = m.id_membresia
-         JOIN app.roles r ON r.id_rol = mr.id_rol
-        WHERE r.codigo = 'CLIENTE'
-          AND m.estado = 'ACTIVA'
+      `SELECT id_cliente, id_usuario, nombres, apellidos, email, telefono, documento
+         FROM app.clientes
+        WHERE activo
           AND ($1::text IS NULL OR (
-                u.nombres   ILIKE '%' || $1 || '%'
-             OR u.apellidos ILIKE '%' || $1 || '%'
-             OR u.email     ILIKE '%' || $1 || '%'
-             OR u.telefono  ILIKE '%' || $1 || '%'
-             OR u.documento ILIKE '%' || $1 || '%'
+                nombres   ILIKE '%' || $1 || '%'
+             OR apellidos ILIKE '%' || $1 || '%'
+             OR email     ILIKE '%' || $1 || '%'
+             OR telefono  ILIKE '%' || $1 || '%'
+             OR documento ILIKE '%' || $1 || '%'
           ))
-        ORDER BY u.nombres, u.apellidos
+        ORDER BY nombres, apellidos
         LIMIT 20`,
       [termino && termino.length > 0 ? termino : null],
     );
-    return rows.map((c) => ({
-      idMembresia: c.id_membresia,
-      nombres: c.nombres,
-      apellidos: c.apellidos,
-      email: c.email,
-      telefono: c.telefono,
-      documento: c.documento,
-    }));
+    return rows.map(aCliente);
   });
 }
 
 /**
  * Turnos de un cliente, para vincularlos a un caso.
- *
- * ¿Por qué no reutilizamos listarReservas de agenda?
- * Porque aquí el criterio es distinto: no importa el ámbito de quien
- * pregunta sino de QUÉ cliente son. Y devolvemos menos campos: solo lo
- * necesario para elegir en una lista corta.
+ * No cambia: r.id_cliente ya es la ficha del cliente.
  */
 export async function turnosDeCliente(idEmpresa, idCliente, ambito = []) {
   return conEmpresa(idEmpresa, async (client) => {

@@ -81,6 +81,37 @@ const ICONO_PLAY = 'M7 5l12 7-12 7V5z';
 // Llave: restablecer contraseña.
 const ICONO_LLAVE = 'M14 7a4 4 0 1 1-3.9 5H8v2H6v2H3v-3l7.1-7.1A4 4 0 0 1 14 7z';
 
+
+// Catálogo de módulos que viene de app.modulos (ya no está fijo en el código) //
+let catalogoModulos = [];
+
+async function cargarCatalogoModulos() {
+  const { modulos } = await pedir('/admin/modulos');
+  catalogoModulos = modulos;
+  pintarCasillasModulos('crear-modulos', ['AGENDA']);
+}
+
+function pintarCasillasModulos(idContenedor, marcados) {
+  const caja = document.getElementById(idContenedor);
+  caja.replaceChildren();
+  for (const m of catalogoModulos) {
+    const etiqueta = document.createElement('label');
+    etiqueta.className = 'casilla';
+    const casilla = document.createElement('input');
+    casilla.type = 'checkbox';
+    casilla.value = m.codigo;
+    casilla.checked = marcados.includes(m.codigo);
+    const texto = document.createElement('span');
+    texto.textContent = m.nombre;
+    etiqueta.append(casilla, texto);
+    caja.append(etiqueta);
+  }
+}
+
+const modulosMarcados = (idContenedor) =>
+  [...document.querySelectorAll(`#${idContenedor} input[type="checkbox"]:checked`)]
+    .map((c) => c.value);
+
 // ------------------------------------------------------------------ //
 // Lista de empresas                                                  //
 // ------------------------------------------------------------------ //
@@ -181,8 +212,7 @@ async function abrirDetalle(empresa) {
   document.getElementById('e-nit').value = empresa.nit ?? '';
   document.getElementById('e-telefono').value = empresa.telefono ?? '';
 
-  document.getElementById('e-mod-agenda').checked = empresa.modulos.includes('AGENDA');
-  document.getElementById('e-mod-crm').checked = empresa.modulos.includes('CRM');
+  pintarCasillasModulos('e-modulos', empresa.modulos);
 
   // Intercambio de vistas
   vistaLista.hidden = true;
@@ -373,9 +403,8 @@ document.getElementById('form-modulos').addEventListener('submit', async (evento
   evento.preventDefault();
   avisoDetalle.hidden = true;
 
-  const modulos = [];
-  if (document.getElementById('e-mod-agenda').checked) modulos.push('AGENDA');
-  if (document.getElementById('e-mod-crm').checked) modulos.push('CRM');
+  const modulos = modulosMarcados('e-modulos');
+  if (modulos.length === 0) return avisar(avisoDetalle, 'Elige al menos un módulo.');
 
   try {
     const resultado = await pedir(`/admin/empresas/${empresaActual.idEmpresa}/modulos`, {
@@ -436,10 +465,7 @@ document.getElementById('form-empresa').addEventListener('submit', async (evento
   evento.preventDefault();
   avisoEmpresa.hidden = true;
 
-  const modulos = [];
-  if (document.getElementById('mod-agenda').checked) modulos.push('AGENDA');
-  if (document.getElementById('mod-crm').checked) modulos.push('CRM');
-  if (modulos.length === 0) return avisar(avisoEmpresa, 'Elige al menos un módulo.');
+  const modulos = modulosMarcados('crear-modulos');
 
   const cuerpo = {
     slug: document.getElementById('slug').value.trim().toLowerCase(),
@@ -470,7 +496,7 @@ document.getElementById('form-empresa').addEventListener('submit', async (evento
       true,
     );
     evento.target.reset();
-    document.getElementById('mod-agenda').checked = true;
+    pintarCasillasModulos('crear-modulos', ['AGENDA']);
     await cargarEmpresas();
   } catch (error) {
     avisar(avisoEmpresa, mensajeError(error));
@@ -502,6 +528,7 @@ const panelNuevoRol = document.getElementById('panel-nuevo-rol');
  */
 async function cargarRoles() {
   const { roles, permisos } = await pedir('/admin/roles');
+  
 
   /**
    * Diccionario humano para las áreas del sistema.
@@ -520,6 +547,9 @@ async function cargarRoles() {
     reservas: 'Turnos',
     casos: 'Casos de servicio',
     crm: 'Interacciones e historial',
+    equipos: 'Equipos',
+    mantenimiento: 'Mantenimientos',
+    configuracion: 'Configuración',
   };
 
   // Se usa el orden de declaración del diccionario para ordenar visualmente.
@@ -753,6 +783,7 @@ async function iniciar() {
 
   document.getElementById('barra-usuario').textContent = datos.usuario.email;
   await cargarEmpresas();
+  await cargarCatalogoModulos();
   cargando.hidden = true;
   contenido.hidden = false;
 }

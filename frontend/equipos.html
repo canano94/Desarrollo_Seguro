@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Equipos · Hoja de servicio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/estilos.css">
+  <link rel="stylesheet" href="css/equipos.css">
+</head>
+<body>
+  <div id="cargando" class="cargando">Cargando equipos…</div>
+
+  <div id="contenido" hidden>
+    <header class="barra">
+      <p class="barra__marca">Agenda</p>
+      <nav class="barra__nav">
+        <a href="inicio.html" >Inicio</a>
+        <a href="agenda.html" id="nav-agenda" hidden >Agenda</a>
+        <a href="servicios.html" id="nav-servicios" hidden>Servicios</a>
+        <a href="usuarios.html" id="nav-usuarios" hidden>Personas</a>
+        <a href="clientes.html" id="nav-clientes" hidden>Clientes</a>
+        <a href="crm.html" id="nav-crm" hidden >CRM</a>
+        <a href="equipos.html" id="nav-equipos" hidden aria-current="page">Equipos</a>
+        <a href="configuracion.html" id="nav-config" hidden>Configuración</a>
+        <a href="perfil.html">Perfil</a>
+        <a href="admin.html" id="nav-admin" hidden>Plataforma</a>
+      </nav>
+      <div class="barra__derecha">
+        <button type="button" class="boton boton--texto" id="btn-salir">Salir</button>
+      </div>
+    </header>
+
+    <main class="tablero tablero--ancho">
+      <p id="aviso" class="aviso" role="alert" hidden></p>
+
+      <!-- ============ FORMULARIO (crear / editar) ============ -->
+      <section class="tarjeta" id="panel-form" hidden>
+        <h2 id="form-titulo">Registrar equipo</h2>
+        <form id="form-equipo" novalidate>
+          <div class="rejilla">
+            <div class="campo" id="campo-prestador">
+              <label for="f-prestador">Prestador</label>
+              <select id="f-prestador" class="entrada" required></select>
+            </div>
+
+            <div class="campo" id="campo-cliente">
+              <label for="f-cliente-busca">Cliente (opcional)</label>
+              <div id="f-cliente-elegido-caja" hidden>
+                <input id="f-cliente-elegido" type="text" readonly class="entrada entrada--elegido">
+                <button type="button" class="boton boton--texto boton--mini" id="f-cliente-cambiar">Cambiar</button>
+              </div>
+              <input id="f-cliente-busca" type="search" maxlength="80"
+                     placeholder="Nombre, correo o documento" autocomplete="off">
+              <ul id="f-cliente-resultados" class="resultados" hidden></ul>
+            </div>
+
+            <div class="campo" id="campo-tipo">
+              <label for="f-tipo">Tipo de equipo</label>
+              <select id="f-tipo" class="entrada" required></select>
+            </div>
+            <div class="campo">
+              <label for="f-marca">Marca</label>
+              <select id="f-marca" class="entrada"></select>
+            </div>
+            <div class="campo">
+              <label for="f-modelo">Modelo</label>
+              <input id="f-modelo" type="text" maxlength="100">
+            </div>
+            <div class="campo">
+              <label for="f-serie">Número de serie</label>
+              <input id="f-serie" type="text" maxlength="200">
+            </div>
+            <div class="campo">
+              <label for="f-alimentacion">Tipo de alimentación</label>
+              <select id="f-alimentacion" class="entrada"></select>
+            </div>
+            <div class="campo">
+              <label for="f-ubicacion">Ubicación</label>
+              <input id="f-ubicacion" type="text" maxlength="200">
+            </div>
+            <div class="campo">
+              <label for="f-instalacion">Fecha de instalación</label>
+              <input id="f-instalacion" type="date" class="entrada">
+            </div>
+            <div class="campo" id="campo-activo" hidden>
+              <label class="casilla">
+                <input id="f-activo" type="checkbox"> Equipo activo
+              </label>
+              <p class="pista">Un equipo inactivo deja de mostrarse al escanear su código QR.</p>
+            </div>
+          </div>
+          <p class="pista" id="f-pista-listas">
+            ¿Falta una opción en las listas? <span id="f-pista-texto">Pídele al administrador que la agregue en Configuración.</span>
+            <a href="configuracion.html" id="f-ir-config" hidden>Editar las listas</a>
+          </p>
+          <div class="fila-botones">
+            <button type="submit" class="boton" id="f-guardar">Guardar equipo</button>
+            <button type="button" class="boton boton--texto" id="f-cancelar">Cancelar</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- ============ LISTA ============ -->
+      <div id="vista-lista">
+        <div class="encabezado-seccion">
+          <div>
+            <h1>Equipos</h1>
+            <p class="apoyo">La hoja de servicio de cada equipo y su historial de mantenimientos.</p>
+          </div>
+          <button type="button" class="boton" id="btn-nuevo" hidden>Registrar equipo</button>
+        </div>
+
+        <div class="tabla-envoltura">
+          <table class="tabla">
+            <thead>
+              <tr><th>Equipo</th><th>Marca</th><th>Cliente actual</th><th>Último mantenimiento</th><th>Próximo mantenimiento</th></tr>
+            </thead>
+            <tbody id="tabla-equipos"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ============ DETALLE ============ -->
+      <div id="vista-detalle" hidden>
+        <button type="button" class="boton boton--texto" id="btn-volver">Volver a equipos</button>
+
+        <section class="tarjeta tarjeta--identidad">
+          <div class="detalle__cabecera">
+            <div>
+              <h2 id="d-titulo"></h2>
+              <p class="apoyo" id="d-subtitulo"></p>
+            </div>
+            <div class="fila-botones">
+              <button type="button" class="boton boton--texto" id="d-editar" hidden>Editar</button>
+              <button type="button" class="boton boton--mini" id="d-ver-qr">Código QR</button>
+            </div>
+          </div>
+          <dl class="datos-equipo" id="d-datos"></dl>
+        </section>
+
+        <!-- QR -->
+        <section class="tarjeta" id="panel-qr" hidden>
+          <div class="detalle__cabecera">
+            <h3 class="subtitulo">Código QR del equipo</h3>
+            <button type="button" class="boton boton--texto" id="qr-cerrar">Cerrar</button>
+          </div>
+          <div class="qr-etiqueta" id="qr-imprimible">
+            <div class="qr-etiqueta__codigo" id="qr-svg"></div>
+            <div class="qr-etiqueta__texto">
+              <p class="qr-etiqueta__titulo" id="qr-titulo"></p>
+              <p id="qr-detalle"></p>
+              <p class="qr-etiqueta__ayuda">Escanéalo para ver la hoja de servicio.</p>
+            </div>
+          </div>
+          <p class="pista">Al escanearlo se abre la ficha pública, sin iniciar sesión. Solo muestra datos del equipo y sus fechas de mantenimiento.</p>
+          <div class="fila-botones">
+            <button type="button" class="boton boton--mini" id="qr-imprimir">Imprimir etiqueta</button>
+            <button type="button" class="boton boton--texto" id="qr-descargar">Descargar SVG</button>
+            <button type="button" class="boton boton--texto" id="qr-copiar">Copiar enlace</button>
+            <a class="boton boton--texto" id="qr-abrir" target="_blank" rel="noopener">Abrir ficha</a>
+          </div>
+        </section>
+
+        <!-- Cliente -->
+        <section class="tarjeta">
+          <div class="detalle__cabecera">
+            <h3 class="subtitulo">Cliente</h3>
+            <button type="button" class="boton boton--texto" id="d-asignar" hidden>Asignar cliente</button>
+          </div>
+          <p id="d-cliente-actual"></p>
+
+          <div id="panel-asignar" hidden>
+            <div class="campo">
+              <label for="a-cliente-busca">Nuevo cliente</label>
+              <div id="a-cliente-elegido-caja" hidden>
+                <input id="a-cliente-elegido" type="text" readonly class="entrada entrada--elegido">
+                <button type="button" class="boton boton--texto boton--mini" id="a-cliente-cambiar">Cambiar</button>
+              </div>
+              <input id="a-cliente-busca" type="search" maxlength="80"
+                     placeholder="Nombre, correo o documento" autocomplete="off">
+              <ul id="a-cliente-resultados" class="resultados" hidden></ul>
+              <p class="pista">La asignación actual se cierra con la fecha de hoy y queda en el historial.</p>
+            </div>
+            <div class="fila-botones">
+              <button type="button" class="boton boton--mini" id="a-guardar">Asignar</button>
+              <button type="button" class="boton boton--texto" id="a-cancelar">Cancelar</button>
+            </div>
+          </div>
+
+          <h4 class="subtitulo-menor" id="d-historial-titulo" hidden>Clientes anteriores</h4>
+          <ul id="d-historial-clientes" class="observaciones"></ul>
+        </section>
+
+        <!-- Mantenimientos -->
+        <section class="tarjeta">
+          <div class="detalle__cabecera">
+            <h3 class="subtitulo">Mantenimientos</h3>
+            <button type="button" class="boton boton--mini" id="d-nuevo-mant" hidden>Registrar mantenimiento</button>
+          </div>
+
+          <form id="form-mant" hidden novalidate>
+            <div class="rejilla">
+              <div class="campo">
+                <label for="m-realizado">Fecha en que se hizo</label>
+                <input id="m-realizado" type="date" class="entrada" required>
+              </div>
+              <div class="campo">
+                <label for="m-proxima">Próximo mantenimiento</label>
+                <input id="m-proxima" type="date" class="entrada">
+              </div>
+            </div>
+            <div class="campo">
+              <label for="m-observaciones">Observaciones</label>
+              <textarea id="m-observaciones" class="entrada" rows="4" maxlength="500"
+                        placeholder="Qué se revisó, qué se cambió, recomendaciones al cliente…"></textarea>
+            </div>
+            <div class="fila-botones">
+              <button type="submit" class="boton boton--mini">Guardar mantenimiento</button>
+              <button type="button" class="boton boton--texto" id="m-cancelar">Cancelar</button>
+            </div>
+          </form>
+
+          <div class="tabla-envoltura">
+            <table class="tabla">
+              <thead>
+                <tr><th>Fecha</th><th>Realizado por</th><th>Próximo</th></tr>
+              </thead>
+              <tbody id="tabla-mant"></tbody>
+            </table>
+          </div>
+
+          <section class="detalle-mant" id="d-mant-detalle" hidden>
+            <div class="detalle__cabecera">
+              <h4 class="subtitulo-menor" id="dm-titulo"></h4>
+              <button type="button" class="boton boton--texto boton--mini" id="dm-cerrar">Cerrar</button>
+            </div>
+            <p class="apoyo" id="dm-meta"></p>
+            <p class="detalle-mant__obs" id="dm-observaciones"></p>
+          </section>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="env.js"></script>
+  <script src="js/vendor/qrcode.js"></script>
+  <script type="module" src="js/equipos.js"></script>
+</body>
+</html>

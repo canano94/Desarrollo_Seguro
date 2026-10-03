@@ -16,10 +16,16 @@
     <header class="barra">
       <p class="barra__marca">Agenda</p>
       <nav class="barra__nav">
-        <a href="inicio.html">Inicio</a>
+        <a href="inicio.html" aria-current="page">Inicio</a>
+        <a href="agenda.html" id="nav-agenda" hidden>Agenda</a>
+        <a href="servicios.html" id="nav-servicios" hidden>Servicios</a>
+        <a href="usuarios.html" id="nav-usuarios" hidden>Personas</a>
+        <a href="clientes.html" id="nav-clientes" hidden>Clientes</a>
+        <a href="crm.html" id="nav-crm" hidden>CRM</a>
+        <a href="equipos.html" id="nav-equipos" hidden>Equipos</a>
+        <a href="configuracion.html" id="nav-config" hidden>Configuración</a>
         <a href="perfil.html">Perfil</a>
-        <a href="agenda.html">Agenda</a>
-        <a href="admin.html" aria-current="page">Plataforma</a>
+        <a href="admin.html" id="nav-admin" hidden>Plataforma</a>
       </nav>
       <div class="barra__derecha">
         <span id="barra-usuario" class="barra__usuario"></span>
@@ -72,8 +78,7 @@
 
             <fieldset class="grupo">
               <legend>Módulos</legend>
-              <label class="casilla"><input type="checkbox" id="mod-agenda" checked> Agenda de turnos</label>
-              <label class="casilla"><input type="checkbox" id="mod-crm"> CRM</label>
+                <div id="crear-modulos" class="fila-botones"></div>
             </fieldset>
 
             <fieldset class="grupo">
@@ -131,8 +136,7 @@
         <section class="tarjeta contenido-pestana" id="p-modulos" hidden>
           <p class="apoyo">Quitar un módulo no borra sus datos: solo deja de ser alcanzable desde la API.</p>
           <form id="form-modulos" novalidate>
-            <label class="casilla"><input type="checkbox" id="e-mod-agenda"> Agenda de turnos</label>
-            <label class="casilla"><input type="checkbox" id="e-mod-crm"> CRM</label>
+              <div id="e-modulos" class="fila-botones"></div>
             <div class="acciones"><button type="submit" class="boton">Actualizar módulos</button></div>
           </form>
         </section>

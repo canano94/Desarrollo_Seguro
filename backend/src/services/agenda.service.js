@@ -6,14 +6,19 @@ import { conEmpresa, query } from '../db/pool.js';
 import { AppError } from '../utils/errors.js';
 // Importa la función de cifrado de contraseñas //
 import { hashearPassword } from '../utils/crypto.js';
+// Traducción membresía del cliente -> ficha de cliente //
+import { idClienteDeMembresia, SQL_CLIENTE_DE_MEMBRESIA_P2 } from './clientes.service.js';
 
 /**
  * DATO CLAVE DE ARQUITECTURA (Para repasar):
  * TODO en este archivo corre dentro de `conEmpresa(idEmpresa, ...)` o hereda su contexto.
- * Por eso, NO VAS A VER consultas tipo `WHERE id_empresa = $1`. 
- * ¿Magia? No, PostgreSQL está utilizando políticas de Row Level Security (RLS). 
- * Al hacer SET LOCAL de la empresa en la transacción, PostgreSQL automáticamente 
- * vuelve invisibles las sedes o turnos de la empresa B para el empleado de la empresa A.
+ * Por eso, NO VAS A VER consultas tipo `WHERE id_empresa = $1`.
+ * PostgreSQL está utilizando políticas de Row Level Security (RLS):
+ * al hacer SET LOCAL de la empresa en la transacción, vuelve invisibles
+ * las sedes o turnos de la empresa B para el empleado de la empresa A.
+ *
+ * DESDE LA SEPARACIÓN DE CLIENTES: reservas.id_cliente apunta a
+ * app.clientes (la ficha). El empleado del turno sigue siendo membresía.
  */
 
 // ================================================================== //
@@ -21,13 +26,8 @@ import { hashearPassword } from '../utils/crypto.js';
 // ================================================================== //
 
 /**
- * ¿Qué hace esta función y qué significa `cardinality`?
  * Devuelve las sucursales/prestadores a los que tiene acceso el usuario actual.
- * 
- * La clave: `cardinality($1::uuid[]) = 0`
- * El parámetro $1 es el "ámbito" (array de IDs). Si el array está vacío (tamaño 0), significa 
- * que la persona no tiene restricciones y puede ver TODO (como un dueño o un cliente). 
- * Si el array tiene IDs, el motor filtra (`= ANY($1)`) obligando a que solo vea esos lugares.
+ * `cardinality($1::uuid[]) = 0` significa "sin restricción de ámbito".
  */
 export async function listarPrestadores(idEmpresa, ambito = []) {
   return conEmpresa(idEmpresa, async (client) => {
@@ -55,7 +55,7 @@ export async function listarPrestadores(idEmpresa, ambito = []) {
 
 export async function crearPrestador(idEmpresa, datos) {
   return conEmpresa(idEmpresa, async (client) => {
-    // idEmpresa se inyecta desde el servidor, bloqueando la posibilidad 
+    // idEmpresa se inyecta desde el servidor, bloqueando la posibilidad
     // de que el frontend envíe un id falso en el payload.
     const { rows } = await client.query(
       `INSERT INTO app.prestadores (id_empresa, nombre, descripcion, direccion, telefono)
@@ -148,14 +148,11 @@ export async function listarMiembros(idEmpresa, ambito = []) {
                 OR EXISTS (SELECT 1 FROM app.membresia_prestadores mp2
                             WHERE mp2.id_membresia = m.id_membresia
                               AND mp2.id_prestador = ANY($1::uuid[]))
-                -- ...más los clientes, que no están atados a ninguna sede
-                -- y a los que cualquiera puede agendarles un turno.
+                -- ...más los clientes, que no están atados a ninguna sede.
                 OR NOT EXISTS (SELECT 1 FROM app.membresia_prestadores mp3
                                 WHERE mp3.id_membresia = m.id_membresia)
                 )
-            -- Un PRESTADOR no ve a los administradores de la empresa:
-            -- no puede resetearles la contraseña ni cambiarles el rol,
-            -- así que mostrarlos solo generaría botones que dan 403.
+            -- Un PRESTADOR no ve a los administradores de la empresa.
             AND (
                 cardinality($1::uuid[]) = 0
                 OR NOT EXISTS (SELECT 1 FROM app.membresia_roles mr2
@@ -181,6 +178,17 @@ export async function listarMiembros(idEmpresa, ambito = []) {
   });
 }
 
+/**
+ * Invita a alguien a la empresa con un rol.
+ *
+ * Si el rol es CLIENTE, además de la membresía (su ACCESO) se asegura
+ * su FICHA en app.clientes:
+ *   1. Si ya tiene ficha en esta empresa, no se hace nada.
+ *   2. Si existe una ficha SIN acceso con su mismo correo (la creó un
+ *      empleado antes), se le enlaza: así no quedan dos fichas de la
+ *      misma persona.
+ *   3. Si no hay ninguna, se crea con los datos de su usuario.
+ */
 export async function invitarMiembro(idEmpresa, datos) {
   let passwordTemporal = null;
 
@@ -229,10 +237,48 @@ export async function invitarMiembro(idEmpresa, datos) {
       );
     }
 
-    return { idMembresia, email: datos.email, rol: datos.rol };
+    let idCliente = null;
+    if (datos.rol === 'CLIENTE') {
+      idCliente = await asegurarFichaCliente(client, idEmpresa, idUsuario, datos.email);
+    }
+
+    return { idMembresia, idCliente, email: datos.email, rol: datos.rol };
   });
 
   return { ...resultado, passwordTemporal };
+}
+
+/** Pasos 1-3 de invitarMiembro. Corre dentro de conEmpresa. */
+async function asegurarFichaCliente(client, idEmpresa, idUsuario, email) {
+  const { rows: propia } = await client.query(
+    'SELECT id_cliente FROM app.clientes WHERE id_usuario = $1',
+    [idUsuario],
+  );
+  if (propia[0]) return propia[0].id_cliente;
+
+  const { rows: enlazada } = await client.query(
+    `UPDATE app.clientes
+        SET id_usuario = $1, updated_at = now()
+      WHERE id_cliente = (
+              SELECT id_cliente FROM app.clientes
+               WHERE id_usuario IS NULL AND lower(email) = lower($2)
+               ORDER BY created_at
+               LIMIT 1)
+      RETURNING id_cliente`,
+    [idUsuario, email],
+  );
+  if (enlazada[0]) return enlazada[0].id_cliente;
+
+  const { rows: creada } = await client.query(
+    `INSERT INTO app.clientes (id_empresa, id_usuario, nombres, apellidos, email, telefono, documento)
+     SELECT $1, u.id_usuario, COALESCE(NULLIF(u.nombres, ''), u.email), u.apellidos,
+            u.email, u.telefono, NULLIF(u.documento, '')
+       FROM app.usuarios u
+      WHERE u.id_usuario = $2
+     RETURNING id_cliente`,
+    [idEmpresa, idUsuario],
+  );
+  return creada[0].id_cliente;
 }
 
 // ================================================================== //
@@ -240,15 +286,11 @@ export async function invitarMiembro(idEmpresa, datos) {
 // ================================================================== //
 
 /**
- * ¿Qué hace esta función?
- * Lista las reservas variando inteligentemente lo que devuelve según *quién* pregunta.
- * 
- * La variable alcance determina la regla:
- * - 'propias': Cliente (Filtra la reserva por ID del cliente).
- * - 'ambito': Empleado (Filtra para devolver todas las de su sede).
- * - 'todas': Admin (Devuelve todas).
- * El motor de la seguridad es que el controlador inyecta el `alcance` leyendo el token,
- * y no confiando en el parámetro del Body o Query de la petición web.
+ * Lista las reservas según *quién* pregunta:
+ * - 'propias': Cliente (sus turnos; su membresía se traduce a su ficha).
+ * - 'ambito': Empleado (las de su sede).
+ * - 'todas': Admin.
+ * El controlador inyecta el `alcance` leyendo el token, nunca el body.
  */
 export async function listarReservas(idEmpresa, idMembresia, alcance, prestadoresAmbito = []) {
   return conEmpresa(idEmpresa, async (client) => {
@@ -256,19 +298,18 @@ export async function listarReservas(idEmpresa, idMembresia, alcance, prestadore
       `SELECT r.id_reserva, r.fecha_inicio, r.fecha_fin, r.estado, r.notas_cliente,
               r.id_prestador, r.id_servicio, r.id_cliente, r.id_empleado,
               s.nombre AS servicio, p.nombre AS prestador,
-              uc.nombres || ' ' || uc.apellidos AS cliente,
-              ue.nombres || ' ' || ue.apellidos AS empleado,
+              CONCAT_WS(' ', cl.nombres, cl.apellidos) AS cliente,
+              CONCAT_WS(' ', ue.nombres, ue.apellidos) AS empleado,
               (SELECT count(*) FROM app.reserva_observaciones o
                 WHERE o.id_reserva = r.id_reserva) AS observaciones
          FROM app.reservas r
          JOIN app.servicios   s  ON s.id_servicio  = r.id_servicio
          JOIN app.prestadores p  ON p.id_prestador = r.id_prestador
-         JOIN app.membresias  mc ON mc.id_membresia = r.id_cliente
-         JOIN app.usuarios    uc ON uc.id_usuario   = mc.id_usuario
+         JOIN app.clientes    cl ON cl.id_cliente  = r.id_cliente
          LEFT JOIN app.membresias me ON me.id_membresia = r.id_empleado
          LEFT JOIN app.usuarios   ue ON ue.id_usuario   = me.id_usuario
         WHERE CASE $1::text
-                WHEN 'propias' THEN r.id_cliente = $2::uuid
+                WHEN 'propias' THEN r.id_cliente = ${SQL_CLIENTE_DE_MEMBRESIA_P2}
                 WHEN 'ambito'  THEN r.id_prestador = ANY($3::uuid[])
                 ELSE true
               END
@@ -295,13 +336,9 @@ export async function listarReservas(idEmpresa, idMembresia, alcance, prestadore
 }
 
 /**
- * ¿Por qué el cálculo de franjas libres debe vivir en el Backend?
- * Si le mandaramos todas las horas disponibles al frontend de React y dejáramos que 
- * el navegador armara los turnos, un usuario malintencionado podría usar Postman para enviar 
- * un turno a las 3:00 am inventando datos.
- * 
- * Al calcularlo aquí, devolvemos un array estricto con los horarios válidos sin revelar NADA 
- * de la información personal de otros usuarios que ya tomaron turnos paralelos. Evitamos fugas de datos.
+ * El cálculo de franjas libres vive en el backend: así nadie puede
+ * inventarse un turno a las 3:00 am con Postman, y no se revela nada
+ * de los otros clientes que ya tomaron turnos.
  */
 export async function franjasLibres(idEmpresa, idServicio, fecha) {
   return conEmpresa(idEmpresa, async (client) => {
@@ -356,13 +393,9 @@ export async function franjasLibres(idEmpresa, idServicio, fecha) {
 }
 
 /**
- * ¿Qué hace esta función y cómo protege la doble reserva?
- * Intenta insertar un turno nuevo. 
- * Ojo con el try...catch: la base de datos PostgreSQL está configurada con una regla `EXCLUDE`. 
- * Es decir, si dos personas clican a la vez la misma cita en la web, ambas peticiones llegarán 
- * simultáneas al servidor (Race Condition). El código no lo detectaría, pero PostgreSQL 
- * chocará, lanzará el error '23P01' y lo interceptamos devolviendo un mensaje limpio. 
- * ¡La consistencia se delega al motor de la BD!
+ * Intenta insertar un turno nuevo. La regla EXCLUDE de PostgreSQL impide
+ * la doble reserva aunque dos peticiones lleguen a la vez: el motor
+ * lanza '23P01' y lo traducimos a un mensaje limpio.
  */
 export async function crearReserva(
   idEmpresa, idMembresiaSolicitante, datos, puedeAgendarAOtros, ambito = [],
@@ -381,7 +414,11 @@ export async function crearReserva(
       throw new AppError(404, 'SERVICIO_NO_ENCONTRADO', 'Ese servicio no existe o está inactivo.');
     }
 
-    const idCliente = puedeAgendarAOtros && datos.idCliente ? datos.idCliente : idMembresiaSolicitante;
+    // El personal agenda a nombre de la ficha que elija; un cliente,
+    // siempre a su propia ficha (se busca por su membresía).
+    const idCliente = puedeAgendarAOtros && datos.idCliente
+      ? datos.idCliente
+      : await idClienteDeMembresia(client, idMembresiaSolicitante);
 
     const inicio = new Date(datos.fechaInicio);
     if (Number.isNaN(inicio.getTime())) {
@@ -430,8 +467,8 @@ export async function crearReserva(
 
 export async function cambiarEstadoReserva(idEmpresa, idMembresia, idReserva, datos, ambito = []) {
   return conEmpresa(idEmpresa, async (client) => {
-    // Si no verificamos ámbito aquí, un empleado malicioso de sede Norte
-    // podría confirmar turnos de la Sede Sur adivinando el UUID.
+    // Si no verificamos ámbito aquí, un empleado de sede Norte podría
+    // confirmar turnos de la Sede Sur adivinando el UUID.
     await verificarAmbitoReserva(client, idReserva, ambito);
 
     const { rows } = await client.query(
@@ -504,7 +541,7 @@ export async function listarObservaciones(idEmpresa, idReserva, ambito = []) {
 
     const { rows } = await client.query(
       `SELECT o.id_observacion, o.detalle, o.created_at,
-              u.nombres || ' ' || u.apellidos AS autor
+              CONCAT_WS(' ', u.nombres, u.apellidos) AS autor
          FROM app.reserva_observaciones o
          JOIN app.membresias m ON m.id_membresia = o.id_autor
          JOIN app.usuarios   u ON u.id_usuario   = m.id_usuario
@@ -544,13 +581,9 @@ export async function agregarObservacion(idEmpresa, idMembresia, idReserva, deta
 // ================================================================== //
 
 /**
- * ¿Qué hace esta utilidad y por qué es vital devolver un Error 404 en vez de 403?
- * Verifica si el empleado actual tiene permiso (ámbito) sobre una reserva específica.
- * 
- * Si un empleado de Sede A intenta abrir una reserva de Sede B (a la que no tiene acceso), 
- * NO se le devuelve un "Error 403 Prohibido". Responder "Prohibido" le confirmaría al atacante 
- * que la reserva existe y que acertó el ID. Responder "404 No Encontrado" (como hacemos aquí)
- * lo deja ciego.
+ * Verifica si el empleado actual tiene ámbito sobre una reserva.
+ * Responde 404 (no 403) a propósito: decir "prohibido" le confirmaría
+ * al atacante que la reserva existe y que acertó el ID.
  */
 async function verificarAmbitoReserva(client, idReserva, ambito) {
   const { rows } = await client.query(
@@ -567,10 +600,7 @@ async function verificarAmbitoReserva(client, idReserva, ambito) {
   return reserva;
 }
 
-/** 
- * Convierte un error de SQL puro y duro en un mensaje comprensible 
- * para el Frontend de React.
- */
+/** Convierte un error de duplicado de SQL en un mensaje comprensible. */
 function traducirDuplicado(mensaje) {
   return (error) => {
     if (error.code === '23505') throw new AppError(409, 'DUPLICADO', mensaje);
@@ -579,12 +609,9 @@ function traducirDuplicado(mensaje) {
 }
 
 /**
- * Edita un prestador. Mismo patrón que actualizarEmpresa: lista blanca
- * de columnas y SET construido dinámicamente.
- *
- * El nombre de una columna NO puede ir parametrizado en SQL, así que se
- * concatena. Solo se concatenan claves de este objeto, escrito aquí en
- * el código — nunca texto que venga del cliente.
+ * Edita un prestador con lista blanca de columnas. El nombre de una
+ * columna NO puede ir parametrizado en SQL, así que se concatena, pero
+ * solo claves de este objeto escrito en el código, nunca texto del cliente.
  */
 const COLUMNAS_PRESTADOR = {
   nombre: 'nombre',
@@ -653,8 +680,7 @@ export async function actualizarServicio(idEmpresa, idServicio, datos, ambito = 
   const valores = campos.map((campo) => (datos[campo] === '' ? null : datos[campo]));
 
   return conEmpresa(idEmpresa, async (client) => {
-    // El ámbito se comprueba contra el prestador DEL SERVICIO, no
-    // contra el servicio: el servicio no tiene ámbito propio.
+    // El ámbito se comprueba contra el prestador DEL SERVICIO.
     const { rows: duenos } = await client.query(
       'SELECT id_prestador FROM app.servicios WHERE id_servicio = $1',
       [idServicio],
@@ -682,25 +708,29 @@ export async function actualizarServicio(idEmpresa, idServicio, datos, ambito = 
   }).catch(traducirDuplicado('Ese prestador ya tiene un servicio con ese nombre.'));
 }
 
-/** Cambia el rol, el cargo, el estado o los prestadores de un miembro. */
+/**
+ * Cambia el rol, el cargo, el estado o los prestadores de un miembro.
+ * Si el rol nuevo es CLIENTE, se asegura también su ficha.
+ */
 export async function actualizarMiembro(idEmpresa, idMembresia, datos) {
   return conEmpresa(idEmpresa, async (client) => {
     const { rows: actuales } = await client.query(
-      `SELECT COALESCE(ARRAY_AGG(r.codigo) FILTER (WHERE r.codigo IS NOT NULL), '{}') AS roles
+      `SELECT m.id_usuario, u.email,
+              COALESCE(ARRAY_AGG(r.codigo) FILTER (WHERE r.codigo IS NOT NULL), '{}') AS roles
          FROM app.membresias m
+         JOIN app.usuarios u ON u.id_usuario = m.id_usuario
          LEFT JOIN app.membresia_roles mr ON mr.id_membresia = m.id_membresia
          LEFT JOIN app.roles r ON r.id_rol = mr.id_rol
         WHERE m.id_membresia = $1
-        GROUP BY m.id_membresia`,
+        GROUP BY m.id_membresia, m.id_usuario, u.email`,
       [idMembresia],
     );
     if (actuales.length === 0) {
       throw new AppError(404, 'MIEMBRO_NO_ENCONTRADO', 'Esa persona no existe en tu empresa.');
     }
 
-    // Misma protección que en el panel de plataforma: no dejar la
-    // empresa sin ningún administrador. Se cuenta DENTRO de la
-    // transacción para que dos peticiones simultáneas no puedan
+    // No dejar la empresa sin ningún administrador. Se cuenta DENTRO de
+    // la transacción para que dos peticiones simultáneas no puedan
     // retirar cada una "al penúltimo" admin.
     const eraAdmin = actuales[0].roles.includes('ADMIN_EMPRESA');
     const dejaDeSerlo =
@@ -739,6 +769,9 @@ export async function actualizarMiembro(idEmpresa, idMembresia, datos) {
          SELECT $1, id_rol FROM app.roles WHERE codigo = $2`,
         [idMembresia, datos.rol],
       );
+      if (datos.rol === 'CLIENTE') {
+        await asegurarFichaCliente(client, idEmpresa, actuales[0].id_usuario, actuales[0].email);
+      }
     }
 
     if (datos.prestadores !== undefined) {

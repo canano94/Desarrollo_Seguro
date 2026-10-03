@@ -518,6 +518,7 @@ function aplicarPermisos() {
   document.getElementById('nav-servicios').hidden = !puede('servicios.gestionar');
   document.getElementById('nav-usuarios').hidden = !puede('empleados.gestionar');
   
+  
   // Condicional compuesta: Los clientes se pueden gestionar si administras 
   // toda la agenda, si atiendes quejas CRM o si directamente los manejas.
   document.getElementById('nav-clientes').hidden =

@@ -322,6 +322,7 @@ function empresaPublica(e) {
  * Si mañana lo vuelve a pagar, su data vieja sigue intacta.
  */
 export async function cambiarModulos(idEmpresa, modulos) {
+  await verificarModulos(modulos);
   return conEmpresa(idEmpresa, async (client) => {
     await client.query(
       'UPDATE app.empresa_modulos SET activo = false WHERE id_empresa = $1',
@@ -346,6 +347,32 @@ export async function cambiarModulos(idEmpresa, modulos) {
 
     return { idEmpresa, modulos: rows.map((r) => r.codigo) };
   });
+}
+
+/** Catálogo completo de módulos, para pintar los checkboxes. */
+export async function listarModulos() {
+  const { rows } = await query(
+    'SELECT codigo, nombre, descripcion FROM app.modulos ORDER BY nombre',
+  );
+  return rows;
+}
+
+/**
+ * El cliente ya no puede inventarse códigos porque se comparan contra
+ * la base. Sin esto, un código falso simplemente se ignoraría en
+ * silencio y la empresa quedaría sin el módulo sin que nadie lo note.
+ */
+export async function verificarModulos(modulos) {
+  const { rows } = await query(
+    'SELECT codigo FROM app.modulos WHERE codigo = ANY($1::text[])',
+    [modulos],
+  );
+  const existentes = rows.map((r) => r.codigo);
+  const desconocidos = modulos.filter((m) => !existentes.includes(m));
+  if (desconocidos.length > 0) {
+    throw new AppError(422, 'MODULO_DESCONOCIDO',
+      `Módulos que no existen: ${desconocidos.join(', ')}.`);
+  }
 }
 
 // ================================================================== //

@@ -18,6 +18,11 @@ import { notFound, errorHandler } from './middleware/errorHandler.js';
 import crmRoutes from './routes/crm.routes.js';
 // Importa el enrutador de clientes, que no pertenece a ningún módulo //
 import clientesRoutes from './routes/clientes.routes.js';
+// Importar desde el enrutador equipos
+import equiposRouter, { equiposPublicoRouter } from './routes/equipos.routes.js';
+//Import catalogo - config page por empresa
+import catalogosRoutes from './routes/catalogos.routes.js';
+
 
 // Instancia la aplicación principal de Express //
 export const app = express();
@@ -101,7 +106,9 @@ app.get('/api/health', (_req, res) => res.json({ ok: true, entorno: env.nodeEnv 
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/agenda', agendaRoutes);
-
+app.use('/api/public', equiposPublicoRouter);
+app.use('/api/catalogos', catalogosRoutes);
+app.use('/api/equipos', equiposRouter);
 /**
  * Ruta del módulo CRM (Casos, Interacciones, Historial 360)
  */

@@ -102,6 +102,12 @@ export async function cambiarModulos(req, res, next) {
   } catch (error) { next(error); }
 }
 
+export async function listarModulos(req, res, next) {
+  try {
+    res.json({ modulos: await adminService.listarModulos() });
+  } catch (error) { next(error); }
+}
+
 // --- Miembros de una empresa --------------------------------------- //
 
 export async function agregarMiembro(req, res, next) {

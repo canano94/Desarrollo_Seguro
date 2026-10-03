@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Configuración · Agenda</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/estilos.css">
+  <link rel="stylesheet" href="css/equipos.css">
+</head>
+<body>
+  <div id="cargando" class="cargando">Cargando…</div>
+
+  <div id="contenido" hidden>
+    <header class="barra">
+      <p class="barra__marca">Agenda</p>
+      <nav class="barra__nav">
+        <a href="inicio.html">Inicio</a>
+        <a href="equipos.html" id="nav-equipos" hidden>Equipos</a>
+        <a href="configuracion.html" aria-current="page">Configuración</a>
+      </nav>
+      <div class="barra__derecha">
+        <button type="button" class="boton boton--texto" id="btn-salir">Salir</button>
+      </div>
+    </header>
+
+    <main class="tablero tablero--ancho">
+      <div class="encabezado-seccion">
+        <div>
+          <h1>Configuración</h1>
+          <p class="apoyo">Ajusta la plataforma a la forma de trabajar de tu empresa. Los cambios aplican de inmediato para todo tu equipo.</p>
+        </div>
+      </div>
+
+      <p id="aviso" class="aviso" role="alert" hidden></p>
+
+      <!-- Cada módulo contratado tiene su sección. Hoy: Hoja de servicio. -->
+      <div id="secciones"></div>
+
+      <p class="apoyo" id="sin-secciones" hidden>Tu empresa todavía no tiene módulos con opciones para configurar.</p>
+    </main>
+  </div>
+
+  <script src="env.js"></script>
+  <script type="module" src="js/configuracion.js"></script>
+</body>
+</html>
