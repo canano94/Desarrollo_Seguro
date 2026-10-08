@@ -209,8 +209,17 @@ function crearBuscador(prefijo, alElegir) {
     }, 300);
   });
 
+  /** Deja elegido un cliente sin pasar por la búsqueda (llegada desde su ficha). */
+  function elegir(c) {
+    alElegir(c);
+    elegido.value = nombreDeCliente(c);
+    caja.hidden = false;
+    busca.hidden = true;
+    lista.hidden = true;
+  }
+
   $(`${prefijo}-cliente-cambiar`).addEventListener('click', reiniciar);
-  return { reiniciar };
+  return { reiniciar, elegir };
 }
 
 /* ================================================================== */
@@ -665,6 +674,26 @@ $('btn-salir').addEventListener('click', async () => {
   location.href = 'index.html';
 });
 
+/**
+ * Menú estándar de la plataforma (los mismos ids en todas las páginas).
+ * Si a esta página le falta algún enlace, se salta en vez de romper.
+ */
+function aplicarMenu(sesion) {
+  const modulos = sesion.empresaActiva?.modulos ?? [];
+  const ocultar = (idNodo, valor) => { const nodo = $(idNodo); if (nodo) nodo.hidden = valor; };
+
+  ocultar('nav-agenda', !modulos.includes('AGENDA'));
+  ocultar('nav-crm', !modulos.includes('CRM'));
+  ocultar('nav-equipos', !modulos.includes('EQUIPOS'));
+  ocultar('nav-servicios', !puede('servicios.gestionar'));
+  ocultar('nav-usuarios', !puede('empleados.gestionar'));
+  ocultar('nav-clientes',
+    !puede('clientes.gestionar') && !puede('reservas.aprobar') && !puede('casos.gestionar')
+    && !puede('equipos.crear') && !puede('equipos.gestionar'));
+  ocultar('nav-config', !puede('configuracion.gestionar'));
+  ocultar('nav-admin', !sesion.rolesPlataforma?.includes('SUPER_ADMIN'));
+}
+
 async function iniciar() {
   const sesion = sesionActual() ?? (await restaurarSesion());
   if (!sesion) { location.href = 'index.html'; return; }
@@ -673,17 +702,47 @@ async function iniciar() {
   permisos = new Set(leerPermisos(sesion));
   $('btn-nuevo').hidden = !puede('equipos.crear');
 
+  aplicarMenu(sesion);
+
+  // Pista bajo el formulario: el admin ve el enlace a Configuración;
+  // los demás, el texto de "pídele al administrador".
   const configura = puede('configuracion.gestionar');
-  $('nav-config').hidden = !configura;
-  $('f-ir-config').hidden = !configura;
-  $('f-pista-texto').hidden = configura;
+  const ocultar = (idNodo, valor) => { const nodo = $(idNodo); if (nodo) nodo.hidden = valor; };
+  ocultar('f-ir-config', !configura);
+  ocultar('f-pista-texto', configura);
 
   $('cargando').hidden = true;
   $('contenido').hidden = false;
 
-  const id = new URLSearchParams(location.search).get('id');
+  const params = new URLSearchParams(location.search);
+  const id = params.get('id');
   if (id) await abrirDetalle(id);
   else await cargarLista();
+
+  if (params.get('nuevo') === '1') await registrarParaCliente(params.get('cliente'));
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Llegada desde la ficha del cliente (equipos.html?nuevo=1&cliente=<id>):
+ * abre el formulario de registro con ese cliente ya elegido.
+ * De la URL solo se toma el ID (con formato UUID); el nombre se pide al
+ * servidor, que responde 404 si el cliente no es de esta empresa.
+ */
+async function registrarParaCliente(idCliente) {
+  history.replaceState({}, '', 'equipos.html');
+  if (!puede('equipos.crear')) return;
+
+  await abrirFormulario('crear');
+  if (!idCliente || !UUID.test(idCliente)) return;
+
+  try {
+    const { cliente } = await pedir(`/clientes/${idCliente}`);
+    buscadorFormulario.elegir(cliente);
+  } catch (error) {
+    aviso(mensajeDeError(error));
+  }
 }
 
 iniciar();

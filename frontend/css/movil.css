@@ -1,0 +1,137 @@
+/* =====================================================================
+   AJUSTES PARA CELULAR Y PWA
+   Va DESPUÉS de estilos.css (y de equipos.css si la página lo usa).
+   Mobile: hasta 760px. Táctil: cualquier pantalla con dedo, sin
+   importar el tamaño (tabletas incluidas).
+   ===================================================================== */
+
+html { -webkit-text-size-adjust: 100%; }
+
+/* App instalada en iPhone/Android: la barra no debe quedar debajo de
+   la muesca ni de la barra de estado. */
+.barra {
+  padding-top: max(1rem, env(safe-area-inset-top));
+  padding-left: max(1.5rem, env(safe-area-inset-left));
+  padding-right: max(1.5rem, env(safe-area-inset-right));
+}
+
+@media (max-width: 760px) {
+  /* --- Barra: marca y "Salir" arriba; menú en una fila deslizable --- */
+  .barra {
+    gap: 0.5rem 1rem;
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+    padding-bottom: 0;
+  }
+  .barra__marca { order: 1; }
+  .barra__derecha { order: 2; margin-left: auto; gap: 0.25rem; }
+  .barra__nav {
+    order: 3;
+    flex: 1 0 100%;
+    flex-wrap: nowrap;
+    gap: 1.25rem;
+    margin: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .barra__nav::-webkit-scrollbar { display: none; }
+  .barra__nav a { white-space: nowrap; padding: 0.625rem 0; font-size: 0.9375rem; }
+  .barra__usuario { display: none; }
+  .selector { max-width: 9rem; }
+
+  /* --- Página --- */
+  .tablero {
+    padding: 1.25rem 1rem 3rem;
+    padding-bottom: max(3rem, calc(env(safe-area-inset-bottom) + 2rem));
+    gap: 1rem;
+  }
+  h1 { font-size: 1.5rem; line-height: 1.2; }
+  .tarjeta { padding: 1.125rem; }
+  .encabezado-seccion { margin-bottom: 0.75rem; }
+  .encabezado-seccion > .boton { width: 100%; }
+  .detalle__cabecera { flex-wrap: wrap; }
+
+  /* --- Formularios: una columna --- */
+  .rejilla { grid-template-columns: 1fr; }
+  .fila-form { flex-direction: column; align-items: stretch; }
+  .fila-form .campo { flex: none; }
+  .fila-form > .boton { width: 100%; }
+  .fila-botones > .boton:not(.boton--texto):not(.boton--mini) { flex: 1 1 auto; }
+
+  /* --- Datos y fichas --- */
+  .datos { gap: 1rem 1.5rem; }
+  .indicadores { gap: 1.25rem 2rem; }
+  .ficha-empresa { flex-direction: column; }
+  .ficha-empresa__acciones {
+    border-left: 0;
+    border-top: 1px solid var(--linea);
+    padding: 0.25rem 0.75rem;
+    justify-content: flex-end;
+  }
+
+  /* --- Pestañas deslizables en vez de partirse en dos líneas --- */
+  .pestanas { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .pestanas::-webkit-scrollbar { display: none; }
+  .pestana { white-space: nowrap; }
+
+  /* --- Tablas: se deslizan dentro de su caja --- */
+  .tabla { font-size: 0.8125rem; }
+  .tabla-envoltura { -webkit-overflow-scrolling: touch; }
+
+  /* --- Editor de roles --- */
+  .casilla--permiso { flex-wrap: wrap; }
+  .casilla__codigo { margin-left: 0; padding-left: 1.5rem; flex-basis: 100%; }
+
+  /* --- Módulo de equipos y configuración --- */
+  .datos-equipo { grid-template-columns: 1fr 1fr; gap: 0.75rem 1rem; }
+  .qr-etiqueta { flex-direction: column; align-items: flex-start; width: 100%; }
+  .config-agregar { max-width: none; }
+  .config-fila { flex-wrap: wrap; }
+  .config-fila input { flex-basis: 100%; }
+}
+
+/* Pantallas táctiles: objetivos de toque de al menos 44px (guía de
+   accesibilidad de Apple y Google) y texto de 16px en los campos, para
+   que el iPhone no haga zoom al tocarlos. */
+@media (pointer: coarse) {
+  .boton, .volver, .pestana, .hora { min-height: 44px; }
+  .boton--mini { min-height: 40px; padding: 0.375rem 0.875rem; font-size: 0.8125rem; }
+  .icono { width: 44px; height: 44px; }
+  .campo input, .entrada, .entrada--mini, .selector { min-height: 44px; font-size: 16px; }
+  .casilla input { width: 20px; height: 20px; }
+  .resultado { padding: 0.75rem; }
+}
+
+/* =====================================================================
+   PWA: aviso de conexión y botón de instalar
+   ===================================================================== */
+
+.pwa-conexion {
+  position: fixed;
+  left: 50%;
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 50;
+  width: max-content;
+  max-width: calc(100% - 2rem);
+  padding: 0.625rem 1rem;
+  background: var(--tinta);
+  color: var(--papel);
+  border-left: 3px solid var(--ambar);
+  border-radius: var(--radio);
+  font-size: 0.875rem;
+  box-shadow: 0 6px 20px rgba(16, 28, 38, 0.25);
+}
+
+.pwa-instalar--flotante {
+  position: fixed;
+  right: max(1rem, env(safe-area-inset-right));
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  z-index: 40;
+  background: var(--tinta);
+  color: var(--papel);
+}
+
+[hidden] { display: none !important; }

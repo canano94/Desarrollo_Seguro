@@ -5,6 +5,12 @@ import {
   SQL_CLIENTE_DE_MEMBRESIA_P2,
   nombreCompleto,
 } from './clientes.service.js';
+/**
+ * El usuario busca TEXTO: % y _ no deben funcionar como comodines del
+ * LIKE (buscar "%" traería a todos los clientes). En PostgreSQL la barra
+ * invertida ya es el escape por defecto del LIKE.
+ */
+const escaparLike = (texto) => texto.replace(/[\\%_]/g, (c) => `\\${c}`);
 
 /**
  * TODO en este archivo corre dentro de conEmpresa(), igual que agenda.
@@ -520,7 +526,7 @@ export async function buscarClientes(idEmpresa, termino) {
           ))
         ORDER BY nombres, apellidos
         LIMIT 20`,
-      [termino && termino.length > 0 ? termino : null],
+      [termino && termino.length > 0 ? escaparLike(termino) : null],
     );
     return rows.map(aCliente);
   });

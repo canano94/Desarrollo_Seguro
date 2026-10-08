@@ -5,7 +5,7 @@
  */
 
 // Debe ser la misma base que BASE en js/api.js.
-const API = 'http://localhost:3000/api';
+const API = '/api';
 
 const $ = (id) => document.getElementById(id);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

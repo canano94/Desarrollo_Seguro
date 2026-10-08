@@ -1,6 +1,5 @@
 // Define la URL base a donde apuntarán todas las peticiones fetch de la app //
-const BASE = 'http://localhost:3000/api';
-
+const BASE = '/api';
 /**
  * APUNTE ESTRELLA DE SEGURIDAD FRONTEND: ¿Dónde guardar el Token?
  * El access token vive AQUÍ, en una variable local del módulo, es decir, 

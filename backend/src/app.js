@@ -1,5 +1,8 @@
 // Importa el framework principal para manejar peticiones web //
 import express from 'express';
+// Utilidades de rutas de archivos (para servir el frontend) //
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 // Importa la librería de seguridad que configura cabeceras HTTP defensivas //
 import helmet from 'helmet';
 // Importa el middleware para gestionar el Intercambio de Recursos de Origen Cruzado (CORS) //
@@ -8,52 +11,79 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 // Importa tus variables de entorno centralizadas //
 import { env } from './config/env.js';
-// Importa todos los enrutadores que acabamos de documentar //
+// Importa todos los enrutadores //
 import authRoutes from './routes/auth.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 import agendaRoutes from './routes/agenda.routes.js';
+import crmRoutes from './routes/crm.routes.js';
+import clientesRoutes from './routes/clientes.routes.js';
+import equiposRouter, { equiposPublicoRouter } from './routes/equipos.routes.js';
+import catalogosRoutes from './routes/catalogos.routes.js';
 // Importa tus propios middlewares de manejo de errores //
 import { notFound, errorHandler } from './middleware/errorHandler.js';
-// Importa el enrutador del módulo CRM (Casos, Interacciones, Historial 360) //
-import crmRoutes from './routes/crm.routes.js';
-// Importa el enrutador de clientes, que no pertenece a ningún módulo //
-import clientesRoutes from './routes/clientes.routes.js';
-// Importar desde el enrutador equipos
-import equiposRouter, { equiposPublicoRouter } from './routes/equipos.routes.js';
-//Import catalogo - config page por empresa
-import catalogosRoutes from './routes/catalogos.routes.js';
 
+/**
+ * El frontend vive en ../../frontend respecto a este archivo
+ * (backend/src/app.js). Con ES modules no existe __dirname, así que se
+ * calcula a partir de la URL del módulo.
+ */
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const CARPETA_FRONTEND = path.join(__dirname, '..', '..', 'frontend');
 
 // Instancia la aplicación principal de Express //
 export const app = express();
 
 /**
- * ¿Por qué confiar en el proxy (trust proxy) es vital para el Rate Limiting?
- * Cuando tu app está desplegada (por ejemplo detrás de Nginx, Heroku, AWS), las peticiones 
- * no llegan directo a Node.js, pasan primero por un balanceador o proxy. 
- * Si no pones esta línea, `req.ip` siempre devolverá la IP de ese servidor proxy en lugar 
- * de la IP real del usuario. Esto causaría que tu Rate Limit bloqueara a TODOS los usuarios 
- * al mismo tiempo pensando que son una sola persona haciendo spam.
+ * Detrás del proxy de Azure, req.ip sería la IP del balanceador y el
+ * rate limit bloquearía a todos a la vez. Con trust proxy se usa la IP
+ * real del usuario. También hace que req.secure sea correcto en HTTPS.
  */
 app.set('trust proxy', 1);
-
 /**
- * ¿Qué hace esta línea y por qué es una buena práctica de seguridad?
- * Por defecto, Express envía una cabecera en todas las respuestas que dice "X-Powered-By: Express".
- * Borrarla evita regalarle información gratuita a los atacantes sobre qué tecnología 
- * exacta estás usando en tu backend.
+ * Azure App Service manda la IP del cliente CON el puerto en
+ * X-Forwarded-For ("152.201.83.77:52372"). Express la usa tal cual para
+ * req.ip, y PostgreSQL rechaza ese formato en las columnas inet.
+ * Se limpia aquí, antes que nada, para que req.ip (y el rate limit que
+ * depende de él) reciban solo la IP.
+ *
+ * No permite falsificar la IP: se limpia cada elemento sin cambiar el
+ * orden ni la cantidad, y con trust proxy = 1 Express sigue tomando el
+ * último, que es el que agrega Azure.
  */
+function quitarPuerto(valor) {
+  const ip = valor.trim();
+  if (ip.startsWith('[')) {
+    // IPv6 con puerto: "[2001:db8::1]:443" -> "2001:db8::1"
+    const cierre = ip.indexOf(']');
+    // Mal formada: se deja tal cual, sin intentar adivinar.
+    return cierre > 0 ? ip.slice(1, cierre) : ip;
+  }
+  // IPv4 con puerto: exactamente un ":" -> "152.201.83.77"
+  if (ip.split(':').length === 2) return ip.split(':')[0];
+  // IPv4 o IPv6 sin puerto: se deja igual.
+  return ip;
+}
+
+app.use((req, _res, next) => {
+  const reenviada = req.headers['x-forwarded-for'];
+  if (typeof reenviada === 'string') {
+    req.headers['x-forwarded-for'] = reenviada.split(',').map(quitarPuerto).join(', ');
+  }
+  next();
+});
+
+// No regalar a un atacante qué tecnología usa el backend //
 app.disable('x-powered-by');
 
 /**
- * DEFENSA DE CABECERAS CON HELMET (Apunte de Seguridad y Ética):
- * Helmet blinda automáticamente la aplicación añadiendo cabeceras HTTP estrictas.
- * 
- * - Content-Security-Policy (CSP): Dicta desde dónde se pueden cargar scripts o recursos. 
- *   Al usar "defaultSrc: ["'self'"]", le decimos al navegador que solo ejecute código que 
- *   venga de tu propio dominio, mitigando drásticamente ataques XSS.
- * - frameAncestors: ["'none'"]: Impide que tu página sea incrustada en un <iframe> externo. 
- *   Esto previene el "Clickjacking" (donde un atacante pone tu web invisible sobre un botón trampa).
+ * DEFENSA DE CABECERAS CON HELMET.
+ * Ahora Express también sirve el frontend, así que la CSP cubre las
+ * páginas y no solo la API. Se abre lo MÍNIMO necesario:
+ * - styleSrc / fontSrc: las fuentes de Google (la hoja y los archivos).
+ * - imgSrc data: y blob: para el QR en SVG y la descarga de la etiqueta.
+ * - mediaSrc blob: y la cámara (escáner de QR).
+ * - workerSrc y manifestSrc: el service worker y el manifest de la PWA.
+ * No se permite 'unsafe-inline' en scripts: un XSS inyectado no corre.
  */
 app.use(
   helmet({
@@ -61,7 +91,16 @@ app.use(
       directives: {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
+        styleSrc: ["'self'", 'https://fonts.googleapis.com'],
+        fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+        imgSrc: ["'self'", 'data:', 'blob:'],
+        mediaSrc: ["'self'", 'blob:'],
+        connectSrc: ["'self'", 'https://fonts.googleapis.com', 'https://fonts.gstatic.com'],
+        workerSrc: ["'self'"],
+        manifestSrc: ["'self'"],
         objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
         frameAncestors: ["'none'"],
       },
     },
@@ -70,14 +109,9 @@ app.use(
 );
 
 /**
- * CONFIGURACIÓN DE CORS (Crucial para el JWT en Cookies):
- * Permite que tu frontend (Ej. React corriendo en el puerto 5173) se comunique con este backend.
- * 
- * ¿Por qué `credentials: true` cambia las reglas del juego?
- * Si quieres que el navegador envíe automáticamente la Cookie del Refresh Token, `credentials` 
- * debe ser `true`. PERO, por reglas de seguridad de los navegadores web, si `credentials` es `true`, 
- * está estrictamente prohibido usar un comodín en el origen (`origin: '*'*`). Tienes que 
- * declarar exactamente qué dominios (lista blanca) tienen permiso de conectarse.
+ * CORS. Con el frontend en el mismo dominio ya casi no hace falta, pero
+ * se deja con lista blanca por si en desarrollo abres el front desde
+ * otro puerto (Live Server).
  */
 app.use(
   cors({
@@ -87,44 +121,55 @@ app.use(
   }),
 );
 
-/**
- * ¿Por qué limitar el tamaño del Body?
- * Prevención de Denegación de Servicio (DoS). Si un atacante envía un JSON de 500 Megabytes, 
- * el servidor Node.js intentaría guardarlo todo en memoria RAM para parsearlo, lo que tumbaría 
- * el proceso y dejaría fuera a todos los demás clientes. Un límite de 10kb es perfecto para 
- * APIs REST normales.
- */
+// Límite de 10kb al body: un JSON gigante no tumba el servidor (DoS) //
 app.use(express.json({ limit: '10kb' }));
 
-// Monta el middleware para que Express entienda las Cookies entrantes //
+// Cookies (refresh token) //
 app.use(cookieParser());
 
-// Endpoint de prueba rápida para monitores de infraestructura (Ej. Kubernetes o UptimeRobot) //
+// Endpoint de salud para el monitor de Azure //
 app.get('/api/health', (_req, res) => res.json({ ok: true, entorno: env.nodeEnv }));
 
-// Montaje de las tres grandes ramas de tu plataforma SaaS //
+// ---------------------- API ---------------------- //
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/agenda', agendaRoutes);
 app.use('/api/public', equiposPublicoRouter);
-app.use('/api/catalogos', catalogosRoutes);
 app.use('/api/equipos', equiposRouter);
-/**
- * Ruta del módulo CRM (Casos, Interacciones, Historial 360)
- */
 app.use('/api/crm', crmRoutes);
-
 app.use('/api/clientes', clientesRoutes);
+app.use('/api/catalogos', catalogosRoutes);
+
+// Una ruta /api que no existe responde 404 en JSON, no una página HTML //
+app.use('/api', notFound);
 
 /**
- * CAPTURA DE ERRORES:
- * El orden es vital. Express ejecuta los middlewares en el orden en que se declaran.
- * Si una petición no hizo "match" con ninguna de las rutas de arriba, caerá inevitablemente 
- * en `notFound` (generando un Error 404). Y si cualquier ruta hizo un `next(error)`, 
- * pasará directo a `errorHandler` para limpiar el mensaje antes de enviarlo al cliente.
+ * ---------------------- FRONTEND ----------------------
+ * Express sirve los HTML, CSS, JS e íconos. Al quedar todo en el mismo
+ * dominio no hay problemas de CORS ni de cookies entre sitios.
+ *
+ * El service worker y el manifest NO se cachean en el navegador
+ * (no-cache): si se cachearan, una versión nueva de la app tardaría
+ * horas o días en llegar a los usuarios.
+ */
+app.use(
+  express.static(CARPETA_FRONTEND, {
+    extensions: ['html'],
+    setHeaders(res, ruta) {
+      if (ruta.endsWith('service-worker.js') || ruta.endsWith('manifest.json')) {
+        res.setHeader('Cache-Control', 'no-cache');
+      }
+      if (ruta.endsWith('manifest.json')) {
+        res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+      }
+    },
+  }),
+);
+
+/**
+ * CAPTURA DE ERRORES: el orden es vital. Lo que no hizo match con nada
+ * de arriba cae en notFound (404), y cualquier next(error) va directo
+ * a errorHandler.
  */
 app.use(notFound);
 app.use(errorHandler);
-
-
-

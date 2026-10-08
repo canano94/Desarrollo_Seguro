@@ -194,6 +194,27 @@ function filaValor(catalogo, v) {
 // Arranque                                                           //
 // ------------------------------------------------------------------ //
 
+/**
+ * Menú estándar de la plataforma (los mismos ids en todas las páginas).
+ * Si a esta página le falta algún enlace, se salta en vez de romper la
+ * carga completa con "Cannot set properties of null".
+ */
+function aplicarMenu(sesion) {
+  const puede = (p) => permisos.includes(p);
+  const ocultar = (id, valor) => { const nodo = $(id); if (nodo) nodo.hidden = valor; };
+
+  ocultar('nav-agenda', !modulos.includes('AGENDA'));
+  ocultar('nav-crm', !modulos.includes('CRM'));
+  ocultar('nav-equipos', !modulos.includes('EQUIPOS'));
+  ocultar('nav-servicios', !puede('servicios.gestionar'));
+  ocultar('nav-usuarios', !puede('empleados.gestionar'));
+  ocultar('nav-clientes',
+    !puede('clientes.gestionar') && !puede('reservas.aprobar') && !puede('casos.gestionar')
+    && !puede('equipos.crear') && !puede('equipos.gestionar'));
+  ocultar('nav-config', !puede('configuracion.gestionar'));
+  ocultar('nav-admin', !sesion.rolesPlataforma?.includes('SUPER_ADMIN'));
+}
+
 $('btn-salir').addEventListener('click', async () => {
   await salir();
   location.replace('index.html');
@@ -206,10 +227,7 @@ async function iniciar() {
 
   permisos = sesion.empresaActiva?.permisos ?? [];
   modulos = sesion.empresaActiva?.modulos ?? [];
-
-  $('nav-agenda').hidden = !modulos.includes('AGENDA');
-  $('nav-crm').hidden = !modulos.includes('CRM');
-  $('nav-equipos').hidden = !modulos.includes('EQUIPOS');
+  aplicarMenu(sesion);
 
   // Esta puerta es solo comodidad: el backend responde 403 de todos modos.
   if (!permisos.includes('configuracion.gestionar')) {

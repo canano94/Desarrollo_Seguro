@@ -2,6 +2,10 @@
 import { query, conEmpresa } from '../db/pool.js';
 // Importa utilidades de errores para lanzar estatus HTTP //
 import { AppError, credencialesInvalidas } from '../utils/errors.js';
+// Valida el formato de las IPs antes de guardarlas //
+import net from 'node:net';
+// Ficha de cliente para quien se registra solo //
+import { asegurarFichaCliente } from './agenda.service.js';
 // Importa el set completo de utilidades criptográficas para sesiones seguras //
 import {
   hashearPassword,
@@ -14,6 +18,15 @@ import {
 import { firmarAccessToken } from '../utils/jwt.js';
 // Importa variables de entorno globales //
 import { env } from '../config/env.js';
+
+/**
+ * Una IP con formato inesperado no debe tumbar el login (pasó en Azure).
+ * Si no es una IP válida, se guarda null y el usuario entra igual.
+ */
+const ipSegura = (ip) => (net.isIP(ip ?? '') ? ip : null);
+
+/** El User-Agent lo manda el cliente: se recorta para no guardar textos gigantes. */
+const agenteSeguro = (ua) => (typeof ua === 'string' ? ua.slice(0, 500) : null);
 
 // ------------------------------------------------------------------ //
 // Consultas de apoyo                                                 //
@@ -43,7 +56,7 @@ async function registrarIntento({ email, idUsuario, exito, motivo, ctx }) {
   await query(
     `INSERT INTO app.intentos_login (email, id_usuario, exito, motivo, ip_origen, user_agent)
      VALUES ($1, $2, $3, $4, $5, $6)`,
-    [email, idUsuario ?? null, exito, motivo, ctx.ip, ctx.userAgent],
+    [email, idUsuario ?? null, exito, motivo, ipSegura(ctx.ip), agenteSeguro(ctx.userAgent)],
   );
 }
 
@@ -78,7 +91,7 @@ async function emitirRefreshToken(usuario, ctx) {
   const { rows } = await query(
     `INSERT INTO app.refresh_tokens (id_usuario, token_hash, expira_en, ip_origen, user_agent)
      VALUES ($1, $2, $3, $4, $5) RETURNING id_token`,
-    [usuario.id_usuario, hash, expira, ctx.ip, ctx.userAgent],
+    [usuario.id_usuario, hash, expira, ipSegura(ctx.ip), agenteSeguro(ctx.userAgent)],
   );
 
   return { valor, expira, idToken: rows[0].id_token };
@@ -147,6 +160,9 @@ export async function registrar(datos, ctx) {
          SELECT $1, id_rol FROM app.roles WHERE codigo = 'CLIENTE'`,
         [nuevas[0].id_membresia],
       );
+      // Desde la separación de clientes, el rol CLIENTE necesita su ficha.
+      // Si un empleado ya le había creado una con ese correo, se enlaza.
+      await asegurarFichaCliente(client, empresa.id_empresa, usuario.id_usuario, datos.email);
     });
   }
 

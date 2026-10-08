@@ -249,7 +249,7 @@ export async function invitarMiembro(idEmpresa, datos) {
 }
 
 /** Pasos 1-3 de invitarMiembro. Corre dentro de conEmpresa. */
-async function asegurarFichaCliente(client, idEmpresa, idUsuario, email) {
+export async function asegurarFichaCliente(client, idEmpresa, idUsuario, email) {
   const { rows: propia } = await client.query(
     'SELECT id_cliente FROM app.clientes WHERE id_usuario = $1',
     [idUsuario],
