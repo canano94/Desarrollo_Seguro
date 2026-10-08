@@ -8,6 +8,9 @@ import { AppError } from '../utils/errors.js';
 import { hashearPassword } from '../utils/crypto.js';
 // Traducción membresía del cliente -> ficha de cliente //
 import { idClienteDeMembresia, SQL_CLIENTE_DE_MEMBRESIA_P2 } from './clientes.service.js';
+// Horario de atención configurable (empresa o sede) //
+import { franjasDelDia, validarDentroDeHorario } from './configuracion.service.js';
+import { instanteLocal } from '../utils/zona.js';
 
 /**
  * DATO CLAVE DE ARQUITECTURA (Para repasar):
@@ -88,7 +91,7 @@ export async function listarServicios(idEmpresa, idPrestador, ambito = []) {
       nombre: s.nombre,
       descripcion: s.descripcion,
       duracionMinutos: s.duracion_minutos,
-      precio: Number(s.precio),
+      precio: s.precio === null ? null : Number(s.precio),
       activo: s.activo,
       idPrestador: s.id_prestador,
       prestador: s.prestador,
@@ -117,7 +120,7 @@ export async function crearServicio(idEmpresa, datos) {
         datos.nombre,
         datos.descripcion || null,
         datos.duracionMinutos,
-        datos.precio,
+        datos.precio ?? null, // sin precio = el servicio no se cobra
       ],
     );
     return { idServicio: rows[0].id_servicio, nombre: rows[0].nombre };
@@ -353,39 +356,49 @@ export async function franjasLibres(idEmpresa, idServicio, fecha) {
       throw new AppError(404, 'SERVICIO_NO_ENCONTRADO', 'Ese servicio no existe o está inactivo.');
     }
 
+    // Franjas de atención de ese día (las de la sede o las de la empresa).
+    const franjas = await franjasDelDia(client, servicio.id_prestador, fecha);
+    const duracion = servicio.duracion_minutos;
+    if (franjas.length === 0) {
+      return { duracionMinutos: duracion, libres: [], cerrado: true };
+    }
+
+    // Límites del día en la hora local de la empresa (no en UTC del servidor).
+    const inicioDia = instanteLocal(fecha, '00:00');
+    const finDia = new Date(inicioDia.getTime() + 24 * 60 * 60_000);
+
     const { rows: ocupadas } = await client.query(
       `SELECT fecha_inicio, fecha_fin
          FROM app.reservas
         WHERE id_prestador = $1
           AND estado IN ('PENDIENTE', 'CONFIRMADA')
-          AND fecha_inicio >= $2::date
-          AND fecha_inicio <  $2::date + interval '1 day'`,
-      [servicio.id_prestador, fecha],
+          AND fecha_inicio < $3
+          AND fecha_fin    > $2`,
+      [servicio.id_prestador, inicioDia, finDia],
     );
 
-    const duracion = servicio.duracion_minutos;
     const libres = [];
     const ahora = Date.now();
 
-    const JORNADA_INICIO = 7;
-    const JORNADA_FIN = 20;
+    // Cada franja se recorre por separado: la pausa entre dos franjas
+    // (ej. el almuerzo) nunca ofrece turnos.
+    for (const franja of franjas) {
+      let cursor = instanteLocal(fecha, franja.inicio);
+      const finFranja = instanteLocal(fecha, franja.fin);
 
-    const [anio, mes, dia] = fecha.split('-').map(Number);
-    let cursor = new Date(anio, mes - 1, dia, JORNADA_INICIO, 0, 0, 0);
-    const finJornada = new Date(anio, mes - 1, dia, JORNADA_FIN, 0, 0, 0);
+      while (cursor.getTime() + duracion * 60_000 <= finFranja.getTime()) {
+        const inicio = new Date(cursor);
+        const fin = new Date(cursor.getTime() + duracion * 60_000);
 
-    while (cursor.getTime() + duracion * 60_000 <= finJornada.getTime()) {
-      const inicio = new Date(cursor);
-      const fin = new Date(cursor.getTime() + duracion * 60_000);
+        const yaPaso = inicio.getTime() <= ahora;
+        const chocaConOtro = ocupadas.some((o) =>
+          inicio < new Date(o.fecha_fin) && fin > new Date(o.fecha_inicio));
 
-      const yaPaso = inicio.getTime() <= ahora;
-      const chocaConOtro = ocupadas.some((o) =>
-        inicio < new Date(o.fecha_fin) && fin > new Date(o.fecha_inicio));
-
-      if (!yaPaso && !chocaConOtro) {
-        libres.push({ inicio: inicio.toISOString(), fin: fin.toISOString() });
+        if (!yaPaso && !chocaConOtro) {
+          libres.push({ inicio: inicio.toISOString(), fin: fin.toISOString() });
+        }
+        cursor = fin;
       }
-      cursor = new Date(cursor.getTime() + duracion * 60_000);
     }
 
     return { duracionMinutos: duracion, libres };
@@ -428,6 +441,9 @@ export async function crearReserva(
       throw new AppError(422, 'FECHA_PASADA', 'No puedes agendar en el pasado.');
     }
     const fin = new Date(inicio.getTime() + servicio.duracion_minutos * 60_000);
+
+    // El turno debe caber en el horario de atención de la sede.
+    await validarDentroDeHorario(client, servicio.id_prestador, inicio, fin);
 
     try {
       const { rows } = await client.query(
@@ -506,6 +522,8 @@ export async function reprogramarReserva(idEmpresa, idMembresia, idReserva, dato
       throw new AppError(422, 'FECHA_PASADA', 'No puedes reprogramar hacia el pasado.');
     }
     const fin = new Date(inicio.getTime() + duracion * 60_000);
+
+    await validarDentroDeHorario(client, reserva.id_prestador, inicio, fin);
 
     try {
       const { rows } = await client.query(
@@ -702,7 +720,7 @@ export async function actualizarServicio(idEmpresa, idServicio, datos, ambito = 
       nombre: s.nombre,
       descripcion: s.descripcion,
       duracionMinutos: s.duracion_minutos,
-      precio: Number(s.precio),
+      precio: s.precio === null ? null : Number(s.precio),
       activo: s.activo,
     };
   }).catch(traducirDuplicado('Ese prestador ya tiene un servicio con ese nombre.'));

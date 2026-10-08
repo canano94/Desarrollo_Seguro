@@ -15,7 +15,7 @@
  * Al cambiar cualquier archivo de la app, sube VERSION: así el
  * navegador instala la versión nueva y borra la caché vieja.
  */
-const VERSION = 'v3';
+const VERSION = 'v10';
 const CACHE_APP = `agenda-app-${VERSION}`;
 const CACHE_FUENTES = 'agenda-fuentes';
 const CACHE_FICHAS = 'agenda-fichas';
@@ -34,6 +34,7 @@ const APP_SHELL = [
   './crm.html',
   './equipos.html',
   './configuracion.html',
+  './escanear.html',
   './perfil.html',
   './cambiar-password.html',
   './ficha.html',
@@ -45,6 +46,7 @@ const APP_SHELL = [
   './css/movil.css',
   './admin.html',
   './js/api.js',
+  './js/menu.js',
   './js/pwa.js',
   './js/login.js',
   './js/cambiar-password.js',
@@ -60,6 +62,8 @@ const APP_SHELL = [
   './js/equipos.js',
   './js/clientes.js',
   './js/configuracion.js',
+  './js/escanear.js',
+  './js/vendor/jsQR.js',
   './js/vendor/qrcode.js',
   './icons/icon-192.png',
   './icons/icon-512.png',

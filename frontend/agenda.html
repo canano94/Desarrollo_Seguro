@@ -22,8 +22,8 @@
     <header class="barra">
       <p class="barra__marca">Agenda</p>
       <nav class="barra__nav">
-        <a href="inicio.html" >Inicio</a>
-        <a href="agenda.html" id="nav-agenda" hidden aria-current="page">Agenda</a>
+        <a href="inicio.html">Inicio</a>
+        <a href="agenda.html" id="nav-agenda" hidden>Agenda</a>
         <a href="servicios.html" id="nav-servicios" hidden>Servicios</a>
         <a href="usuarios.html" id="nav-usuarios" hidden>Personas</a>
         <a href="clientes.html" id="nav-clientes" hidden>Clientes</a>
@@ -42,7 +42,7 @@
 
     <main class="tablero tablero--ancho">
 
-      <!-- Pestañas principales: Turnos  -->
+      <!-- Pestañas principales: Turnos -->
       <div class="pestanas pestanas--grandes" role="tablist">
         <button type="button" class="pestana" role="tab" data-panel="p-turnos" aria-selected="true">Turnos</button>
       </div>
@@ -67,10 +67,17 @@
               <h2 id="titulo-semana">Semana</h2>
               <p class="apoyo" id="subtitulo-agenda"></p>
             </div>
-            <div class="fila-botones">
-              <button type="button" class="boton boton--borde boton--mini" id="btn-semana-anterior">←</button>
-              <button type="button" class="boton boton--borde boton--mini" id="btn-hoy">Hoy</button>
-              <button type="button" class="boton boton--borde boton--mini" id="btn-semana-siguiente">→</button>
+            <div class="calendario-controles">
+              <div class="selector-vista" role="group" aria-label="Vista del calendario">
+                <button type="button" class="selector-vista__boton" data-vista="dia" aria-pressed="false">Día</button>
+                <button type="button" class="selector-vista__boton" data-vista="semana" aria-pressed="true">Semana</button>
+                <button type="button" class="selector-vista__boton" data-vista="mes" aria-pressed="false">Mes</button>
+              </div>
+              <div class="fila-botones">
+                <button type="button" class="boton boton--borde boton--mini" id="btn-semana-anterior" aria-label="Anterior">←</button>
+                <button type="button" class="boton boton--borde boton--mini" id="btn-hoy">Hoy</button>
+                <button type="button" class="boton boton--borde boton--mini" id="btn-semana-siguiente" aria-label="Siguiente">→</button>
+              </div>
             </div>
           </div>
 
@@ -115,6 +122,21 @@
           <div id="reservar" class="reservar" hidden>
             <h3 class="subtitulo">Reservar un turno</h3>
 
+            <!-- Cliente: solo lo ve quien agenda a nombre de otros.
+                 Es un buscador y no un desplegable: con cientos de clientes
+                 una lista es inusable y obligaría a traerlos todos. -->
+            <div class="campo" id="campo-cliente" hidden>
+              <label for="r-cliente-busca">Cliente</label>
+              <div id="r-cliente-elegido-caja" class="cliente-elegido" hidden>
+                <input id="r-cliente-elegido" type="text" readonly class="entrada entrada--elegido">
+                <button type="button" class="boton boton--texto boton--mini" id="r-cliente-cambiar">Cambiar</button>
+              </div>
+              <input id="r-cliente-busca" type="search" maxlength="80"
+                     placeholder="Nombre, documento, correo o teléfono" autocomplete="off">
+              <ul id="r-cliente-resultados" class="resultados" hidden></ul>
+              <p class="pista" id="r-cliente-pista">¿Es un cliente nuevo? <a href="clientes.html">Créalo en Clientes</a> y vuelve a agendar.</p>
+            </div>
+
             <div class="fila-form">
               <div class="campo">
                 <label for="r-servicio">1. Servicio</label>
@@ -123,10 +145,6 @@
               <div class="campo">
                 <label for="r-dia">2. Día</label>
                 <input id="r-dia" type="date" class="entrada">
-              </div>
-              <div class="campo" id="campo-cliente" hidden>
-                <label for="r-cliente">Cliente</label>
-                <select id="r-cliente" class="entrada"></select>
               </div>
             </div>
 
@@ -140,6 +158,7 @@
     </main>
   </div>
 
+  <script type="module" src="js/menu.js"></script>
   <script type="module" src="js/agenda.js"></script>
 </body>
 </html>

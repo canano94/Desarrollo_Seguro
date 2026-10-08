@@ -18,6 +18,7 @@ import {
 } from '../middleware/auth.js';
 
 /* --- Pública: ficha del QR, sin JWT ------------------------------- */
+// Se monta en app.js como app.use('/api/public', equiposPublicoRouter)
 export const equiposPublicoRouter = Router();
 
 equiposPublicoRouter.get('/equipos/:idEmpresa/:qrToken',
@@ -26,24 +27,43 @@ equiposPublicoRouter.get('/equipos/:idEmpresa/:qrToken',
   ctrl.fichaPorQR);
 
 /* --- Protegidas --------------------------------------------------- */
+// Se monta en app.js como app.use('/api/equipos', equiposRouter)
 const router = Router();
 
 router.use(autenticar, exigirPasswordDefinitiva, exigirEmpresaActiva, exigirModulo('EQUIPOS'));
 
+/*
+ * ORDEN: las rutas con texto fijo ("prestadores", "de-cliente",
+ * "mantenimientos") van ANTES de "/:idEquipo". Si no, Express tomaría
+ * ese texto como si fuera un id y validarParamEntero lo rechazaría.
+ */
 router.get('/', ctrl.listarEquipos);
 
-router.get('/prestadores', exigirPermisos('equipos.crear'), ctrl.listarPrestadores);
+router.get('/prestadores',
+  exigirPermisos('equipos.crear'),
+  ctrl.listarPrestadores);
+
+router.get('/de-cliente/:idCliente',
+  validarParamUuid('idCliente'),
+  ctrl.equiposDeCliente);
+
+// Escáner del celular: el QR trae un token, el personal necesita el id.
+router.get('/qr/:qrToken',
+  validarParamUuid('qrToken'),
+  ctrl.equipoPorQR);
 
 router.get('/mantenimientos/:idMantenimiento',
-  validarParamEntero('idMantenimiento'), ctrl.detalleMantenimiento);
-
-router.get('/:idEquipo',
-  validarParamEntero('idEquipo'), ctrl.detalleEquipo);
+  validarParamEntero('idMantenimiento'),
+  ctrl.detalleMantenimiento);
 
 router.post('/',
   exigirPermisos('equipos.crear'),
   validar(crearEquipoSchema),
   ctrl.crearEquipo);
+
+router.get('/:idEquipo',
+  validarParamEntero('idEquipo'),
+  ctrl.detalleEquipo);
 
 router.patch('/:idEquipo',
   exigirPermisos('equipos.gestionar'),
@@ -58,7 +78,8 @@ router.post('/:idEquipo/asignar',
   ctrl.asignarEquipocliente);
 
 router.get('/:idEquipo/mantenimientos',
-  validarParamEntero('idEquipo'), ctrl.listarMantenimientos);
+  validarParamEntero('idEquipo'),
+  ctrl.listarMantenimientos);
 
 router.post('/:idEquipo/mantenimientos',
   exigirPermisos('mantenimiento.registrar'),

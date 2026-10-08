@@ -3,19 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
   <meta name="theme-color" content="#101c26">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/favicon-32.png" sizes="32x32">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-  <meta name="robots" content="noindex, nofollow">
-  <meta name="referrer" content="no-referrer">
   <title>Hoja de servicio del equipo</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/equipos.css">
-  <link rel="stylesheet" href="css/movil.css">
-  <script src="js/pwa.js" defer></script>
 </head>
 <body class="ficha">
   <main class="ficha__hoja" aria-live="polite">
@@ -50,9 +48,17 @@
           <dd id="f-ubicacion"></dd>
         </div>
       </dl>
+
+      <!-- Función móvil 2: compartir con el menú nativo del celular
+           (WhatsApp, correo, etc.). Se muestra solo si hay cómo. -->
+      <div class="ficha__acciones">
+        <button type="button" class="ficha__compartir" id="f-compartir" hidden>Compartir ficha</button>
+        <p class="ficha__texto" id="f-compartir-estado" role="status"></p>
+      </div>
     </article>
   </main>
 
   <script type="module" src="js/ficha.js"></script>
+  <script src="js/pwa.js" defer></script>
 </body>
 </html>

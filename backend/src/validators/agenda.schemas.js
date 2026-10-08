@@ -33,13 +33,25 @@ export const crearPrestadorSchema = z
   .strict();                     // .strict() rechaza campos no declarados
 
 // --- Servicios ----------------------------------------------------- //
+
+/**
+ * Precio opcional. null = el servicio no se cobra; ausente = no se toca.
+ * OJO: z.coerce.number() solo convertía null en 0 (Number(null) === 0),
+ * por eso "sin precio" terminaba guardado como $0. .nullable() deja pasar
+ * el null ANTES de convertir, y un texto vacío también se toma como null.
+ */
+const precio = z.preprocess(
+  (v) => (v === '' ? null : v),
+  z.coerce.number().min(0, 'El precio no puede ser negativo.').max(99999999).nullable(),
+).optional();
+
 export const crearServicioSchema = z
   .object({
     idPrestador: uuid,                                   // a quién pertenece
     nombre: texto(120),
     descripcion: opcional(500),
     duracionMinutos: z.coerce.number().int().min(5).max(1440),
-    precio: z.coerce.number().min(0).max(99999999),
+    precio,
   })
   .strict();
 
@@ -124,7 +136,7 @@ export const actualizarServicioSchema = z
     nombre: texto(120).optional(),
     descripcion: opcional(500),
     duracionMinutos: z.coerce.number().int().min(5).max(1440).optional(),
-    precio: z.coerce.number().min(0).max(99999999).optional(),
+    precio,
     activo: z.boolean().optional(),
   })
   .strict()

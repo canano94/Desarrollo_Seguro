@@ -503,9 +503,8 @@ for (const pestana of grupoPestanas.querySelectorAll('.pestana')) {
   });
 }
 
+/** Lo propio de esta pantalla. El menú lo maneja js/menu.js. */
 function aplicarPermisos() {
-  const datos = sesionActual();
-
   // Controles de administrador vs cliente
   const gestiona = puede('casos.gestionar');
   document.getElementById('campo-cliente-caso').hidden = !gestiona;
@@ -514,11 +513,6 @@ function aplicarPermisos() {
   document.getElementById('tab-historial').hidden = !puede('crm.ver_historial');
   document.getElementById('btn-nuevo-caso').hidden =
     !puede('casos.crear') && !gestiona;
-
-  document.getElementById('nav-agenda').hidden =
-    !datos.empresaActiva?.modulos?.includes('AGENDA');
-  document.getElementById('nav-admin').hidden =
-    !datos.rolesPlataforma?.includes('SUPER_ADMIN');
 }
 
 function pintarSelectorEmpresa() {
@@ -549,17 +543,24 @@ async function cargarTodo() {
   const idCliente = params.get('cliente');
   const nombreCliente = params.get('nombre');
 
-  // Si trae el ID de un turno en la URL, abre el formulario pre-llenado automáticamente
-  if (idReserva) {
+  // Llega desde un turno (agenda) o desde la ficha del cliente (clientes):
+  // abre el formulario con el cliente, y el turno si viene.
+  // Solo lo usa quien gestiona casos (los que ven el campo de cliente).
+  const gestiona = !document.getElementById('campo-cliente-caso').hidden;
+  if ((idReserva || idCliente) && gestiona) {
+    // Se limpia la URL: al recargar no se vuelve a abrir el formulario.
+    history.replaceState({}, '', 'crm.html');
     document.getElementById('panel-nuevo-caso').hidden = false;
 
     if (idCliente) {
       clienteElegido = { idMembresia: idCliente };
-      mostrarClienteElegido(nombreCliente ?? 'Seleccionado desde el turno');
-      // Aseguramos que el turno específico se cargue en el `<select>` vinculado
+      mostrarClienteElegido(nombreCliente ?? 'Cliente seleccionado');
+      // Llena el selector de turnos de ese cliente (y deja elegido el del enlace).
       await cargarTurnosDeCliente(idCliente, idReserva);
     }
-    avisar('Radicando un caso sobre el turno seleccionado.', true);
+    avisar(idReserva
+      ? 'Radicando un caso sobre el turno seleccionado.'
+      : `Radicando un caso para ${nombreCliente ?? 'el cliente seleccionado'}.`, true);
   }
 }
 

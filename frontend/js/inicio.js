@@ -67,22 +67,7 @@ function pintar() {
   fichas(document.getElementById('dato-roles'), empresa?.roles ?? datos.rolesPlataforma);
   fichas(document.getElementById('dato-modulos'), empresa?.modulos ?? []);
 
-  // Condicionales del Menú de Navegación Global (Header)
-  document.getElementById('nav-servicios').hidden = !puede('servicios.gestionar');
-  document.getElementById('nav-usuarios').hidden = !puede('empleados.gestionar');
-  document.getElementById('nav-equipos').hidden = !modulos.includes('EQUIPOS');
-  
-  // Condicional compuesta: Si no atiende citas ni resuelve quejas ni maneja usuarios,
-  // la pestaña de Clientes entera no tiene utilidad visual para él.
-  document.getElementById('nav-clientes').hidden =
-    !puede('clientes.gestionar') && !puede('reservas.aprobar') && !puede('casos.gestionar');
-
-  document.getElementById('nav-admin').hidden = !esPlataforma;
-  document.getElementById('nav-agenda').hidden = !empresa?.modulos?.includes('AGENDA');
-
-  // El módulo SaaS solo aparece en el navegador si la empresa facturó por él.
-  document.getElementById('nav-crm').hidden =
-    !empresa?.modulos?.includes('CRM');
+  // El menú de arriba lo maneja js/menu.js.
 
   // ----------------------------------------------------- //
   // Tarjetas principales del Dashboard (Cuerpo central)   //
@@ -118,9 +103,20 @@ function pintar() {
         'Casos de servicio, interacciones e historial del cliente.'));
     }
   
-  if (puede('clientes.gestionar') || puede('reservas.aprobar') || puede('casos.gestionar')) {
+  if (puede('clientes.gestionar') || puede('reservas.aprobar') || puede('casos.gestionar')
+      || puede('equipos.crear') || puede('equipos.gestionar')) {
     accesos.append(acceso('clientes.html', 'Clientes',
       'Busca a un cliente y consulta su ficha completa.'));
+  }
+
+  if (modulos.includes('EQUIPOS')) {
+    accesos.append(acceso('equipos.html', 'Equipos',
+      'Hoja de vida de los equipos, mantenimientos y código QR.'));
+  }
+
+  if (puede('configuracion.gestionar')) {
+    accesos.append(acceso('configuracion.html', 'Configuración',
+      'Horario de atención, servicios, insumos y listas de la empresa.'));
   }
 
   accesos.append(acceso('perfil.html', 'Mi perfil',

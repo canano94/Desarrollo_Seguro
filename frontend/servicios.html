@@ -22,16 +22,16 @@
     <header class="barra">
       <p class="barra__marca">Agenda</p>
       <nav class="barra__nav">
-        <a href="inicio.html" >Inicio</a>
-        <a href="agenda.html" id="nav-agenda" hidden >Agenda</a>
-        <a href="servicios.html" id="nav-servicios" hidden aria-current="page">Servicios</a>
+        <a href="inicio.html">Inicio</a>
+        <a href="agenda.html" id="nav-agenda" hidden>Agenda</a>
+        <a href="servicios.html" id="nav-servicios" hidden>Servicios</a>
         <a href="usuarios.html" id="nav-usuarios" hidden>Personas</a>
         <a href="clientes.html" id="nav-clientes" hidden>Clientes</a>
-        <a href="crm.html" id="nav-crm" hidden >CRM</a>
-        <a href="equipos.html" id="nav-equipos" hidden >Equipos</a>
+        <a href="crm.html" id="nav-crm" hidden>CRM</a>
+        <a href="equipos.html" id="nav-equipos" hidden>Equipos</a>
         <a href="configuracion.html" id="nav-config" hidden>Configuración</a>
         <a href="perfil.html">Perfil</a>
-        <a href="admin.html" id="nav-admin" hidden >Plataforma</a>
+        <a href="admin.html" id="nav-admin" hidden>Plataforma</a>
       </nav>
       <div class="barra__derecha">
         <label class="visualmente-oculto" for="selector-empresa">Empresa activa</label>
@@ -50,28 +50,33 @@
         <form id="form-prestador" class="fila-form" novalidate>
           <div class="campo"><label for="p-nombre">Nombre</label><input id="p-nombre" type="text" maxlength="150" required></div>
           <div class="campo"><label for="p-direccion">Dirección</label><input id="p-direccion" type="text" maxlength="200"></div>
-          <button type="submit" class="boton" id="btn-servicio">Agregar</button>
-          <button type="button" class="boton boton--texto" id="btn-cancelar-servicio" hidden>Cancelar</button>
+          <button type="submit" class="boton" id="btn-prestador">Agregar</button>
+          <button type="button" class="boton boton--texto" id="btn-cancelar-prestador" hidden>Cancelar</button>
         </form>
       </section>
 
       <section class="tarjeta" id="sec-servicios">
         <h2>Servicios</h2>
         <p class="apoyo">Cada servicio pertenece a un prestador y define su duración.</p>
+        <p class="pista" id="pista-config" hidden>Los precios, los insumos de cada servicio y el horario de atención se ajustan en <a href="configuracion.html">Configuración</a>.</p>
         <ul id="lista-servicios" class="items"></ul>
         <form id="form-servicio" class="fila-form" novalidate>
           <div class="campo"><label for="s-prestador">Prestador</label><select id="s-prestador" class="entrada" required></select></div>
           <div class="campo"><label for="s-nombre">Servicio</label><input id="s-nombre" type="text" maxlength="120" required></div>
           <div class="campo"><label for="s-duracion">Minutos</label><input id="s-duracion" type="number" min="5" max="1440" value="60" required></div>
-          <div class="campo"><label for="s-precio">Precio</label><input id="s-precio" type="number" min="0" step="1000" value="0" required></div>
-          <button type="submit" class="boton" id="btn-prestador">Agregar</button>
-          <button type="button" class="boton boton--texto" id="btn-cancelar-prestador" hidden>Cancelar</button>
+          <div class="campo campo--casilla">
+            <label for="s-cobra"><input id="s-cobra" type="checkbox" checked> Tiene precio</label>
+          </div>
+          <div class="campo"><label for="s-precio">Precio</label><input id="s-precio" type="number" min="0" step="1000" placeholder="Ej. 80000" inputmode="numeric"></div>
+          <button type="submit" class="boton" id="btn-servicio">Agregar</button>
+          <button type="button" class="boton boton--texto" id="btn-cancelar-servicio" hidden>Cancelar</button>
         </form>
       </section>
     </main>
   </div>
 
   <script src="env.js"></script>
+  <script type="module" src="js/menu.js"></script>
   <script type="module" src="js/servicios.js"></script>
 </body>
 </html>

@@ -220,19 +220,6 @@ document.getElementById('form-miembro').addEventListener('submit', async (e) => 
 // Arranque y Contexto                                                //
 // ------------------------------------------------------------------ //
 
-function aplicarPermisos() {
-  const datos = sesionActual();
-  const modulos = datos.empresaActiva?.modulos ?? [];
-
-  document.getElementById('nav-agenda').hidden = !modulos.includes('AGENDA');
-  document.getElementById('nav-crm').hidden = !modulos.includes('CRM');
-  document.getElementById('nav-servicios').hidden = !puede('servicios.gestionar');
-  document.getElementById('nav-clientes').hidden =
-    !puede('clientes.gestionar') && !puede('reservas.aprobar') && !puede('casos.gestionar');
-  document.getElementById('nav-admin').hidden =
-    !datos.rolesPlataforma?.includes('SUPER_ADMIN');
-}
-
 function pintarSelectorEmpresa() {
   const datos = sesionActual();
   selectorEmpresa.replaceChildren();
@@ -246,7 +233,7 @@ function pintarSelectorEmpresa() {
 
 async function cargarTodo() {
   permisos = sesionActual().empresaActiva?.permisos ?? [];
-  aplicarPermisos();
+  // El menú lo maneja js/menu.js.
   pintarSelectorEmpresa();
   await cargarPrestadores();
   await cargarMiembros();

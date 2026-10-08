@@ -51,6 +51,41 @@ export async function listarEquipos(idEmpresa, ambito) {
   });
 }
 
+/**
+ * Equipos que un cliente tiene HOY (asignación vigente), para la pestaña
+ * Equipos de su ficha. Respeta el mismo ámbito que el listado general:
+ * un prestador solo ve los equipos de sus sedes, aunque el cliente tenga
+ * otros en sedes distintas.
+ */
+export async function listarEquiposDeCliente(idEmpresa, idCliente, ambito) {
+  return conEmpresa(idEmpresa, async (cliente) => {
+    const { rows } = await cliente.query(
+      `SELECT e.id_equipo, e.tipo, e.marca, e.modelo, e.ubicacion,
+              e.ultimo_mantenimiento, e.proxima_fecha_mantenimiento,
+              e.activo, eu.fecha_desde
+         FROM app.equipo_cliente eu
+         JOIN app.equipos e ON e.id_equipo = eu.id_equipo
+        WHERE eu.id_cliente = $1
+          AND eu.fecha_hasta IS NULL
+          AND ($2::uuid[] IS NULL OR e.id_prestador = ANY($2::uuid[]))
+        ORDER BY e.proxima_fecha_mantenimiento NULLS LAST
+        LIMIT 100`,
+      [idCliente, ambito],
+    );
+    return rows.map((e) => ({
+      idEquipo: e.id_equipo,
+      tipo: e.tipo,
+      marca: e.marca,
+      modelo: e.modelo,
+      ubicacion: e.ubicacion,
+      ultimoMantenimiento: e.ultimo_mantenimiento,
+      proximoMantenimiento: e.proxima_fecha_mantenimiento,
+      activo: e.activo,
+      asignadoDesde: e.fecha_desde,
+    }));
+  });
+}
+
 /** Detalle de un equipo, con todo su historial de clientes. */
 export async function detalleEquipo(idEmpresa, idEquipo) {
   return conEmpresa(idEmpresa, async (cliente) => {
@@ -299,23 +334,32 @@ export async function detalleMantenimiento(idEmpresa, idMantenimiento) {
  * de los técnicos. Todo lo que sale aquí lo puede ver cualquiera que
  * tenga el código.
  */
+/**
+ * Para el escáner del celular: traduce el token del QR al id interno
+ * del equipo, solo dentro de la empresa activa (el RLS oculta los de
+ * otras empresas). Incluye equipos inactivos: el personal sí los ve.
+ */
+export async function idEquipoPorQR(idEmpresa, qrToken) {
+  return conEmpresa(idEmpresa, async (cliente) => {
+    const { rows } = await cliente.query(
+      'SELECT id_equipo FROM app.equipos WHERE qr_token = $1',
+      [qrToken],
+    );
+    if (rows.length === 0) {
+      throw new AppError(404, 'EQUIPO_NO_ENCONTRADO', 'Ese código no corresponde a un equipo de tu empresa.');
+    }
+    return { idEquipo: rows[0].id_equipo };
+  });
+}
+
 export async function fichaPorQR(idEmpresa, qrToken) {
   return conEmpresa(idEmpresa, async (cliente) => {
     const { rows } = await cliente.query(
-      `SELECT e.tipo, e.marca, e.modelo, e.ubicacion,
-              e.ultimo_mantenimiento, e.proxima_fecha_mantenimiento
-         FROM app.equipos e
-        WHERE e.qr_token = $1
-          AND e.activo = true
-          -- Si la empresa ya no tiene el módulo, el QR deja de responder.
-          AND EXISTS (
-                SELECT 1
-                  FROM app.empresa_modulos em
-                  JOIN app.modulos mo ON mo.id_modulo = em.id_modulo
-                 WHERE em.id_empresa = $2
-                   AND mo.codigo = 'EQUIPOS'
-                   AND em.activo)`,
-      [qrToken, idEmpresa],
+      `SELECT tipo, marca, modelo, ubicacion,
+              ultimo_mantenimiento, proxima_fecha_mantenimiento
+         FROM app.equipos
+        WHERE qr_token = $1 AND activo = true`,
+      [qrToken],
     );
     if (rows.length === 0) {
       throw new AppError(404, 'EQUIPO_NO_ENCONTRADO', 'Equipo no encontrado.');

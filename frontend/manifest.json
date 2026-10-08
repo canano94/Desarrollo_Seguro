@@ -15,6 +15,7 @@
     { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
   "shortcuts": [
+    { "name": "Escanear QR", "url": "./escanear.html", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
     { "name": "Equipos", "url": "./equipos.html", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
     { "name": "Clientes", "url": "./clientes.html", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
   ]

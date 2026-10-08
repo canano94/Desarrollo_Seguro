@@ -155,21 +155,37 @@ export async function pedir(ruta, opciones = {}) {
     
     // Auto-Renovación silenciosa //
     await refrescar();
+    // Si la renovación no trajo token (por ejemplo, falta elegir empresa),
+    // reintentar solo repetiría el mismo SIN_TOKEN: se avisa de una vez.
+    if (!accessToken) throw error;
     return llamar(ruta, opciones);
   }
 }
 
 /**
  * Pide un nuevo Access Token enviando la cookie segura HTTPOnly.
+ *
+ * UNA SOLA RENOVACIÓN A LA VEZ: si dos peticiones fallan al mismo tiempo
+ * (por ejemplo, Promise.all de casos + clientes), las dos esperan la
+ * MISMA renovación. Sin esto saldrían dos /auth/refresh con la misma
+ * cookie; como el refresh token rota, el segundo llegaría con una cookie
+ * ya usada, el backend lo tomaría como robo (detección de reutilización)
+ * y cerraría la sesión.
  */
-export async function refrescar() {
-  const idEmpresa = empresaRecordada();
-  const datos = await llamar('/auth/refresh', {
-    metodo: 'POST',
-    conToken: false,
-    cuerpo: idEmpresa ? { idEmpresa } : {},
-  });
-  return guardarSesion(datos);
+let renovacionEnCurso = null;
+
+export function refrescar() {
+  if (!renovacionEnCurso) {
+    const idEmpresa = empresaRecordada();
+    renovacionEnCurso = llamar('/auth/refresh', {
+      metodo: 'POST',
+      conToken: false,
+      cuerpo: idEmpresa ? { idEmpresa } : {},
+    })
+      .then(guardarSesion)
+      .finally(() => { renovacionEnCurso = null; });
+  }
+  return renovacionEnCurso;
 }
 
 /** 
@@ -236,7 +252,27 @@ export function guardarPerfil(cambios) {
   return pedir('/auth/perfil', { metodo: 'PATCH', cuerpo: cambios });
 }
 
-export function cambiarPassword(passwordActual, passwordNueva) {
+/**
+ * El access token es POR EMPRESA. Quien pertenece a varias empresas y
+ * entra con contraseña temporal recibe "requiereSeleccion" y ningún
+ * token, así que POST /auth/password fallaba con SIN_TOKEN. Antes de
+ * cambiar la contraseña se elige una empresa (la recordada o la primera)
+ * solo para obtener el token; la contraseña es de la persona, no de la
+ * empresa, así que cualquiera de sus empresas sirve.
+ */
+async function asegurarToken() {
+  if (accessToken) return;
+  const empresas = sesion?.empresas ?? [];
+  if (empresas.length === 0) return;
+  const recordada = empresaRecordada();
+  const idEmpresa = empresas.some((e) => e.idEmpresa === recordada)
+    ? recordada
+    : empresas[0].idEmpresa;
+  await elegirEmpresa(idEmpresa);
+}
+
+export async function cambiarPassword(passwordActual, passwordNueva) {
+  await asegurarToken();
   return pedir('/auth/password', {
     metodo: 'POST',
     cuerpo: { passwordActual, passwordNueva },

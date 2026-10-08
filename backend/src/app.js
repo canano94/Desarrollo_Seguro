@@ -19,8 +19,11 @@ import crmRoutes from './routes/crm.routes.js';
 import clientesRoutes from './routes/clientes.routes.js';
 import equiposRouter, { equiposPublicoRouter } from './routes/equipos.routes.js';
 import catalogosRoutes from './routes/catalogos.routes.js';
+import configuracionRoutes from './routes/configuracion.routes.js';
 // Importa tus propios middlewares de manejo de errores //
 import { notFound, errorHandler } from './middleware/errorHandler.js';
+// Limpia la IP que reenvía el proxy de Azure (viene con el puerto) //
+import { limpiarIpReenviada } from './utils/ip.js';
 
 /**
  * El frontend vive en ../../frontend respecto a este archivo
@@ -39,6 +42,10 @@ export const app = express();
  * real del usuario. También hace que req.secure sea correcto en HTTPS.
  */
 app.set('trust proxy', 1);
+
+// Debe ir ANTES de todo lo que use req.ip (rutas, rate limit). //
+app.use(limpiarIpReenviada);
+
 /**
  * Azure App Service manda la IP del cliente CON el puerto en
  * X-Forwarded-For ("152.201.83.77:52372"). Express la usa tal cual para
@@ -48,12 +55,12 @@ app.set('trust proxy', 1);
  *
  * No permite falsificar la IP: se limpia cada elemento sin cambiar el
  * orden ni la cantidad, y con trust proxy = 1 Express sigue tomando el
- * último, que es el que agrega Azure.
+ * ÚLTIMO, que es el que agrega Azure (no el que escribe el cliente).
  */
 function quitarPuerto(valor) {
   const ip = valor.trim();
+  // IPv6 con puerto: "[2001:db8::1]:443" -> "2001:db8::1"
   if (ip.startsWith('[')) {
-    // IPv6 con puerto: "[2001:db8::1]:443" -> "2001:db8::1"
     const cierre = ip.indexOf(']');
     // Mal formada: se deja tal cual, sin intentar adivinar.
     return cierre > 0 ? ip.slice(1, cierre) : ip;
@@ -139,6 +146,7 @@ app.use('/api/equipos', equiposRouter);
 app.use('/api/crm', crmRoutes);
 app.use('/api/clientes', clientesRoutes);
 app.use('/api/catalogos', catalogosRoutes);
+app.use('/api/configuracion', configuracionRoutes);
 
 // Una ruta /api que no existe responde 404 en JSON, no una página HTML //
 app.use('/api', notFound);

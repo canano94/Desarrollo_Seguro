@@ -7,7 +7,7 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/favicon-32.png" sizes="32x32">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-  <title>Configuración · Agenda</title>
+  <title>Escanear QR · Agenda</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -38,27 +38,39 @@
       </div>
     </header>
 
-    <main class="tablero tablero--ancho">
-      <div class="encabezado-seccion">
-        <div>
-          <h1>Configuración</h1>
-          <p class="apoyo">Ajusta la plataforma a la forma de trabajar de tu empresa. Los cambios aplican de inmediato para todo tu equipo.</p>
-        </div>
-      </div>
+    <main class="tablero">
+      <a href="inicio.html" class="volver" id="volver">← Inicio</a>
+      <h1>Escanear código QR</h1>
+      <p class="apoyo">Apunta la cámara a la etiqueta del equipo. Se abre solo al reconocerla.</p>
 
       <p id="aviso" class="aviso" role="alert" hidden></p>
 
-      <!-- Una pestaña por área; solo aparecen las de los módulos contratados. -->
-      <div class="pestanas" role="tablist" id="pestanas-config" hidden></div>
-      <div id="secciones"></div>
+      <!-- Visor de la cámara. El video nunca sale del celular: se analiza
+           cuadro por cuadro en el navegador, no se envía al servidor. -->
+      <div class="escaner" id="escaner">
+        <video id="video" class="escaner__video" playsinline muted></video>
+        <div class="escaner__marco" aria-hidden="true"></div>
+        <p class="escaner__estado" id="estado" role="status">Pidiendo permiso para usar la cámara…</p>
+      </div>
 
-      <p class="apoyo" id="sin-secciones" hidden>Tu empresa todavía no tiene módulos con opciones para configurar.</p>
+      <div class="fila-botones escaner__acciones">
+        <button type="button" class="boton" id="btn-camara" hidden>Activar cámara</button>
+        <button type="button" class="boton boton--borde" id="btn-linterna" hidden>Encender linterna</button>
+        <!-- Plan B: si la cámara en vivo no funciona, se toma una foto con
+             la cámara del sistema y se lee el código de la imagen. -->
+        <label class="boton boton--texto escaner__foto" for="foto">Leer desde una foto</label>
+        <input id="foto" type="file" accept="image/*" capture="environment" class="visualmente-oculto">
+      </div>
+
+      <canvas id="lienzo" hidden></canvas>
     </main>
   </div>
 
   <script src="env.js"></script>
   <script type="module" src="js/menu.js"></script>
-  <script type="module" src="js/configuracion.js"></script>
+  <!-- jsQR: lector de QR para navegadores sin BarcodeDetector (iPhone, Firefox). -->
+  <script src="js/vendor/jsQR.js"></script>
+  <script type="module" src="js/escanear.js"></script>
   <script src="js/pwa.js" defer></script>
 </body>
 </html>

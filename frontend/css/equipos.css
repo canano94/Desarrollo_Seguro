@@ -220,3 +220,110 @@ body.ficha {
   max-width: 28rem;
 }
 .config-agregar input { flex: 1; min-width: 0; }
+
+/* --- Panel de configuración: pestañas, horario, servicios --- */
+#pestanas-config { margin-bottom: 1.5rem; }
+
+.horario { border-top: 1px solid var(--eq-linea); margin: 1rem 0; }
+.horario--inactivo { opacity: 0.5; }
+.horario__fila {
+  display: grid;
+  grid-template-columns: 9rem 1fr auto;
+  align-items: start;
+  gap: 0.75rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--eq-linea);
+}
+.horario__dia { display: flex; align-items: center; gap: 0.4rem; font-weight: 600; padding-top: 0.4rem; }
+.horario__franjas { display: flex; flex-direction: column; gap: 0.4rem; }
+.horario__franja { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.horario__franja input[type='time'] { font: inherit; padding: 0.35rem 0.5rem; border: 1px solid var(--eq-linea); border-radius: 4px; }
+
+.opciones-radio { border: 0; padding: 0; margin: 0.5rem 0 0; display: flex; gap: 1.5rem; flex-wrap: wrap; }
+.opciones-radio label { display: flex; align-items: center; gap: 0.4rem; }
+
+.config-servicio { border-top: 1px solid var(--eq-linea); }
+.config-servicio:last-child { border-bottom: 1px solid var(--eq-linea); }
+.config-servicio > summary {
+  cursor: pointer;
+  padding: 0.75rem 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+.config-servicio__nombre { font-weight: 600; }
+.config-servicio__datos { margin-left: auto; display: flex; gap: 0.4rem; }
+.config-servicio__bloque { padding: 0 0 1rem 1rem; }
+.config-servicio__precio { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.config-servicio__precio input[type='number'] { width: 10rem; }
+.casilla { display: flex; align-items: center; gap: 0.4rem; }
+
+.config-insumos { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.5rem; }
+.config-insumos__fila { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.config-insumos__fila select { min-width: 12rem; }
+.config-insumos__fila input[type='number'] { width: 6rem; }
+.config-insumos__unidad { min-width: 4rem; }
+
+.config-agregar--ancho { max-width: 36rem; }
+.config-fila input.config-corto,
+.config-agregar input.config-corto { flex: 0 0 8rem; }
+
+@media (max-width: 640px) {
+  .horario__fila { grid-template-columns: 1fr; }
+  .config-servicio__datos { margin-left: 0; width: 100%; }
+  .config-servicio__bloque { padding-left: 0; }
+  .config-agregar--ancho { flex-wrap: wrap; }
+  .config-agregar input.config-corto { flex: 1 1 8rem; }
+}
+
+/* ==================================================================
+   Funciones móviles: escáner de QR y compartir
+   ================================================================== */
+
+.escaner {
+  position: relative;
+  width: 100%;
+  max-width: 28rem;
+  aspect-ratio: 3 / 4;
+  margin: 1rem 0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #0b1218;
+}
+.escaner__video { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Recuadro guía: ayuda a encuadrar la etiqueta. */
+.escaner__marco {
+  position: absolute;
+  inset: 18% 14%;
+  border: 3px solid rgba(255, 255, 255, 0.85);
+  border-radius: 12px;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+.escaner__estado {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  margin: 0;
+  padding: 0.75rem 1rem;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  font-size: 0.95rem;
+  text-align: center;
+}
+.escaner__acciones { align-items: center; }
+.escaner__foto { cursor: pointer; }
+
+.ficha__acciones { margin-top: 2rem; }
+.ficha__compartir {
+  width: 100%;
+  min-height: 48px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--eq-verde);
+  color: #fff;
+  font: 600 1rem "IBM Plex Sans", sans-serif;
+  cursor: pointer;
+}
+.ficha__compartir:focus-visible { outline: 3px solid var(--eq-tinta); outline-offset: 2px; }
+#f-compartir-estado { margin-top: 0.5rem; text-align: center; }

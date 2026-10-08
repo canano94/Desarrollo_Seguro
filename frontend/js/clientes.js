@@ -256,9 +256,26 @@ async function abrirPerfil(idCliente) {
      * interacciones: CRM). La ficha en sí no depende de ninguno.
      */
     const modulos = sesionActual().empresaActiva?.modulos ?? [];
-    document.querySelector('[data-panel="pf-turnos"]').hidden = !modulos.includes('AGENDA');
-    document.querySelector('[data-panel="pf-casos"]').hidden = !modulos.includes('CRM');
-    document.querySelector('[data-panel="pf-interacciones"]').hidden = !modulos.includes('CRM');
+    const tieneAgenda = modulos.includes('AGENDA');
+    const tieneCrm = modulos.includes('CRM');
+    const tieneEquipos = modulos.includes('EQUIPOS');
+    document.querySelector('[data-panel="pf-turnos"]').hidden = !tieneAgenda;
+    document.querySelector('[data-panel="pf-casos"]').hidden = !tieneCrm;
+    document.querySelector('[data-panel="pf-interacciones"]').hidden = !tieneCrm;
+    document.querySelector('[data-panel="pf-equipos"]').hidden = !tieneEquipos;
+
+    /**
+     * Acción de cada pestaña: módulo contratado + permiso + ficha activa.
+     * Son los mismos permisos que exige el backend para hacerlo "a nombre
+     * de otro": ocultarlos aquí es comodidad, la API decide de verdad.
+     */
+    const activa = c.estadoMembresia === 'ACTIVA';
+    $('acc-turnos').hidden = !(tieneAgenda && activa && puede('reservas.aprobar'));
+    $('acc-casos').hidden = !(tieneCrm && activa && puede('casos.gestionar'));
+    $('acc-equipos').hidden = !(tieneEquipos && activa && puede('equipos.crear'));
+
+    // Los equipos vienen de su propio módulo: solo se piden si está activo.
+    if (tieneEquipos) await cargarEquiposCliente(idCliente);
 
     // Si la pestaña activa quedó oculta, se salta a la primera visible.
     const visible = [...document.querySelectorAll('#pestanas-perfil .pestana')]
@@ -353,6 +370,87 @@ for (const pestana of grupoPestanas.querySelectorAll('.pestana')) {
  * empresa: cambiarlos aquí no toca el usuario de la persona ni lo que
  * ve otra empresa de la que también sea cliente.
  */
+// ------------------------------------------------------------------ //
+// Equipos del cliente (módulo EQUIPOS)                               //
+// ------------------------------------------------------------------ //
+
+function fechaCorta(v) {
+  if (!v) return null;
+  const [a, m, d] = String(v).slice(0, 10).split('-').map(Number);
+  return new Date(a, m - 1, d).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+async function cargarEquiposCliente(idCliente) {
+  const lista = $('lista-equipos');
+  lista.replaceChildren();
+  try {
+    const { equipos } = await pedir(`/equipos/de-cliente/${idCliente}`);
+
+    for (const e of equipos) {
+      const boton = document.createElement('button');
+      boton.type = 'button';
+      boton.className = 'ficha-empresa__cuerpo';
+      boton.addEventListener('click', () => {
+        location.href = `equipos.html?id=${encodeURIComponent(e.idEquipo)}`;
+      });
+
+      const nombre = document.createElement('span');
+      nombre.className = 'ficha-empresa__nombre';
+      nombre.textContent = [e.tipo, e.marca].filter(Boolean).join(' ');
+
+      const meta = document.createElement('span');
+      meta.className = 'ficha-empresa__meta';
+      meta.textContent = [
+        e.ubicacion,
+        e.proximoMantenimiento ? `próximo mantenimiento ${fechaCorta(e.proximoMantenimiento)}` : 'sin mantenimiento programado',
+      ].filter(Boolean).join(' · ');
+
+      boton.append(nombre, meta);
+      const li = document.createElement('li');
+      li.className = 'ficha-empresa';
+      li.append(boton);
+      lista.append(li);
+    }
+
+    if (equipos.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'apoyo';
+      li.textContent = 'Este cliente no tiene equipos asignados.';
+      lista.append(li);
+    }
+  } catch (error) {
+    // Sin acceso a equipos (por permisos o ámbito) la pestaña queda vacía
+    // en vez de romper toda la ficha.
+    const li = document.createElement('li');
+    li.className = 'apoyo';
+    li.textContent = mensajeError(error);
+    lista.append(li);
+  }
+}
+
+// ------------------------------------------------------------------ //
+// Acciones desde la ficha: abren cada módulo con el cliente elegido  //
+// ------------------------------------------------------------------ //
+
+// Agenda y equipos: solo viaja el ID; la otra pantalla pide el nombre al servidor.
+$('btn-agendar-cliente').addEventListener('click', () => {
+  location.href = `agenda.html?cliente=${encodeURIComponent(clienteActual.idCliente)}`;
+});
+
+$('btn-equipo-cliente').addEventListener('click', () => {
+  location.href = `equipos.html?nuevo=1&cliente=${encodeURIComponent(clienteActual.idCliente)}`;
+});
+
+// CRM: se usa el mismo formato de enlace que ya usa la agenda al radicar
+// un caso desde un turno (cliente + nombre), que crm.js ya sabe leer.
+$('btn-caso-cliente').addEventListener('click', () => {
+  const params = new URLSearchParams({
+    cliente: clienteActual.idCliente,
+    nombre: nombreDe(clienteActual),
+  });
+  location.href = `crm.html?${params}`;
+});
+
 $('btn-editar-cliente').addEventListener('click', () => {
   const c = clienteActual;
   $('ec-nombres').value = c.nombres ?? '';
@@ -461,16 +559,8 @@ $('btn-clave-cliente').addEventListener('click', async () => {
 // Arranque                                                           //
 // ------------------------------------------------------------------ //
 
+/** Lo propio de esta pantalla. El menú lo maneja js/menu.js. */
 function aplicarPermisos() {
-  const datos = sesionActual();
-  const modulos = datos.empresaActiva?.modulos ?? [];
-
-  $('nav-agenda').hidden = !modulos.includes('AGENDA');
-  $('nav-crm').hidden = !modulos.includes('CRM');
-  $('nav-equipos').hidden = !modulos.includes('EQUIPOS');
-  $('nav-servicios').hidden = !puede('servicios.gestionar');
-  $('nav-usuarios').hidden = !puede('empleados.gestionar');
-  $('nav-admin').hidden = !datos.rolesPlataforma?.includes('SUPER_ADMIN');
   $('btn-nuevo-cliente').hidden = !puedeEditarFichas();
 }
 

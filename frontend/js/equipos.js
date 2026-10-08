@@ -655,6 +655,77 @@ $('qr-descargar').addEventListener('click', () => {
   URL.revokeObjectURL(enlace.href);
 });
 
+/**
+ * COMPARTIR LA ETIQUETA (función móvil 2)
+ * Convierte el QR (SVG) en una imagen PNG con el nombre del equipo y la
+ * comparte con el menú nativo del celular: así el técnico se la manda al
+ * cliente por WhatsApp. Si el navegador no comparte archivos, comparte
+ * solo el enlace; si no comparte nada, el botón no aparece.
+ */
+async function etiquetaPNG() {
+  // Copia con tamaño explícito: sin width/height algunos navegadores
+  // no saben a qué tamaño dibujar el SVG en el lienzo.
+  const svg = $('qr-svg').querySelector('svg').cloneNode(true);
+  svg.setAttribute('width', '600');
+  svg.setAttribute('height', '600');
+  const xml = new XMLSerializer().serializeToString(svg);
+  const urlSvg = URL.createObjectURL(new Blob([xml], { type: 'image/svg+xml' }));
+  try {
+    const imagen = new Image();
+    await new Promise((resolver, rechazar) => {
+      imagen.onload = resolver;
+      imagen.onerror = rechazar;
+      imagen.src = urlSvg;
+    });
+
+    const LADO = 600;
+    const MARGEN = 40;
+    const lienzo = document.createElement('canvas');
+    lienzo.width = LADO + MARGEN * 2;
+    lienzo.height = LADO + MARGEN * 2 + 90;
+    const ctx = lienzo.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, lienzo.width, lienzo.height);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(imagen, MARGEN, MARGEN, LADO, LADO);
+
+    ctx.fillStyle = '#14212b';
+    ctx.textAlign = 'center';
+    ctx.font = '600 30px "IBM Plex Sans", sans-serif';
+    ctx.fillText($('qr-titulo').textContent || 'Equipo', lienzo.width / 2, LADO + MARGEN + 50, LADO);
+    ctx.font = '22px "IBM Plex Sans", sans-serif';
+    ctx.fillStyle = '#5f6a72';
+    ctx.fillText('Escanéalo para ver la hoja de servicio', lienzo.width / 2, LADO + MARGEN + 85, LADO);
+
+    const blob = await new Promise((resolver) => lienzo.toBlob(resolver, 'image/png'));
+    return new File([blob], `qr-equipo-${equipoActual.idEquipo}.png`, { type: 'image/png' });
+  } finally {
+    URL.revokeObjectURL(urlSvg);
+  }
+}
+
+$('qr-compartir').hidden = typeof navigator.share !== 'function';
+
+$('qr-compartir').addEventListener('click', async () => {
+  const boton = $('qr-compartir');
+  const url = urlFicha();
+  const titulo = $('qr-titulo').textContent || 'Equipo';
+  boton.disabled = true;
+  try {
+    const archivo = await etiquetaPNG().catch(() => null);
+    const conImagen = { files: [archivo], title: `Hoja de servicio · ${titulo}`, text: `Hoja de servicio de tu ${titulo}: ${url}` };
+    if (archivo && navigator.canShare?.(conImagen)) {
+      await navigator.share(conImagen);
+    } else {
+      await navigator.share({ title: `Hoja de servicio · ${titulo}`, text: `Hoja de servicio de tu ${titulo}`, url });
+    }
+  } catch (error) {
+    if (error?.name !== 'AbortError') aviso('No se pudo compartir. Usa "Copiar enlace".');
+  } finally {
+    boton.disabled = false;
+  }
+});
+
 $('qr-copiar').addEventListener('click', async () => {
   try {
     await navigator.clipboard.writeText(urlFicha());

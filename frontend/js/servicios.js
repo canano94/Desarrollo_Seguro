@@ -7,6 +7,9 @@ const selectorEmpresa = document.getElementById('selector-empresa');
 
 let permisos = [];
 let prestadores = [];
+// Si la empresa cobra precios (Configuración > Servicios e insumos).
+// Apagado: el precio no se pide ni se muestra.
+let usaPrecios = false;
 
 /**
  * APUNTE DE ESTADO UI:
@@ -109,6 +112,28 @@ async function cargarPrestadores() {
   for (const p of prestadores) select.append(opcion(p.idPrestador, p.nombre));
 }
 
+/** precio null = el servicio no se cobra. */
+function textoPrecio(precio) {
+  return precio === null || precio === undefined
+    ? 'Sin precio'
+    : `$${Number(precio).toLocaleString('es-CO')}`;
+}
+
+/** Con "Tiene precio" desmarcado, el campo de precio se bloquea y se vacía. */
+const casillaCobra = document.getElementById('s-cobra');
+const campoPrecio = document.getElementById('s-precio');
+function sincronizarPrecio() {
+  campoPrecio.disabled = !casillaCobra.checked;
+  if (!casillaCobra.checked) campoPrecio.value = '';
+}
+casillaCobra.addEventListener('change', sincronizarPrecio);
+
+/** Muestra u oculta los campos de precio según el ajuste de la empresa. */
+function aplicarAjustePrecios() {
+  casillaCobra.closest('.campo').hidden = !usaPrecios;
+  campoPrecio.closest('.campo').hidden = !usaPrecios;
+}
+
 async function cargarServicios() {
   const { servicios } = await pedir('/agenda/servicios');
   const lista = document.getElementById('lista-servicios');
@@ -116,7 +141,8 @@ async function cargarServicios() {
   for (const s of servicios) {
     lista.append(itemEditable(
       s.nombre,
-      `${s.prestador} · ${s.duracionMinutos} min · $${s.precio.toLocaleString('es-CO')}`,
+      [s.prestador, `${s.duracionMinutos} min`, usaPrecios ? textoPrecio(s.precio) : null]
+        .filter(Boolean).join(' · '),
       () => editarServicio(s),
       s.activo,
       (activo) => alternarEstado('servicios', s.idServicio, activo),
@@ -201,7 +227,9 @@ function editarServicio(s) {
   document.getElementById('s-prestador').disabled = true;
   document.getElementById('s-nombre').value = s.nombre ?? '';
   document.getElementById('s-duracion').value = s.duracionMinutos;
-  document.getElementById('s-precio').value = s.precio;
+  casillaCobra.checked = s.precio !== null && s.precio !== undefined;
+  sincronizarPrecio();
+  if (casillaCobra.checked) campoPrecio.value = s.precio;
   document.getElementById('btn-servicio').textContent = 'Guardar cambios';
   document.getElementById('btn-cancelar-servicio').hidden = false;
   document.getElementById('s-nombre').focus();
@@ -213,6 +241,8 @@ function cancelarServicio() {
   // Rehabilitar el selector porque ahora vamos a crear uno nuevo desde cero
   document.getElementById('s-prestador').disabled = false;
   document.getElementById('s-duracion').value = 60;
+  casillaCobra.checked = true;
+  sincronizarPrecio();
   document.getElementById('btn-servicio').textContent = 'Agregar';
   document.getElementById('btn-cancelar-servicio').hidden = true;
 }
@@ -221,11 +251,27 @@ document.getElementById('btn-cancelar-servicio').addEventListener('click', cance
 
 document.getElementById('form-servicio').addEventListener('submit', async (e) => {
   e.preventDefault();
+
   const cuerpo = {
     nombre: document.getElementById('s-nombre').value.trim(),
     duracionMinutos: Number(document.getElementById('s-duracion').value),
-    precio: Number(document.getElementById('s-precio').value),
   };
+
+  // El precio solo viaja si la empresa cobra precios. Si no, ni se envía:
+  // al crear queda sin precio y al editar no se toca el que tuviera.
+  if (usaPrecios) {
+    // Sin "Tiene precio" se envía null: el servicio no se cobra.
+    let precio = null;
+    if (casillaCobra.checked) {
+      precio = Number(campoPrecio.value);
+      if (campoPrecio.value === '' || !Number.isFinite(precio) || precio < 0) {
+        avisar('Escribe el precio o desmarca "Tiene precio".');
+        campoPrecio.focus();
+        return;
+      }
+    }
+    cuerpo.precio = precio;
+  }
 
   try {
     if (editando?.tipo === 'servicio') {
@@ -247,20 +293,13 @@ document.getElementById('form-servicio').addEventListener('submit', async (e) =>
 // Arranque                                                           //
 // ------------------------------------------------------------------ //
 
+/** Lo propio de esta pantalla. El menú lo maneja js/menu.js. */
 function aplicarPermisos() {
-  const datos = sesionActual();
-  const modulos = datos.empresaActiva?.modulos ?? [];
-
   document.getElementById('sec-prestadores').hidden = !puede('prestadores.gestionar');
   document.getElementById('sec-servicios').hidden = !puede('servicios.gestionar');
 
-  document.getElementById('nav-agenda').hidden = !modulos.includes('AGENDA');
-  document.getElementById('nav-crm').hidden = !modulos.includes('CRM');
-  document.getElementById('nav-usuarios').hidden = !puede('empleados.gestionar');
-  document.getElementById('nav-clientes').hidden =
-    !puede('clientes.gestionar') && !puede('reservas.aprobar') && !puede('casos.gestionar');
-  document.getElementById('nav-admin').hidden =
-    !datos.rolesPlataforma?.includes('SUPER_ADMIN');
+  const pista = document.getElementById('pista-config');
+  if (pista) pista.hidden = !puede('configuracion.gestionar');
 }
 
 function pintarSelectorEmpresa() {
@@ -278,6 +317,15 @@ async function cargarTodo() {
   permisos = sesionActual().empresaActiva?.permisos ?? [];
   aplicarPermisos();
   pintarSelectorEmpresa();
+
+  // Si no se puede leer el ajuste, se asume "sin precios" (lo más común).
+  try {
+    ({ usaPrecios } = await pedir('/configuracion/general'));
+  } catch {
+    usaPrecios = false;
+  }
+  aplicarAjustePrecios();
+
   await cargarPrestadores();
   await cargarServicios();
 }

@@ -4,7 +4,7 @@
  * endpoint público con fetch y sin cookies.
  */
 
-// Debe ser la misma base que BASE en js/api.js.
+// Mismo dominio que el front: Express sirve las dos cosas.
 const API = '/api';
 
 const $ = (id) => document.getElementById(id);
@@ -64,8 +64,51 @@ function pintar(qr) {
     }
   }
 
+  prepararCompartir(qr, proximo);
+
   $('f-cargando').hidden = true;
   $('f-contenido').hidden = false;
+}
+
+/**
+ * COMPARTIR (función móvil 2)
+ * navigator.share abre el menú nativo del celular para mandar la ficha
+ * por WhatsApp, correo, etc. Donde no existe (casi todo escritorio), se
+ * copia el enlace. Se comparte la URL de esta misma página: es pública
+ * a propósito y solo muestra lo que ya ve quien escanea la etiqueta.
+ */
+function prepararCompartir(qr, proximo) {
+  const boton = $('f-compartir');
+  const puedeCompartir = typeof navigator.share === 'function';
+  const puedeCopiar = Boolean(navigator.clipboard?.writeText);
+  if (!puedeCompartir && !puedeCopiar) return;
+
+  const equipo = [qr.tipo, qr.marca].filter(Boolean).join(' ') || 'Equipo';
+  const datos = {
+    title: `Hoja de servicio · ${equipo}`,
+    text: proximo
+      ? `${equipo}: próximo mantenimiento el ${formatoLargo(proximo)}.`
+      : `${equipo}: hoja de servicio y mantenimientos.`,
+    url: location.href,
+  };
+
+  boton.textContent = puedeCompartir ? 'Compartir ficha' : 'Copiar enlace';
+  boton.hidden = false;
+
+  boton.addEventListener('click', async () => {
+    const estado = $('f-compartir-estado');
+    try {
+      if (puedeCompartir) {
+        await navigator.share(datos);
+      } else {
+        await navigator.clipboard.writeText(datos.url);
+        estado.textContent = 'Enlace copiado.';
+      }
+    } catch (error) {
+      // AbortError = la persona cerró el menú sin compartir: no es un error.
+      if (error?.name !== 'AbortError') estado.textContent = 'No se pudo compartir.';
+    }
+  });
 }
 
 async function iniciar() {
