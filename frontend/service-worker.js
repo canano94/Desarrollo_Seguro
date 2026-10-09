@@ -15,7 +15,7 @@
  * Al cambiar cualquier archivo de la app, sube VERSION: así el
  * navegador instala la versión nueva y borra la caché vieja.
  */
-const VERSION = 'v10';
+const VERSION = 'v11';
 const CACHE_APP = `agenda-app-${VERSION}`;
 const CACHE_FUENTES = 'agenda-fuentes';
 const CACHE_FICHAS = 'agenda-fichas';

@@ -62,7 +62,7 @@ async function encenderCamara() {
 
   if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
     estado('Cámara no disponible.');
-    avisar('Este navegador no permite usar la cámara aquí (necesita HTTPS). Usa "Leer desde una foto".');
+    avisar('Este navegador no permite usar la cámara aquí (necesita HTTPS). Usa "Leer desde una imagen".');
     return;
   }
 
@@ -77,10 +77,10 @@ async function encenderCamara() {
     estado('Cámara apagada.');
     const mensajes = {
       NotAllowedError: 'No diste permiso para usar la cámara. Actívalo en la configuración del navegador o usa "Leer desde una foto".',
-      NotFoundError: 'No encontramos una cámara en este dispositivo. Usa "Leer desde una foto".',
+      NotFoundError: 'No encontramos una cámara en este dispositivo. Usa "Leer desde una imagen".',
       NotReadableError: 'Otra aplicación está usando la cámara. Ciérrala e intenta de nuevo.',
     };
-    avisar(mensajes[error.name] ?? 'No se pudo abrir la cámara. Usa "Leer desde una foto".');
+    avisar(mensajes[error.name] ?? 'No se pudo abrir la cámara. Usa "Leer desde una imagen".');
     return;
   }
 
@@ -179,7 +179,7 @@ async function analizarCuadro() {
   procesando = false;
 }
 
-// Plan B: foto tomada con la cámara del sistema.
+// Plan B: imagen de la galería, de los archivos o una foto nueva.
 $('foto').addEventListener('change', async (ev) => {
   const archivo = ev.target.files?.[0];
   ev.target.value = '';

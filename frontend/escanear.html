@@ -56,10 +56,11 @@
       <div class="fila-botones escaner__acciones">
         <button type="button" class="boton" id="btn-camara" hidden>Activar cámara</button>
         <button type="button" class="boton boton--borde" id="btn-linterna" hidden>Encender linterna</button>
-        <!-- Plan B: si la cámara en vivo no funciona, se toma una foto con
-             la cámara del sistema y se lee el código de la imagen. -->
-        <label class="boton boton--texto escaner__foto" for="foto">Leer desde una foto</label>
-        <input id="foto" type="file" accept="image/*" capture="environment" class="visualmente-oculto">
+        <!-- Plan B: leer el código de una imagen. SIN el atributo "capture":
+             con capture el celular abre directo la cámara; sin él, deja
+             elegir entre la galería, los archivos o tomar una foto. -->
+        <label class="boton boton--texto escaner__foto" for="foto">Leer desde una imagen</label>
+        <input id="foto" type="file" accept="image/*" class="visualmente-oculto">
       </div>
 
       <canvas id="lienzo" hidden></canvas>
