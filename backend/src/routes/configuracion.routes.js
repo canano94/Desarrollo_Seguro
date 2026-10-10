@@ -1,8 +1,12 @@
+// Se importa Router de express para crear las rutas
 import { Router } from 'express';
+// Se importa el controlador de configuracion
 import * as ctrl from '../controllers/configuracion.controller.js';
+// Se importan validar y los validadores de ids de la URL
 import { validar } from '../validators/auth.schemas.js';
 import { validarParamUuid } from '../validators/admin.schemas.js';
 import { validarParamEntero } from '../validators/equipos.schemas.js';
+// Se importan los esquemas de zod de configuracion
 import {
   horarioEmpresaSchema,
   horarioPrestadorSchema,
@@ -13,6 +17,7 @@ import {
   generalSchema,
   validarParamId,
 } from '../validators/configuracion.schemas.js';
+// Se importan los middlewares de autenticacion y permisos
 import {
   autenticar,
   exigirEmpresaActiva,
@@ -20,34 +25,32 @@ import {
   exigirPasswordDefinitiva,
 } from '../middleware/auth.js';
 
-/**
- * Panel de configuración de la empresa.
- * Se monta en app.js como app.use('/api/configuracion', configuracionRoutes).
- * Todo pide configuracion.gestionar (ADMIN_EMPRESA), salvo LEER los
- * ajustes generales: otras pantallas (Servicios) necesitan saber si la
- * empresa cobra precios para mostrar u ocultar ese campo.
- */
+// Se crea el router de configuracion
 const router = Router();
 
+// Todas las rutas piden token, contraseña definitiva y empresa activa
 router.use(autenticar, exigirPasswordDefinitiva, exigirEmpresaActiva);
 
-// Leer los ajustes generales: cualquier persona de la empresa.
+// Ruta para leer la configuracion general, cualquier usuario de la empresa la puede ver
 router.get('/general', ctrl.obtenerGeneral);
 
-// De aquí en adelante, solo quien administra la configuración.
+// De aqui para abajo todas las rutas piden el permiso configuracion.gestionar
+// Por eso la ruta de arriba queda por fuera de este permiso
 router.use(exigirPermisos('configuracion.gestionar'));
 
+// Ruta para guardar la configuracion general
 router.put('/general', validar(generalSchema), ctrl.guardarGeneral);
 
-// Horario de atención
+// Rutas para ver y guardar el horario de la empresa
 router.get('/horarios', ctrl.obtenerHorarios);
 router.put('/horarios/empresa', validar(horarioEmpresaSchema), ctrl.guardarHorarioEmpresa);
+// Ruta para guardar el horario de un prestador, valida el id y el body
 router.put('/horarios/prestadores/:idPrestador',
   validarParamUuid('idPrestador'),
   validar(horarioPrestadorSchema),
   ctrl.guardarHorarioPrestador);
 
-// Catálogo de insumos
+// Rutas para listar, crear y editar insumos
 router.get('/insumos', ctrl.listarInsumos);
 router.post('/insumos', validar(crearInsumoSchema), ctrl.crearInsumo);
 router.patch('/insumos/:idInsumo',
@@ -55,15 +58,18 @@ router.patch('/insumos/:idInsumo',
   validar(actualizarInsumoSchema),
   ctrl.actualizarInsumo);
 
-// Servicios: precio opcional e insumos
+// Ruta para listar los servicios con su configuracion
 router.get('/servicios', ctrl.listarServicios);
+// Ruta para cambiar el precio de un servicio
 router.patch('/servicios/:idServicio/precio',
   validarParamId('idServicio'),
   validar(precioServicioSchema),
   ctrl.actualizarPrecio);
+// Ruta para guardar los insumos de un servicio
 router.put('/servicios/:idServicio/insumos',
   validarParamId('idServicio'),
   validar(insumosServicioSchema),
   ctrl.guardarInsumosServicio);
 
+// Se exporta el router para montarlo en la app
 export default router;

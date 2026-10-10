@@ -1,19 +1,16 @@
+// Se importan las funciones de api.js para la sesion, cambiar de empresa y salir
 import { restaurarSesion, sesionActual, elegirEmpresa, salir } from './api.js';
 
-// Referencias al DOM //
+// Se toman los elementos del HTML de la pantalla de inicio
 const cargando = document.getElementById('cargando');
 const contenido = document.getElementById('contenido');
 const selectorEmpresa = document.getElementById('selector-empresa');
 const accesos = document.getElementById('accesos');
 
-/**
- * APUNTE DE SEGURIDAD UI:
- * Crea etiquetas estéticas (fichas) para pintar los nombres de los módulos o roles.
- * Como el nombre de un Rol puede ser creado por un usuario y venir de la BD, 
- * inyectamos SIEMPRE con `textContent` para proteger contra XSS.
- */
+// Funcion para pintar una lista de etiquetas, se usa para los roles y los modulos
 function fichas(contenedor, valores) {
   contenedor.replaceChildren();
+  // Se recorre la lista con for para crear un span por cada valor
   for (const valor of valores ?? []) {
     const ficha = document.createElement('span');
     ficha.className = 'ficha';
@@ -22,9 +19,7 @@ function fichas(contenedor, valores) {
   }
 }
 
-/** 
- * Constructor de tarjetas-enlace para el menú del Dashboard. 
- */
+// Funcion que crea un acceso directo con su enlace, titulo y descripcion
 function acceso(href, titulo, descripcion) {
   const li = document.createElement('li');
   const a = document.createElement('a');
@@ -44,43 +39,37 @@ function acceso(href, titulo, descripcion) {
   return li;
 }
 
-/**
- * APUNTE (Dashboard Adaptativo):
- * Dibuja la pantalla inicial. El menú principal de la aplicación cambia de 
- * forma dinámica adaptándose tanto a los PERMISOS de la persona como a 
- * lo que la EMPRESA compró (Módulos).
- */
+// Funcion para pintar la pantalla de inicio segun la empresa activa y los permisos del usuario
 function pintar() {
   const datos = sesionActual();
   const empresa = datos.empresaActiva;
   const modulos = empresa?.modulos ?? [];
   const permisos = empresa?.permisos ?? [];
+  // Funcion corta para saber si el usuario tiene un permiso
   const puede = (p) => permisos.includes(p);
+  // Variable para saber si es super admin de la plataforma
   const esPlataforma = datos.rolesPlataforma?.includes('SUPER_ADMIN');
 
+  // Se pone el saludo y la empresa en la que esta trabajando
   document.getElementById('saludo').textContent = `Hola, ${datos.usuario.nombres}`;
-  // Si entra el SUPER_ADMIN sin haber elegido tenant, se le aclara el contexto
   document.getElementById('contexto').textContent = empresa
     ? `Estás trabajando en ${empresa.razonSocial}.`
     : 'Administras la plataforma. Sin empresa activa.';
 
+  // Se pintan los roles y los modulos de la empresa
   fichas(document.getElementById('dato-roles'), empresa?.roles ?? datos.rolesPlataforma);
   fichas(document.getElementById('dato-modulos'), empresa?.modulos ?? []);
 
-  // El menú de arriba lo maneja js/menu.js.
-
-  // ----------------------------------------------------- //
-  // Tarjetas principales del Dashboard (Cuerpo central)   //
-  // ----------------------------------------------------- //
+  // Se vacian los accesos y se van agregando solo los que el usuario puede usar
   accesos.replaceChildren();
 
+  // Si es super admin se agrega el acceso a la plataforma
   if (esPlataforma) {
     accesos.append(acceso('admin.html', 'Plataforma',
       'Ver y crear empresas, y consultar todos los usuarios con sus roles.'));
   }
 
-  // La misma página (agenda.html) le sirve a todos, pero el texto explicativo de la 
-  // tarjeta le dice al usuario explícitamente a qué tiene derecho según su nivel de permiso.
+  // Si la empresa tiene AGENDA se muestra un acceso distinto segun el permiso que tenga
   if (empresa?.modulos?.includes('AGENDA')) {
     if (puede('reservas.ver_todas')) {
       accesos.append(acceso('agenda.html', 'Administrar la agenda',
@@ -92,37 +81,41 @@ function pintar() {
       accesos.append(acceso('agenda.html', 'Agenda de trabajo',
         'Turnos de tu prestador: confirmar, reprogramar y observar.'));
     } else if (puede('reservas.crear')) {
-      // Cliente final
       accesos.append(acceso('agenda.html', 'Mis turnos',
         'Consulta tus reservas y solicita una nueva.'));
     }
   }
 
+  // Si la empresa tiene CRM y el usuario puede ver casos se muestra el acceso
   if (empresa?.modulos?.includes('CRM') && (puede('casos.crear') || puede('casos.gestionar'))) {
       accesos.append(acceso('crm.html', 'CRM',
         'Casos de servicio, interacciones e historial del cliente.'));
     }
-  
+
+  // Acceso a clientes si tiene alguno de estos permisos
   if (puede('clientes.gestionar') || puede('reservas.aprobar') || puede('casos.gestionar')
       || puede('equipos.crear') || puede('equipos.gestionar')) {
     accesos.append(acceso('clientes.html', 'Clientes',
       'Busca a un cliente y consulta su ficha completa.'));
   }
 
+  // Acceso a equipos si la empresa tiene el modulo EQUIPOS
   if (modulos.includes('EQUIPOS')) {
     accesos.append(acceso('equipos.html', 'Equipos',
       'Hoja de vida de los equipos, mantenimientos y código QR.'));
   }
 
+  // Acceso a configuracion solo para quien la puede gestionar
   if (puede('configuracion.gestionar')) {
     accesos.append(acceso('configuracion.html', 'Configuración',
       'Horario de atención, servicios, insumos y listas de la empresa.'));
   }
 
+  // El perfil lo ven todos los usuarios
   accesos.append(acceso('perfil.html', 'Mi perfil',
     'Tus datos personales y tu contraseña.'));
 
-  // Selector Tenancy: Se oculta automáticamente si el empleado pertenece a una sola sede
+  // Se llena el selector con las empresas del usuario y se marca la activa
   selectorEmpresa.replaceChildren();
   for (const e of datos.empresas) {
     const o = document.createElement('option');
@@ -131,30 +124,33 @@ function pintar() {
     o.selected = e.idEmpresa === empresa?.idEmpresa;
     selectorEmpresa.append(o);
   }
+  // El selector solo se muestra si tiene dos empresas o mas
   selectorEmpresa.hidden = datos.empresas.length < 2;
 }
 
-// Llama al re-dibujado dinámico al saltar de empresa //
+// Cuando cambia el selector se llama a elegirEmpresa y se vuelve a pintar la pantalla
 selectorEmpresa.addEventListener('change', async () => {
   selectorEmpresa.disabled = true;
   try {
     await elegirEmpresa(selectorEmpresa.value);
-    pintar();               // Cambia la empresa y cambian los accesos al instante
+    pintar();
   } finally {
     selectorEmpresa.disabled = false;
   }
 });
 
+// Boton para cerrar sesion y volver al login
 document.getElementById('btn-salir').addEventListener('click', async () => {
   await salir();
   location.replace('index.html');
 });
 
+// Funcion que arranca la pagina, recupera la sesion y pinta el inicio
 async function iniciar() {
   const datos = await restaurarSesion();
-  // Sin sesión, o si se detuvo en la pantalla multi-empresa tras loguearse
+  // Si no hay sesion o falta elegir empresa se manda al login
   if (!datos || datos.requiereSeleccion) return location.replace('index.html');
-  // Barrera de clave temporal
+  // Si tiene contraseña temporal se manda a cambiarla
   if (datos.debeCambiarPassword) return location.replace('cambiar-password.html');
 
   pintar();
@@ -162,14 +158,17 @@ async function iniciar() {
   contenido.hidden = false;
 }
 
+// Si falla iniciar se revisa el codigo de error
 iniciar().catch((error) => {
   if (error?.codigo === 'DEBE_CAMBIAR_PASSWORD') {
     return location.replace('cambiar-password.html');
   }
+  // Si el error es de sesion o de token se manda al login
   const esSesion = ['SIN_TOKEN', 'TOKEN_INVALIDO', 'REFRESH_INVALIDO',
                     'REFRESH_EXPIRADO', 'SIN_REFRESH_TOKEN'].includes(error?.codigo);
   if (esSesion) return location.replace('index.html');
 
+  // Si es otro error se muestra en la pantalla
   console.error(error);
   cargando.textContent = `No se pudo cargar la pantalla: ${error?.message ?? error}`;
   return undefined;

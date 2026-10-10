@@ -1,61 +1,63 @@
+// Se importan las funciones de api.js para llamar al servidor y manejar la sesion del usuario
 import { pedir, restaurarSesion, sesionActual, debeCambiarPassword, salir } from './api.js';
 
-/**
- * PANEL DE CONFIGURACIÓN DE LA EMPRESA
- *
- * Una pestaña por área, visible solo si la empresa tiene el módulo:
- *   - Agenda: días hábiles y franjas de atención (empresa y por sede).
- *   - Servicios e insumos: precio opcional y lo que gasta cada servicio.
- *   - Hoja de servicio: listas de tipos, alimentación y marcas.
- *
- * Cada pestaña se recarga sola al guardar: guardar el horario no borra
- * lo que estás escribiendo en otra pestaña.
- * Todo se pinta con textContent: nunca se interpreta HTML de la base.
- */
-
+// Funcion corta para buscar un elemento del HTML por su id
 const $ = (id) => document.getElementById(id);
 
+// Array con los nombres de los dias, la posicion 0 va vacia para que el 1 sea lunes
 const DIAS = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
+// Objeto con el nombre que se muestra en pantalla para cada modulo
 const NOMBRES_MODULO = {
   EQUIPOS: 'Hoja de servicio',
   AGENDA: 'Agenda',
   CRM: 'CRM',
 };
 
+// Se usa Intl.NumberFormat para mostrar los precios en pesos colombianos sin decimales
 const pesos = new Intl.NumberFormat('es-CO', {
   style: 'currency', currency: 'COP', maximumFractionDigits: 0,
 });
 
+// Array para guardar los permisos del usuario en la empresa activa
 let permisos = [];
+// Array para guardar los modulos que tiene contratados la empresa
 let modulos = [];
 
+// Funcion para crear un elemento HTML con sus propiedades y sus hijos
 function el(tag, props = {}, ...hijos) {
   const nodo = document.createElement(tag);
+  // Se recorren las propiedades, las que empiezan por on se agregan como eventos
   for (const [clave, valor] of Object.entries(props)) {
     if (clave.startsWith('on')) nodo.addEventListener(clave.slice(2), valor);
     else nodo[clave] = valor;
   }
+  // Se agregan los hijos y se saltan los que vienen null
   for (const hijo of hijos) if (hijo != null) nodo.append(hijo);
   return nodo;
 }
 
+// Funcion para mostrar un mensaje en la caja de aviso, en verde si salio bien
 function avisar(mensaje, bien = false) {
   const caja = $('aviso');
+  // Se usa textContent y no innerHTML para que no se pueda meter codigo (XSS)
   caja.textContent = mensaje;
   caja.classList.toggle('aviso--bien', bien);
   caja.hidden = !mensaje;
   if (mensaje) caja.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
+// Funcion que arma el texto del error que devuelve la API
 function mensajeError(error) {
+  // Si el error trae detalles de validacion se juntan todos en un solo texto
   const detalle = error?.detalles?.map((d) => d.mensaje ?? d.message).filter(Boolean).join(' · ');
   return detalle || error?.mensaje || error?.message || 'Ocurrió un error inesperado.';
 }
 
-/** Ejecuta una acción de guardar con el botón bloqueado mientras tanto. */
+// Funcion que desactiva el boton mientras se hace la accion, asi no se envia dos veces
 async function conBoton(boton, accion) {
   boton.disabled = true;
+  // Se usa try/catch para mostrar el error en el aviso y finally para volver a activar el boton
   try {
     await accion();
   } catch (error) {
@@ -65,6 +67,7 @@ async function conBoton(boton, accion) {
   }
 }
 
+// Funcion que arma la cabecera de una tarjeta con titulo, descripcion y una ficha opcional
 function cabeceraTarjeta(titulo, descripcion, ficha) {
   return el('div', { className: 'detalle__cabecera' },
     el('div', {},
@@ -73,22 +76,23 @@ function cabeceraTarjeta(titulo, descripcion, ficha) {
     ficha ? el('span', { className: 'ficha', textContent: ficha }) : null);
 }
 
-// ================================================================== //
-// PESTAÑAS                                                           //
-// ================================================================== //
-
+// Constante con el nombre con el que se guarda la ultima pestaña abierta en sessionStorage
 const CLAVE_PESTANA = 'configPestana';
 
+// Funcion que crea las pestañas y los paneles de cada area de configuracion
 function armarPestanas(areas) {
   const barra = $('pestanas-config');
   const paneles = $('secciones');
   barra.replaceChildren();
   paneles.replaceChildren();
 
+  // Se lee la pestaña guardada, si no existe se abre la primera area
   let elegida = null;
-  try { elegida = sessionStorage.getItem(CLAVE_PESTANA); } catch { /* sin storage */ }
+  // El try/catch vacio es por si el navegador bloquea sessionStorage
+  try { elegida = sessionStorage.getItem(CLAVE_PESTANA); } catch {  }
   if (!areas.some((a) => a.id === elegida)) elegida = areas[0]?.id;
 
+  // Se recorre cada area para crear su panel y su boton de pestaña
   for (const area of areas) {
     const panel = el('section', { className: 'config-seccion', id: area.id, hidden: area.id !== elegida });
     panel.setAttribute('role', 'tabpanel');
@@ -98,64 +102,66 @@ function armarPestanas(areas) {
       type: 'button',
       className: 'pestana',
       textContent: area.titulo,
+      // Al dar clic se marca la pestaña elegida, se muestra su panel y se guarda en sessionStorage
       onclick: () => {
         for (const b of barra.children) b.setAttribute('aria-selected', String(b === boton));
         for (const p of paneles.children) p.hidden = p.id !== area.id;
-        try { sessionStorage.setItem(CLAVE_PESTANA, area.id); } catch { /* sin storage */ }
+        try { sessionStorage.setItem(CLAVE_PESTANA, area.id); } catch {  }
       },
     });
     boton.setAttribute('role', 'tab');
     boton.setAttribute('aria-selected', String(area.id === elegida));
     barra.append(boton);
 
+    // Se pinta el contenido del area y si falla se muestra el error dentro del panel
     area.pintar(panel).catch((error) => {
       panel.replaceChildren(el('p', { className: 'aviso', textContent: mensajeError(error) }));
     });
   }
 
+  // Si hay una sola area no se muestra la barra de pestañas
   barra.hidden = areas.length < 2;
+  // Si no hay ninguna area se muestra el mensaje de que no hay secciones
   $('sin-secciones').hidden = areas.length > 0;
 }
 
-// ================================================================== //
-// AGENDA: HORARIOS                                                   //
-// ================================================================== //
-
-/**
- * Editor de una semana. Devuelve el nodo y una función leer() que
- * entrega las franjas como las espera el backend: [{ dia, inicio, fin }].
- * Un día sin "Atiende" marcado no envía franjas (ese día no se agenda).
- * Varias franjas en un día = la pausa es el hueco entre ellas.
- */
+// Funcion que arma el editor del horario semanal con sus franjas por dia
 function editorHorario(franjasIniciales) {
+  // Array para guardar los controles de cada dia y luego poder leerlos
   const dias = [];
   const tabla = el('div', { className: 'horario' });
 
+  // Se recorre con for de lunes (1) a domingo (7) para crear la fila de cada dia
   for (let dia = 1; dia <= 7; dia += 1) {
+    // Se usa filter para sacar solo las franjas que son de este dia
     const propias = franjasIniciales.filter((f) => f.dia === dia);
     const lista = el('div', { className: 'horario__franjas' });
 
+    // Casilla para saber si ese dia se atiende o no
     const atiende = el('input', { type: 'checkbox', checked: propias.length > 0 });
     const agregar = el('button', {
       type: 'button',
       className: 'boton boton--texto boton--mini',
       textContent: '+ Franja',
+      // Al agregar una franja nueva empieza una hora despues de la ultima y dura 4 horas
       onclick: () => {
         const ultima = [...lista.children].at(-1);
-        // Propuesta: la nueva franja empieza una hora después de la anterior.
         const desde = ultima ? sumarHora(ultima.querySelector('[data-fin]').value, 60) : '08:00';
         const hasta = sumarHora(desde, 240);
         lista.append(filaFranja(desde, hasta));
       },
     });
 
+    // Funcion que muestra u oculta las franjas segun la casilla del dia
     const sincronizar = () => {
       lista.hidden = !atiende.checked;
       agregar.hidden = !atiende.checked;
+      // Si se marca el dia y no tiene franjas se pone una de 8 a 5 por defecto
       if (atiende.checked && lista.children.length === 0) lista.append(filaFranja('08:00', '17:00'));
     };
     atiende.addEventListener('change', sincronizar);
 
+    // Se pintan las franjas que ya tenia guardadas el dia
     for (const f of propias) lista.append(filaFranja(f.inicio, f.fin));
     sincronizar();
 
@@ -164,9 +170,11 @@ function editorHorario(franjasIniciales) {
     dias.push({ dia, atiende, lista });
   }
 
+  // Funcion que lee lo que quedo en el editor y devuelve la lista de franjas
   function leer() {
     const franjas = [];
     for (const { dia, atiende, lista } of dias) {
+      // Los dias que no se atienden se saltan
       if (!atiende.checked) continue;
       for (const fila of lista.children) {
         franjas.push({
@@ -179,16 +187,20 @@ function editorHorario(franjasIniciales) {
     return franjas;
   }
 
+  // Funcion para bloquear o desbloquear todo el editor
   function deshabilitar(valor) {
     for (const control of tabla.querySelectorAll('input, button')) control.disabled = valor;
     tabla.classList.toggle('horario--inactivo', valor);
   }
 
+  // Se devuelve el nodo del editor y las funciones para leerlo y bloquearlo
   return { nodo: tabla, leer, deshabilitar };
 }
 
+// Funcion que crea una fila con la hora de inicio, la hora final y el boton para quitarla
 function filaFranja(inicio, fin) {
   const desde = el('input', { type: 'time', value: inicio, required: true });
+  // Se usan los data-inicio y data-fin para encontrar luego los campos con querySelector
   desde.dataset.inicio = '';
   desde.setAttribute('aria-label', 'Desde');
   const hasta = el('input', { type: 'time', value: fin, required: true });
@@ -206,27 +218,33 @@ function filaFranja(inicio, fin) {
   return fila;
 }
 
+// Funcion para sumarle minutos a una hora, sin pasarse de las 23:59
 function sumarHora(hora, minutos) {
   const [h, m] = (hora || '08:00').split(':').map(Number);
   const total = Math.min(h * 60 + m + minutos, 23 * 60 + 59);
+  // Se usa padStart para que la hora quede siempre con dos digitos
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 
-/** Validación rápida antes de enviar (el backend vuelve a validar todo). */
+// Funcion que revisa las franjas antes de guardar y devuelve el texto del problema o null
 function revisarFranjas(franjas) {
   for (const f of franjas) {
+    // Si falta una hora o la final no es mayor que la inicial se devuelve el error
     if (!f.inicio || !f.fin) return `Completa las horas del ${DIAS[f.dia].toLowerCase()}.`;
     if (f.fin <= f.inicio) return `En ${DIAS[f.dia].toLowerCase()}, la hora final debe ser posterior a la inicial.`;
   }
   return null;
 }
 
+// Funcion que cuenta cuantos dias distintos tienen atencion, usando un Set
 function resumenSemana(franjas) {
   const dias = new Set(franjas.map((f) => f.dia));
   return dias.size === 0 ? 'Sin atención' : `${dias.size} día(s) de atención`;
 }
 
+// Funcion que pinta la pestaña de Agenda con el horario de la empresa y de las sedes
 async function pintarAgenda(panel) {
+  // Se llama a pedir y se le pasa la ruta para que devuelva los horarios del servidor
   const horarios = await pedir('/configuracion/horarios');
 
   panel.replaceChildren(
@@ -239,16 +257,19 @@ async function pintarAgenda(panel) {
     tarjetaHorarioSedes(panel, horarios));
 }
 
+// Funcion que arma la tarjeta para editar el horario general de la empresa
 function tarjetaHorarioEmpresa(panel, franjas) {
   const editor = editorHorario(franjas);
   const guardar = el('button', { type: 'button', className: 'boton', textContent: 'Guardar horario' });
 
+  // Al dar clic en guardar se leen las franjas, se validan y se envian con PUT a la API
   guardar.addEventListener('click', () => conBoton(guardar, async () => {
     const lista = editor.leer();
     const problema = revisarFranjas(lista);
     if (problema) { avisar(problema); return; }
     await pedir('/configuracion/horarios/empresa', { metodo: 'PUT', cuerpo: { franjas: lista } });
     avisar('Se guardó el horario de la empresa.', true);
+    // Se vuelve a pintar la agenda para que se vean los datos nuevos
     await pintarAgenda(panel);
   }));
 
@@ -261,17 +282,20 @@ function tarjetaHorarioEmpresa(panel, franjas) {
     el('div', { className: 'fila-botones' }, guardar));
 }
 
+// Funcion que arma la tarjeta para elegir una sede y editar su horario
 function tarjetaHorarioSedes(panel, horarios) {
   const tarjeta = el('div', { className: 'tarjeta' },
     cabeceraTarjeta(
       'Horario por sede',
       'Si una sede atiende en horas distintas, dale un horario propio. Si no, usa el de la empresa.'));
 
+  // Si no hay sedes se muestra un mensaje y no se arma el selector
   if (horarios.prestadores.length === 0) {
     tarjeta.append(el('p', { className: 'tenue', textContent: 'Todavía no hay sedes creadas.' }));
     return tarjeta;
   }
 
+  // Se llena el select con las sedes indicando si usan horario propio o el de la empresa
   const selector = el('select', { className: 'entrada', id: 'cfg-sede' });
   for (const p of horarios.prestadores) {
     const texto = `${p.nombre} · ${p.horarioPropio ? 'horario propio' : 'horario de la empresa'}${p.activo ? '' : ' (inactiva)'}`;
@@ -279,6 +303,7 @@ function tarjetaHorarioSedes(panel, horarios) {
   }
 
   const zona = el('div');
+  // Funcion que pinta el formulario de la sede que se eligio en el select
   const pintarSede = () => {
     const sede = horarios.prestadores.find((p) => p.idPrestador === selector.value);
     zona.replaceChildren(formularioSede(panel, sede, horarios.empresa));
@@ -292,23 +317,27 @@ function tarjetaHorarioSedes(panel, horarios) {
   return tarjeta;
 }
 
+// Funcion que arma el formulario de una sede con la opcion de usar el horario de la empresa o uno propio
 function formularioSede(panel, sede, franjasEmpresa) {
   const nombreGrupo = `modo-${sede.idPrestador}`;
   const usaEmpresa = el('input', { type: 'radio', name: nombreGrupo, checked: !sede.horarioPropio });
   const propio = el('input', { type: 'radio', name: nombreGrupo, checked: sede.horarioPropio });
 
-  // Si aún no tiene horario propio, se parte de una copia del de la empresa.
+  // Si la sede no tiene horario propio el editor arranca con el de la empresa
   const editor = editorHorario(sede.horarioPropio ? sede.franjas : franjasEmpresa);
+  // Si se elige usar el de la empresa el editor queda bloqueado
   const sincronizar = () => editor.deshabilitar(!propio.checked);
   usaEmpresa.addEventListener('change', sincronizar);
   propio.addEventListener('change', sincronizar);
   sincronizar();
 
   const guardar = el('button', { type: 'button', className: 'boton', textContent: 'Guardar horario de la sede' });
+  // Al guardar, si usa el de la empresa se mandan las franjas vacias
   guardar.addEventListener('click', () => conBoton(guardar, async () => {
     const franjas = propio.checked ? editor.leer() : [];
     const problema = revisarFranjas(franjas);
     if (problema) { avisar(problema); return; }
+    // Se llama a pedir con PUT para guardar el horario de esa sede
     await pedir(`/configuracion/horarios/prestadores/${sede.idPrestador}`, {
       metodo: 'PUT', cuerpo: { horarioPropio: propio.checked, franjas },
     });
@@ -327,15 +356,14 @@ function formularioSede(panel, sede, franjasEmpresa) {
     el('div', { className: 'fila-botones' }, guardar));
 }
 
-// ================================================================== //
-// SERVICIOS E INSUMOS                                                //
-// ================================================================== //
-
+// Set para recordar que servicios estaban abiertos y que no se cierren al volver a pintar
 const serviciosAbiertos = new Set();
-// Si la empresa cobra precios. Lo decide la tarjeta "Precios".
+// Variable para saber si la empresa cobra precio en sus servicios
 let usaPrecios = false;
 
+// Funcion que pinta la pestaña de servicios e insumos
 async function pintarServicios(panel) {
+  // Se usa Promise.all para pedir los servicios, los insumos y la configuracion general al mismo tiempo
   const [{ servicios }, { insumos }, general] = await Promise.all([
     pedir('/configuracion/servicios'),
     pedir('/configuracion/insumos'),
@@ -354,17 +382,14 @@ async function pintarServicios(panel) {
     tarjetaInsumos(panel, insumos));
 }
 
-/**
- * Interruptor general de precios. Apagado (por defecto), el precio no
- * aparece en ninguna pantalla: ni al crear servicios ni en las listas.
- * Encenderlo no borra nada; apagarlo tampoco: los precios guardados se
- * conservan por si se vuelve a activar.
- */
+// Funcion que arma la tarjeta para activar o desactivar los precios en la empresa
 function tarjetaPrecios(panel) {
   const casilla = el('input', { type: 'checkbox', checked: usaPrecios, id: 'cfg-usa-precios' });
   const guardar = el('button', { type: 'button', className: 'boton boton--mini', textContent: 'Guardar', hidden: true });
+  // El boton de guardar solo aparece si la casilla cambio
   casilla.addEventListener('change', () => { guardar.hidden = casilla.checked === usaPrecios; });
 
+  // Se llama a pedir con PUT para guardar si la empresa usa precios
   guardar.addEventListener('click', () => conBoton(guardar, async () => {
     await pedir('/configuracion/general', { metodo: 'PUT', cuerpo: { usaPrecios: casilla.checked } });
     avisar(casilla.checked
@@ -382,28 +407,34 @@ function tarjetaPrecios(panel) {
       guardar));
 }
 
+// Funcion que muestra el precio en pesos o el texto Sin precio
 function etiquetaPrecio(precio) {
   return precio === null ? 'Sin precio' : pesos.format(precio);
 }
 
+// Funcion que arma la tarjeta con la lista de servicios de la empresa
 function tarjetaServicios(panel, servicios, insumos) {
   const tarjeta = el('div', { className: 'tarjeta' },
     cabeceraTarjeta('Servicios',
       usaPrecios ? 'Abre un servicio para ajustar su precio y sus insumos.' : 'Abre un servicio para ajustar sus insumos.',
       `${servicios.length} servicio(s)`));
 
+  // Si no hay servicios se muestra un mensaje y se sale
   if (servicios.length === 0) {
     tarjeta.append(el('p', { className: 'tenue', textContent: 'Todavía no hay servicios. Créalos en la página Servicios.' }));
     return tarjeta;
   }
 
+  // Se recorre la lista de servicios para agregar el detalle de cada uno
   for (const s of servicios) tarjeta.append(detalleServicio(panel, s, insumos));
   return tarjeta;
 }
 
+// Funcion que arma el detalle desplegable de un servicio con su precio y sus insumos
 function detalleServicio(panel, servicio, insumos) {
   const id = String(servicio.idServicio);
   const caja = el('details', { className: 'config-servicio', open: serviciosAbiertos.has(id) });
+  // Al abrir o cerrar el detalle se guarda en el Set de servicios abiertos
   caja.addEventListener('toggle', () => {
     if (caja.open) serviciosAbiertos.add(id); else serviciosAbiertos.delete(id);
   });
@@ -412,6 +443,7 @@ function detalleServicio(panel, servicio, insumos) {
     ? 'Sin insumos'
     : `${servicio.insumos.length} insumo(s)`;
 
+  // Se arma el resumen del servicio con el nombre, la sede, el precio y los insumos
   caja.append(el('summary', {},
     el('span', { className: 'config-servicio__nombre', textContent: servicio.nombre }),
     el('span', { className: 'tenue', textContent: ` · ${servicio.prestador}${servicio.activo ? '' : ' · inactivo'}` }),
@@ -421,11 +453,13 @@ function detalleServicio(panel, servicio, insumos) {
         : null,
       el('span', { className: 'ficha', textContent: resumenInsumos }))));
 
+  // El bloque del precio solo se muestra si la empresa usa precios
   if (usaPrecios) caja.append(bloquePrecio(panel, servicio));
   caja.append(bloqueInsumos(panel, servicio, insumos));
   return caja;
 }
 
+// Funcion que arma el bloque para editar el precio de un servicio
 function bloquePrecio(panel, servicio) {
   const cobra = el('input', { type: 'checkbox', checked: servicio.precio !== null });
   const valor = el('input', {
@@ -433,6 +467,7 @@ function bloquePrecio(panel, servicio) {
     value: servicio.precio ?? '', placeholder: 'Ej. 80000',
   });
   valor.setAttribute('aria-label', `Precio de ${servicio.nombre}`);
+  // Si se desmarca la casilla el campo del precio queda bloqueado
   const sincronizar = () => { valor.disabled = !cobra.checked; };
   cobra.addEventListener('change', sincronizar);
   sincronizar();
@@ -440,6 +475,7 @@ function bloquePrecio(panel, servicio) {
   const guardar = el('button', { type: 'button', className: 'boton boton--mini', textContent: 'Guardar precio' });
   guardar.addEventListener('click', () => conBoton(guardar, async () => {
     let precio = null;
+    // Si el servicio cobra se valida que el precio sea un numero mayor o igual a cero
     if (cobra.checked) {
       precio = Number(valor.value);
       if (valor.value === '' || !Number.isFinite(precio) || precio < 0) {
@@ -447,6 +483,8 @@ function bloquePrecio(panel, servicio) {
         return;
       }
     }
+    // Se usa encodeURIComponent para que el id vaya bien escrito en la ruta
+    // Se llama a pedir con PATCH para cambiar solo el precio del servicio
     await pedir(`/configuracion/servicios/${encodeURIComponent(servicio.idServicio)}/precio`, {
       metodo: 'PATCH', cuerpo: { precio },
     });
@@ -462,17 +500,20 @@ function bloquePrecio(panel, servicio) {
       guardar));
 }
 
+// Funcion que arma el bloque para asignar los insumos que gasta un servicio
 function bloqueInsumos(panel, servicio, insumos) {
+  // Se usa filter para dejar solo los insumos activos
   const disponibles = insumos.filter((i) => i.activo);
   const lista = el('div', { className: 'config-insumos' });
 
+  // Funcion que crea una fila con el insumo, la cantidad y el boton para quitarla
   const fila = (idInsumo = 0, cantidad = 1) => {
     const selector = el('select', { className: 'entrada' });
     selector.setAttribute('aria-label', 'Insumo');
     selector.append(el('option', { value: '', textContent: 'Elige un insumo…' }));
-    // Un insumo ya asignado que luego se desactivó sigue apareciendo.
     const opciones = [...disponibles];
     const asignado = insumos.find((i) => i.idInsumo === idInsumo);
+    // Si el insumo asignado ya esta inactivo se agrega igual para que no se pierda
     if (asignado && !asignado.activo) opciones.push(asignado);
     for (const i of opciones) {
       selector.append(el('option', {
@@ -483,6 +524,7 @@ function bloqueInsumos(panel, servicio, insumos) {
     }
 
     const unidad = el('span', { className: 'tenue config-insumos__unidad' });
+    // Funcion que muestra la unidad del insumo elegido
     const mostrarUnidad = () => {
       unidad.textContent = insumos.find((i) => String(i.idInsumo) === selector.value)?.unidad ?? '';
     };
@@ -497,10 +539,12 @@ function bloqueInsumos(panel, servicio, insumos) {
       type: 'button', className: 'boton boton--texto boton--mini', textContent: 'Quitar',
       onclick: () => nodo.remove(),
     }));
+    // Se le pega a la fila una funcion leer para sacar el insumo y la cantidad
     nodo.leer = () => ({ idInsumo: Number(selector.value), cantidad: Number(cant.value) });
     return nodo;
   };
 
+  // Se pintan los insumos que ya tiene el servicio
   for (const i of servicio.insumos) lista.append(fila(i.idInsumo, i.cantidad));
 
   const agregar = el('button', {
@@ -511,11 +555,15 @@ function bloqueInsumos(panel, servicio, insumos) {
 
   const guardar = el('button', { type: 'button', className: 'boton boton--mini', textContent: 'Guardar insumos' });
   guardar.addEventListener('click', () => conBoton(guardar, async () => {
+    // Se utiliza el metodo map para poder leer cada fila y armar la lista de insumos
     const elegidos = [...lista.children].map((n) => n.leer());
+    // Se valida que cada fila tenga un insumo elegido y una cantidad mayor que cero
     if (elegidos.some((i) => !i.idInsumo)) { avisar('Elige el insumo en cada renglón o quita el renglón vacío.'); return; }
     if (elegidos.some((i) => !(i.cantidad > 0))) { avisar('Cada insumo necesita una cantidad mayor que cero.'); return; }
+    // Se usa un Set para saber si hay insumos repetidos
     if (new Set(elegidos.map((i) => i.idInsumo)).size !== elegidos.length) { avisar('Hay un insumo repetido.'); return; }
 
+    // Se llama a pedir con PUT para reemplazar los insumos del servicio
     await pedir(`/configuracion/servicios/${encodeURIComponent(servicio.idServicio)}/insumos`, {
       metodo: 'PUT', cuerpo: { insumos: elegidos },
     });
@@ -532,12 +580,14 @@ function bloqueInsumos(panel, servicio, insumos) {
     el('div', { className: 'fila-botones' }, agregar, guardar));
 }
 
+// Funcion que arma la tarjeta con la lista de insumos y el formulario para crear uno
 function tarjetaInsumos(panel, insumos) {
   const activos = insumos.filter((i) => i.activo).length;
   const lista = el('ul', { className: 'config-lista' });
   if (insumos.length === 0) {
     lista.append(el('li', { className: 'tenue', textContent: 'La lista está vacía.' }));
   }
+  // Se recorre la lista de insumos para pintar cada fila
   for (const i of insumos) lista.append(filaInsumo(panel, i));
 
   const nombre = el('input', { type: 'text', maxLength: 100, placeholder: 'Nombre del insumo', autocomplete: 'off' });
@@ -546,20 +596,24 @@ function tarjetaInsumos(panel, insumos) {
   unidad.setAttribute('aria-label', 'Unidad del nuevo insumo');
   unidad.setAttribute('list', 'unidades-sugeridas');
 
+  // Datalist con unidades sugeridas para que el usuario no tenga que escribirlas
   const sugeridas = el('datalist', { id: 'unidades-sugeridas' });
   for (const u of ['unidad', 'metro', 'kg', 'g', 'litro', 'ml', 'caja', 'rollo']) {
     sugeridas.append(el('option', { value: u }));
   }
 
   const boton = el('button', { type: 'submit', className: 'boton boton--mini', textContent: 'Agregar' });
+  // Formulario para agregar un insumo nuevo, si no se escribe unidad queda como unidad
   const formulario = el('form', {
     className: 'config-agregar config-agregar--ancho',
     noValidate: true,
     onsubmit: (ev) => {
+      // Se usa preventDefault para que la pagina no se recargue al enviar
       ev.preventDefault();
       const datos = { nombre: nombre.value.trim(), unidad: unidad.value.trim() || 'unidad' };
       if (!datos.nombre) return;
       conBoton(boton, async () => {
+        // Se llama a pedir con POST para crear el insumo
         await pedir('/configuracion/insumos', { metodo: 'POST', cuerpo: datos });
         avisar(`"${datos.nombre}" se agregó a los insumos.`, true);
         await pintarServicios(panel);
@@ -574,6 +628,7 @@ function tarjetaInsumos(panel, insumos) {
     formulario);
 }
 
+// Funcion que arma la fila de un insumo para editar su nombre y unidad o desactivarlo
 function filaInsumo(panel, insumo) {
   const nombre = el('input', { type: 'text', maxLength: 100, value: insumo.nombre });
   nombre.setAttribute('aria-label', `Nombre de ${insumo.nombre}`);
@@ -582,6 +637,7 @@ function filaInsumo(panel, insumo) {
   unidad.setAttribute('list', 'unidades-sugeridas');
 
   const guardar = el('button', { type: 'button', className: 'boton boton--mini', textContent: 'Guardar', hidden: true });
+  // El boton de guardar solo aparece si hubo cambios y ningun campo quedo vacio
   const cambio = () => {
     guardar.hidden = (nombre.value.trim() === insumo.nombre && unidad.value.trim() === insumo.unidad)
       || !nombre.value.trim() || !unidad.value.trim();
@@ -590,6 +646,7 @@ function filaInsumo(panel, insumo) {
   unidad.addEventListener('input', cambio);
 
   guardar.addEventListener('click', () => conBoton(guardar, async () => {
+    // Se llama a pedir con PATCH para guardar el nombre y la unidad
     await pedir(`/configuracion/insumos/${insumo.idInsumo}`, {
       metodo: 'PATCH', cuerpo: { nombre: nombre.value.trim(), unidad: unidad.value.trim() },
     });
@@ -597,12 +654,14 @@ function filaInsumo(panel, insumo) {
     await pintarServicios(panel);
   }));
 
+  // Boton para activar o desactivar el insumo
   const alternar = el('button', {
     type: 'button',
     className: 'boton boton--texto boton--mini',
     textContent: insumo.activo ? 'Desactivar' : 'Activar',
   });
   alternar.addEventListener('click', () => conBoton(alternar, async () => {
+    // Se llama a pedir con PATCH para cambiar solo el estado activo
     await pedir(`/configuracion/insumos/${insumo.idInsumo}`, {
       metodo: 'PATCH', cuerpo: { activo: !insumo.activo },
     });
@@ -615,13 +674,10 @@ function filaInsumo(panel, insumo) {
     guardar, alternar);
 }
 
-// ================================================================== //
-// LISTAS (HOJA DE SERVICIO Y LAS QUE SE AGREGUEN)                     //
-// ================================================================== //
-
-/** Pinta en el panel las listas de un módulo, pidiéndolas de nuevo. */
+// Funcion que devuelve la funcion que pinta las listas (catalogos) de un modulo
 function pintadorListas(modulo) {
   const pintar = async (panel) => {
+    // Se piden los catalogos y se usa filter para dejar solo los de este modulo
     const { catalogos } = await pedir('/catalogos/configuracion');
     const lista = catalogos.filter((c) => (c.modulo ?? 'GENERAL') === modulo);
 
@@ -631,11 +687,13 @@ function pintadorListas(modulo) {
         className: 'apoyo',
         textContent: 'Estas listas son las opciones que ve tu equipo al llenar los formularios. Así nadie escribe a mano y los datos quedan uniformes.',
       }));
+    // Se agrega una tarjeta por cada catalogo y se le pasa como recargar el panel
     for (const catalogo of lista) panel.append(tarjetaCatalogo(catalogo, () => pintar(panel)));
   };
   return pintar;
 }
 
+// Funcion que arma la tarjeta de un catalogo con sus opciones y el formulario para agregar
 function tarjetaCatalogo(catalogo, recargar) {
   const activos = catalogo.valores.filter((v) => v.activo).length;
 
@@ -643,6 +701,7 @@ function tarjetaCatalogo(catalogo, recargar) {
   if (catalogo.valores.length === 0) {
     lista.append(el('li', { className: 'tenue', textContent: 'La lista está vacía.' }));
   }
+  // Se recorre con for para pintar cada opcion del catalogo
   for (const v of catalogo.valores) lista.append(filaValor(catalogo, v, recargar));
 
   const entrada = el('input', {
@@ -650,6 +709,7 @@ function tarjetaCatalogo(catalogo, recargar) {
   });
   entrada.setAttribute('aria-label', `Nueva opción para ${catalogo.nombre}`);
 
+  // Formulario para agregar una opcion nueva al catalogo
   const formulario = el('form', {
     className: 'config-agregar',
     noValidate: true,
@@ -657,7 +717,9 @@ function tarjetaCatalogo(catalogo, recargar) {
       ev.preventDefault();
       const valor = entrada.value.trim();
       if (!valor) return;
+      // Se usa try/catch para mostrar el error si la API no deja agregar la opcion
       try {
+        // Se llama a pedir con POST para crear la opcion en ese tipo de catalogo
         await pedir(`/catalogos/${catalogo.tipo}`, { metodo: 'POST', cuerpo: { valor } });
         avisar(`"${valor}" se agregó a ${catalogo.nombre.toLowerCase()}.`, true);
         await recargar();
@@ -675,6 +737,7 @@ function tarjetaCatalogo(catalogo, recargar) {
     formulario);
 }
 
+// Funcion que arma la fila de una opcion del catalogo para editarla o desactivarla
 function filaValor(catalogo, v, recargar) {
   const entrada = el('input', { type: 'text', maxLength: 80, value: v.valor });
   entrada.setAttribute('aria-label', `Editar ${v.valor}`);
@@ -684,6 +747,7 @@ function filaValor(catalogo, v, recargar) {
     className: 'boton boton--mini',
     textContent: 'Guardar',
     hidden: true,
+    // Al guardar se pide confirmacion porque el cambio tambien corrige los equipos que tenian el nombre viejo
     onclick: async () => {
       const nuevo = entrada.value.trim();
       if (!nuevo || nuevo === v.valor) return;
@@ -693,6 +757,7 @@ function filaValor(catalogo, v, recargar) {
       );
       if (!seguro) return;
       try {
+        // Se llama a pedir con PATCH para cambiar el nombre y la API devuelve cuantos equipos se corrigieron
         const { valor } = await pedir(`/catalogos/${catalogo.tipo}/${v.idValor}`, {
           metodo: 'PATCH', cuerpo: { valor: nuevo },
         });
@@ -706,15 +771,18 @@ function filaValor(catalogo, v, recargar) {
     },
   });
 
+  // El boton de guardar solo aparece si el texto cambio y no esta vacio
   entrada.addEventListener('input', () => {
     guardar.hidden = entrada.value.trim() === v.valor || entrada.value.trim() === '';
   });
 
+  // Boton para activar o desactivar la opcion
   const alternar = el('button', {
     type: 'button',
     className: 'boton boton--texto boton--mini',
     textContent: v.activo ? 'Desactivar' : 'Activar',
     onclick: async () => {
+      // Antes de desactivar se pide confirmacion al usuario
       if (v.activo) {
         const seguro = confirm(
           `¿Desactivar "${v.valor}"?\n\n` +
@@ -723,6 +791,7 @@ function filaValor(catalogo, v, recargar) {
         if (!seguro) return;
       }
       try {
+        // Se llama a pedir con PATCH para cambiar solo el estado activo de la opcion
         await pedir(`/catalogos/${catalogo.tipo}/${v.idValor}`, {
           metodo: 'PATCH', cuerpo: { activo: !v.activo },
         });
@@ -740,23 +809,22 @@ function filaValor(catalogo, v, recargar) {
     alternar);
 }
 
-// ================================================================== //
-// ARRANQUE                                                           //
-// ================================================================== //
-
+// Funcion que arma la lista de areas segun los modulos que tiene la empresa
 async function cargar() {
   const areas = [];
 
+  // Si la empresa tiene AGENDA se agregan las pestañas de agenda y de servicios
   if (modulos.includes('AGENDA')) {
     areas.push({ id: 'cfg-agenda', titulo: 'Agenda', pintar: pintarAgenda });
     areas.push({ id: 'cfg-servicios', titulo: 'Servicios e insumos', pintar: pintarServicios });
   }
 
-  // Una pestaña por cada módulo contratado que tenga listas.
+  // Se piden los catalogos y se sacan los modulos que tienen listas, sin repetir gracias al Set
   const { catalogos } = await pedir('/catalogos/configuracion');
   const conListas = [...new Set(
     catalogos.filter((c) => !c.modulo || modulos.includes(c.modulo)).map((c) => c.modulo ?? 'GENERAL'),
   )];
+  // Se agrega una pestaña de listas por cada modulo
   for (const modulo of conListas) {
     areas.push({
       id: `cfg-listas-${modulo.toLowerCase()}`,
@@ -765,34 +833,42 @@ async function cargar() {
     });
   }
 
+  // Se llama a armarPestanas para pintar todo en pantalla
   armarPestanas(areas);
 }
 
+// Evento del boton salir, cierra la sesion y vuelve al login
 $('btn-salir').addEventListener('click', async () => {
   await salir();
   location.replace('index.html');
 });
 
+// Funcion que arranca la pantalla, revisa la sesion y los permisos
 async function iniciar() {
+  // Si no hay sesion en memoria se intenta restaurar con el refresh token de la cookie
   const sesion = sesionActual() ?? (await restaurarSesion());
+  // Si no hay sesion se manda al login
   if (!sesion) { location.replace('index.html'); return; }
+  // Si el usuario debe cambiar la contraseña se manda a esa pantalla primero
   if (debeCambiarPassword()) { location.replace('cambiar-password.html'); return; }
 
   permisos = sesion.empresaActiva?.permisos ?? [];
   modulos = sesion.empresaActiva?.modulos ?? [];
-  // El menú lo maneja js/menu.js
 
-  // Esta puerta es solo comodidad: el backend responde 403 de todos modos.
+  // Si no tiene el permiso de gestionar la configuracion no se muestra nada
+  // Igual el backend tambien valida el permiso en cada ruta
   if (!permisos.includes('configuracion.gestionar')) {
     $('cargando').textContent = 'Esta sección es solo para quien administra la empresa.';
     return;
   }
 
+  // Se carga la configuracion y se cambia de la pantalla de carga al contenido
   await cargar();
   $('cargando').hidden = true;
   $('contenido').hidden = false;
 }
 
+// Se llama a iniciar y si algo falla se muestra el error en pantalla
 iniciar().catch((error) => {
   console.error(error);
   $('cargando').textContent = `No se pudo cargar la pantalla: ${mensajeError(error)}`;

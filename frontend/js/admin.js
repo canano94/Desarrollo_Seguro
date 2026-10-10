@@ -1,7 +1,7 @@
-// Importa las funciones del API wrapper y utilidades de sesión //
+// Se importan las funciones de api.js para la sesion, para llamar la API y para cerrar sesion
 import { restaurarSesion, sesionActual, pedir, salir } from './api.js';
 
-// Referencias al DOM //
+// Se toman los elementos de la pagina que se van a usar en la pantalla de administracion
 const cargando = document.getElementById('cargando');
 const contenido = document.getElementById('contenido');
 const vistaLista = document.getElementById('vista-lista');
@@ -12,52 +12,39 @@ const panelCrear = document.getElementById('panel-crear');
 const avisoDetalle = document.getElementById('aviso-detalle');
 const avisoEmpresa = document.getElementById('aviso-empresa');
 
-// Control de estado: Empresa abierta en el detalle. null = estamos en la vista de lista general.
+// Variable para saber que empresa se abrio en el detalle
 let empresaActual = null;
 
-// ------------------------------------------------------------------ //
-// Utilidades                                                         //
-// ------------------------------------------------------------------ //
-
+// Funcion para mostrar un mensaje en un aviso, si bien es true se pinta como mensaje de exito
 function avisar(elemento, mensaje, bien = false) {
+  // Se usa textContent y no innerHTML para que no se pueda meter codigo (XSS)
   elemento.textContent = mensaje;
-  // Añade o quita la clase de "éxito" (verde) dependiendo del booleano `bien`
   elemento.classList.toggle('aviso--bien', bien);
   elemento.hidden = false;
 }
 
-/** 
- * ¿Qué hace esta función?
- * Traduce el error 422 de validación que envía Zod desde el backend.
- * Zod envía un array 'detalles' con todos los campos que fallaron en el 
- * formulario. Esta función los une con un '·' para que el usuario pueda 
- * corregir todos sus errores a la vez sin tener que enviar el formulario 
- * 5 veces seguidas. 
- */
+// Funcion que arma el texto del error, si trae detalles por campo los une en una sola linea
 function mensajeError(error) {
   return error.detalles?.map((d) => `${d.campo}: ${d.mensaje}`).join(' · ') || error.mensaje;
 }
 
+// Funcion para crear una celda de la tabla con el texto, si no hay dato pone una raya
 function celda(texto) {
   const td = document.createElement('td');
   td.textContent = texto ?? '—';
   return td;
 }
 
-/** 
- * APUNTE: Optimización de recursos (Iconos).
- * Botón de acción con un icono SVG. Los iconos van "inline" (su código exacto) 
- * porque son apenas cuatro trazos. Traer una librería entera de iconos (como 
- * FontAwesome) que pesa cientos de kilobytes solo para usar 3 iconos es una mala 
- * práctica de rendimiento web.
- */
+// Funcion para crear un boton con un icono SVG y la accion que hace al pulsarlo
 function botonIcono(titulo, pathD, alPulsar, clase = '') {
   const boton = document.createElement('button');
   boton.type = 'button';
   boton.className = `icono ${clase}`;
   boton.title = titulo;
-  boton.setAttribute('aria-label', titulo);   // Accesibilidad para lectores de pantalla
+  // Se pone aria-label para que los lectores de pantalla sepan que hace el boton
+  boton.setAttribute('aria-label', titulo);
 
+  // Se crea el SVG con createElementNS porque los SVG necesitan su propio namespace
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('aria-hidden', 'true');
@@ -66,34 +53,39 @@ function botonIcono(titulo, pathD, alPulsar, clase = '') {
   svg.append(path);
 
   boton.append(svg);
+  // Al hacer clic se llama la accion del boton
   boton.addEventListener('click', (evento) => {
-    // stopPropagation() evita que el clic en el botón se propague hacia arriba 
-    // y active también el evento de "abrir ficha" de la fila contenedora.
+    // stopPropagation es para que el clic no llegue tambien a la ficha de la empresa
     evento.stopPropagation();   
     alPulsar();
   });
   return boton;
 }
 
+// Constantes con el dibujo (path) de cada icono
 const ICONO_EDITAR = 'M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17v3z';
 const ICONO_PAUSA = 'M9 6v12M15 6v12';
 const ICONO_PLAY = 'M7 5l12 7-12 7V5z';
-// Llave: restablecer contraseña.
 const ICONO_LLAVE = 'M14 7a4 4 0 1 1-3.9 5H8v2H6v2H3v-3l7.1-7.1A4 4 0 0 1 14 7z';
 
-
-// Catálogo de módulos que viene de app.modulos (ya no está fijo en el código) //
+// Array para guardar los modulos que existen en la plataforma
 let catalogoModulos = [];
 
+// Funcion que trae el catalogo de modulos y pinta las casillas del formulario de crear empresa
 async function cargarCatalogoModulos() {
+  // Se llama a pedir y se le pasa la ruta para que devuelva los modulos del servidor
   const { modulos } = await pedir('/admin/modulos');
   catalogoModulos = modulos;
+  // Por defecto queda marcado el modulo AGENDA
   pintarCasillasModulos('crear-modulos', ['AGENDA']);
 }
 
+// Funcion para pintar una casilla por cada modulo y dejar marcados los que lleguen en la lista
 function pintarCasillasModulos(idContenedor, marcados) {
   const caja = document.getElementById(idContenedor);
+  // Se limpia el contenedor antes de volver a pintar
   caja.replaceChildren();
+  // Se recorre el catalogo con for para crear la casilla de cada modulo
   for (const m of catalogoModulos) {
     const etiqueta = document.createElement('label');
     etiqueta.className = 'casilla';
@@ -108,27 +100,29 @@ function pintarCasillasModulos(idContenedor, marcados) {
   }
 }
 
+// Funcion que devuelve los codigos de los modulos marcados dentro de un contenedor
 const modulosMarcados = (idContenedor) =>
   [...document.querySelectorAll(`#${idContenedor} input[type="checkbox"]:checked`)]
+    // Se utiliza el metodo map para quedarse solo con el valor de cada casilla
     .map((c) => c.value);
 
-// ------------------------------------------------------------------ //
-// Lista de empresas                                                  //
-// ------------------------------------------------------------------ //
-
+// Funcion que trae las empresas y pinta una ficha por cada una en la lista
 async function cargarEmpresas() {
+  // Se llama a pedir para traer todas las empresas de la plataforma
   const { empresas } = await pedir('/admin/empresas');
 
   listaEmpresas.replaceChildren();
+  // Se recorre la lista con for para pintar cada empresa
   for (const e of empresas) {
     const li = document.createElement('li');
     li.className = 'ficha-empresa';
+    // Si la empresa no esta activa se le pone un estilo diferente
     if (e.estado !== 'ACTIVA') li.classList.add('ficha-empresa--inactiva');
 
-    // --- Zona clicable que abre el detalle --- //
     const cuerpo = document.createElement('button');
     cuerpo.type = 'button';
     cuerpo.className = 'ficha-empresa__cuerpo';
+    // Al hacer clic en la ficha se abre el detalle de la empresa
     cuerpo.addEventListener('click', () => abrirDetalle(e));
 
     const nombre = document.createElement('span');
@@ -140,6 +134,7 @@ async function cargarEmpresas() {
     meta.textContent =
       `${e.slug} · ${e.miembros} miembro(s) · ${e.prestadores} prestador(es)`;
 
+    // Se pinta una ficha por cada modulo que tiene la empresa
     const modulos = document.createElement('span');
     modulos.className = 'fichas';
     for (const codigo of e.modulos) {
@@ -148,6 +143,7 @@ async function cargarEmpresas() {
       ficha.textContent = codigo;
       modulos.append(ficha);
     }
+    // Si no esta activa se agrega una ficha de alerta con el estado
     if (e.estado !== 'ACTIVA') {
       const ficha = document.createElement('span');
       ficha.className = 'ficha ficha--alerta';
@@ -157,12 +153,13 @@ async function cargarEmpresas() {
 
     cuerpo.append(nombre, meta, modulos);
 
-    // --- Acciones a la derecha --- //
+    // Contenedor para los botones de editar y suspender o activar
     const acciones = document.createElement('div');
     acciones.className = 'ficha-empresa__acciones';
 
     acciones.append(botonIcono('Editar', ICONO_EDITAR, () => abrirDetalle(e)));
 
+    // Segun el estado se muestra el boton de suspender o el de activar
     const activa = e.estado === 'ACTIVA';
     acciones.append(
       botonIcono(
@@ -178,53 +175,51 @@ async function cargarEmpresas() {
   }
 }
 
-/** 
- * Suspende o reactiva un tenant directamente desde la lista, 
- * ahorrándole clics al super administrador. 
- */
+// Funcion para suspender o activar una empresa y luego recargar la lista
 async function cambiarEstado(empresa, estado) {
   try {
+    // Se llama a pedir con PATCH para cambiar solo el estado de la empresa
     await pedir(`/admin/empresas/${empresa.idEmpresa}/estado`, {
       metodo: 'PATCH',
       cuerpo: { estado },
     });
     await cargarEmpresas();
+  // Si falla se muestra el error en el aviso de empresas
   } catch (error) {
     avisar(avisoEmpresa, mensajeError(error));
   }
 }
 
-// ------------------------------------------------------------------ //
-// Detalle                                                            //
-// ------------------------------------------------------------------ //
-
+// Funcion para abrir el detalle de una empresa, llena los datos y el formulario de edicion
 async function abrirDetalle(empresa) {
   empresaActual = empresa;
   avisoDetalle.hidden = true;
 
-  // Poblar la vista con los datos del objeto
   document.getElementById('detalle-nombre').textContent = empresa.razonSocial;
   document.getElementById('detalle-slug').textContent = empresa.slug;
   document.getElementById('detalle-estado').textContent = empresa.estado;
 
+  // Se llenan los campos del formulario, si no hay dato se deja vacio
   document.getElementById('e-razonSocial').value = empresa.razonSocial ?? '';
   document.getElementById('e-emailContacto').value = empresa.emailContacto ?? '';
   document.getElementById('e-nit').value = empresa.nit ?? '';
   document.getElementById('e-telefono').value = empresa.telefono ?? '';
 
+  // Se pintan las casillas de modulos con los que ya tiene la empresa
   pintarCasillasModulos('e-modulos', empresa.modulos);
 
-  // Intercambio de vistas
+  // Se cambia de pantalla, se oculta la lista y se muestra el detalle
   vistaLista.hidden = true;
   vistaDetalle.hidden = false;
-  // Ocultar pestañas globales porque estamos en el contexto de UNA sola empresa
   document.getElementById('pestanas-plataforma').hidden = true;
   activarPestana('p-datos');
   window.scrollTo({ top: 0 });
 
+  // Se cargan los miembros de la empresa
   await cargarMiembros();
 }
 
+// Funcion para volver a la lista de empresas desde el detalle
 function volverALista() {
   empresaActual = null;
   vistaDetalle.hidden = true;
@@ -233,11 +228,7 @@ function volverALista() {
   cargarEmpresas();
 }
 
-/** 
- * Lógica de pestañas sencilla. 
- * Muestra el panel correspondiente y oculta los demás modificando los 
- * atributos de accesibilidad ('aria-selected') y visuales ('hidden').
- */
+// Funcion para mostrar el panel de la pestaña elegida y ocultar los demas
 function activarPestana(idPanel) {
   for (const pestana of document.querySelectorAll('.pestana')) {
     const activa = pestana.dataset.panel === idPanel;
@@ -246,21 +237,21 @@ function activarPestana(idPanel) {
   }
 }
 
-// Asigna los eventos de clic a todas las pestañas una sola vez al cargar el archivo
+// Se le pone el evento clic a cada pestaña para cambiar de panel
 for (const pestana of document.querySelectorAll('.pestana')) {
   pestana.addEventListener('click', () => activarPestana(pestana.dataset.panel));
 }
 
-// ------------------------------------------------------------------ //
-// Miembros                                                           //
-// ------------------------------------------------------------------ //
-
+// Funcion que trae los miembros de la empresa abierta y los pinta en la tabla
 async function cargarMiembros() {
+  // Se llama a pedir con el id de la empresa para traer sus miembros
   const { miembros } = await pedir(`/admin/empresas/${empresaActual.idEmpresa}/miembros`);
 
   tablaMiembros.replaceChildren();
+  // Se recorre la lista con for para pintar cada fila
   for (const m of miembros) {
     const fila = document.createElement('tr');
+    // Si el miembro no esta activo la fila se ve mas tenue
     if (m.estado !== 'ACTIVA') fila.classList.add('fila-tenue');
 
     fila.append(celda(`${m.nombres} ${m.apellidos}`));
@@ -269,10 +260,11 @@ async function cargarMiembros() {
     fila.append(correo);
     fila.append(celda(m.cargo));
 
-    // El rol se cambia con un desplegable (<select>) interactivo en la misma fila.
+    // Select para cambiar el rol del miembro desde la tabla
     const tdRol = document.createElement('td');
     const selectRol = document.createElement('select');
     selectRol.className = 'entrada entrada--mini';
+    // Se recorre la lista de roles para crear las opciones y dejar elegido el que tiene
     for (const [valor, texto] of [
       ['CLIENTE', 'Cliente'],
       ['EMPLEADO', 'Empleado'],
@@ -285,7 +277,7 @@ async function cargarMiembros() {
       o.selected = m.roles.includes(valor);
       selectRol.append(o);
     }
-    // Lanza la petición HTTP automáticamente al cambiar de opción
+    // Cuando se cambia el rol se manda a guardar de una vez
     selectRol.addEventListener('change', () =>
       actualizarMiembro(m.idMembresia, { rol: selectRol.value }));
     tdRol.append(selectRol);
@@ -293,13 +285,16 @@ async function cargarMiembros() {
 
     fila.append(celda(m.estado));
 
+    // Celda con los botones de acciones del miembro
     const tdAcciones = document.createElement('td');
 
+    // Boton para generarle una contraseña temporal
     tdAcciones.append(
       botonIcono('Restablecer contraseña', ICONO_LLAVE,
         () => restablecerPassword(m.idUsuario, m.email)),
     );
 
+    // Si esta activo se muestra el boton de retirar, si no el de reactivar
     if (m.estado === 'ACTIVA') {
       tdAcciones.append(
         botonIcono('Retirar', ICONO_PAUSA,
@@ -317,15 +312,9 @@ async function cargarMiembros() {
   }
 }
 
-/**
- * Genera una contraseña temporal para otra persona.
- *
- * ¿Por qué el confirm() es tan importante aquí?
- * Se pide confirmación porque la acción cierra todas las sesiones actuales 
- * de esa persona y la obliga a cambiarla al intentar entrar de nuevo. Es 
- * una acción destructiva que no es reversible.
- */
+// Funcion para generar una contraseña temporal a un usuario
 async function restablecerPassword(idUsuario, email) {
+  // Se pide confirmacion antes porque se le cierran todas las sesiones
   const seguro = confirm(
     `¿Generar una contraseña temporal para ${email}?\n\n` +
     'Se cerrarán todas sus sesiones y deberá cambiarla al entrar.',
@@ -333,12 +322,11 @@ async function restablecerPassword(idUsuario, email) {
   if (!seguro) return;
 
   try {
+    // Se llama a pedir con POST para que el servidor cree la contraseña temporal
     const resultado = await pedir(`/admin/usuarios/${idUsuario}/password-temporal`, {
       metodo: 'POST',
     });
-    // MUY IMPORTANTE DE CIBERSEGURIDAD: 
-    // Se muestra UNA sola vez. Si el admin no la copia, no hay forma de volverla a ver 
-    // porque en la base de datos solo quedó guardado el hash matemático de bcrypt.
+    // Se muestra la contraseña temporal en el aviso para que el admin se la pase al usuario
     avisar(
       avisoDetalle,
       `Contraseña temporal de ${resultado.email}: ${resultado.passwordTemporal}`,
@@ -349,38 +337,31 @@ async function restablecerPassword(idUsuario, email) {
   }
 }
 
-/** 
- * Actualizador genérico de la membresía. 
- * Aquí es donde puede llegar el error 409 'ULTIMO_ADMIN'. Si el usuario intenta 
- * degradarse a sí mismo quitándose el rol de administrador, el servidor backend 
- * se negará para no dejar la empresa "huérfana" sin gestores.
- */
+// Funcion para actualizar el rol o el estado de un miembro
 async function actualizarMiembro(idMembresia, cambios) {
   avisoDetalle.hidden = true;
   try {
+    // Se llama a pedir con PATCH y se le pasan solo los cambios
     await pedir(`/admin/empresas/${empresaActual.idEmpresa}/miembros/${idMembresia}`, {
       metodo: 'PATCH',
       cuerpo: cambios,
     });
     await cargarMiembros();
     avisar(avisoDetalle, 'Miembro actualizado.', true);
+  // Si falla se muestra el error y se recarga la tabla para que el select vuelva al valor real
   } catch (error) {
     avisar(avisoDetalle, mensajeError(error));
-    // ¿Por qué recargamos la lista si hubo error?
-    // Porque el <select> en HTML ya cambió visualmente a la opción que el usuario pulsó. 
-    // Recargar la tabla con los datos del servidor es lo que lo devuelve a "la verdad".
     await cargarMiembros();
   }
 }
 
-// ------------------------------------------------------------------ //
-// Formularios                                                        //
-// ------------------------------------------------------------------ //
-
+// Evento del formulario para guardar los datos de la empresa
 document.getElementById('form-editar').addEventListener('submit', async (evento) => {
+  // preventDefault es para que el formulario no recargue la pagina
   evento.preventDefault();
   avisoDetalle.hidden = true;
   try {
+    // Se llama a pedir con PATCH y se mandan los datos del formulario sin espacios
     const { empresa } = await pedir(`/admin/empresas/${empresaActual.idEmpresa}`, {
       metodo: 'PATCH',
       cuerpo: {
@@ -390,7 +371,7 @@ document.getElementById('form-editar').addEventListener('submit', async (evento)
         telefono: document.getElementById('e-telefono').value.trim(),
       },
     });
-    // Actualizamos la variable local fusionando el objeto viejo con el nuevo
+    // Se juntan los datos que habia con los que devolvio el servidor
     empresaActual = { ...empresaActual, ...empresa };
     document.getElementById('detalle-nombre').textContent = empresa.razonSocial;
     avisar(avisoDetalle, 'Datos guardados.', true);
@@ -399,14 +380,17 @@ document.getElementById('form-editar').addEventListener('submit', async (evento)
   }
 });
 
+// Evento del formulario para guardar los modulos de la empresa
 document.getElementById('form-modulos').addEventListener('submit', async (evento) => {
   evento.preventDefault();
   avisoDetalle.hidden = true;
 
   const modulos = modulosMarcados('e-modulos');
+  // Si no marco ningun modulo se avisa y no se manda nada
   if (modulos.length === 0) return avisar(avisoDetalle, 'Elige al menos un módulo.');
 
   try {
+    // Se llama a pedir con PUT para reemplazar los modulos de la empresa
     const resultado = await pedir(`/admin/empresas/${empresaActual.idEmpresa}/modulos`, {
       metodo: 'PUT',
       cuerpo: { modulos },
@@ -418,10 +402,12 @@ document.getElementById('form-modulos').addEventListener('submit', async (evento
   }
 });
 
+// Evento del formulario para vincular una persona a la empresa
 document.getElementById('form-miembro').addEventListener('submit', async (evento) => {
   evento.preventDefault();
   avisoDetalle.hidden = true;
   try {
+    // Se llama a pedir con POST y se mandan los datos del nuevo miembro
     const { miembro } = await pedir(`/admin/empresas/${empresaActual.idEmpresa}/miembros`, {
       metodo: 'POST',
       cuerpo: {
@@ -434,9 +420,8 @@ document.getElementById('form-miembro').addEventListener('submit', async (evento
     });
     evento.target.reset();
     await cargarMiembros();
-    
-    // Si la persona era nueva en todo el sistema, el backend crea el usuario 
-    // y devuelve una clave temporal. Si ya existía, solo la vincula al Tenant.
+
+    // Si la persona es nueva se muestra su contraseña temporal, si ya tenia cuenta solo se vincula
     avisar(
       avisoDetalle,
       miembro.passwordTemporal
@@ -449,24 +434,26 @@ document.getElementById('form-miembro').addEventListener('submit', async (evento
   }
 });
 
-// --- Crear empresa --- //
-
+// Boton para mostrar el panel de crear empresa
 document.getElementById('btn-nueva').addEventListener('click', () => {
   panelCrear.hidden = false;
   panelCrear.scrollIntoView({ behavior: 'smooth' });
 });
 
+// Boton para cancelar y ocultar el panel de crear empresa
 document.getElementById('btn-cancelar-crear').addEventListener('click', () => {
   panelCrear.hidden = true;
   avisoEmpresa.hidden = true;
 });
 
+// Evento del formulario para crear una empresa nueva
 document.getElementById('form-empresa').addEventListener('submit', async (evento) => {
   evento.preventDefault();
   avisoEmpresa.hidden = true;
 
   const modulos = modulosMarcados('crear-modulos');
 
+  // Objeto con los datos de la empresa, el slug se pasa a minusculas
   const cuerpo = {
     slug: document.getElementById('slug').value.trim().toLowerCase(),
     razonSocial: document.getElementById('razonSocial').value.trim(),
@@ -475,6 +462,7 @@ document.getElementById('form-empresa').addEventListener('submit', async (evento
     modulos,
   };
 
+  // Si se escribio el correo del administrador se agrega al cuerpo para crearlo con la empresa
   const adminEmail = document.getElementById('adminEmail').value.trim();
   if (adminEmail) {
     cuerpo.administrador = {
@@ -484,9 +472,11 @@ document.getElementById('form-empresa').addEventListener('submit', async (evento
     };
   }
 
+  // Se desactiva el boton para que no se cree la empresa dos veces
   const boton = document.getElementById('btn-crear-empresa');
   boton.disabled = true;
   try {
+    // Se llama a pedir con POST para crear la empresa
     const { empresa } = await pedir('/admin/empresas', { metodo: 'POST', cuerpo });
     avisar(
       avisoEmpresa,
@@ -495,46 +485,29 @@ document.getElementById('form-empresa').addEventListener('submit', async (evento
         : 'Empresa creada.',
       true,
     );
+    // Se limpia el formulario y se recarga la lista
     evento.target.reset();
     pintarCasillasModulos('crear-modulos', ['AGENDA']);
     await cargarEmpresas();
   } catch (error) {
     avisar(avisoEmpresa, mensajeError(error));
+  // En finally se vuelve a activar el boton, salga bien o mal
   } finally {
     boton.disabled = false;
   }
 });
 
-// ------------------------------------------------------------------ //
-// Editor de roles y permisos (RBAC Visual)                           //
-// ------------------------------------------------------------------ //
-
+// Elementos de la pestaña de roles
 const listaRoles = document.getElementById('lista-roles');
 const avisoRoles = document.getElementById('aviso-roles');
 const panelNuevoRol = document.getElementById('panel-nuevo-rol');
 
-/**
- * ¿Qué hace esta función?
- * Dibuja una tarjeta por cada Rol creado, pintando dentro TODAS las casillas 
- * de permisos disponibles, y dejando marcadas ("checked") solo aquellas que el 
- * rol ya posee.
- *
- * ¿Por qué agrupa por área y no por módulo?
- * El módulo (CRM o AGENDA) dice si la empresa PAGÓ por esa funcionalidad.
- * El área dice sobre QUÉ ACTÚA el permiso dentro del rol. Editar un perfil de 
- * cliente y cerrar un ticket técnico son cosas distintas aunque ambas vivan en el CRM.
- * Separarlas permite a Recursos Humanos diseñar puestos de trabajo con criterio de 
- * "Menor Privilegio Posible".
- */
+// Funcion que trae los roles y permisos y pinta una tarjeta por cada rol
 async function cargarRoles() {
+  // Se llama a pedir para traer los roles y todos los permisos que existen
   const { roles, permisos } = await pedir('/admin/roles');
-  
 
-  /**
-   * Diccionario humano para las áreas del sistema.
-   * El área sale del prefijo del código del permiso. Ejemplo: 
-   * Si el permiso es 'clientes.password', el área es 'clientes'.
-   */
+  // Objeto con el nombre que se muestra para cada area de permisos
   const NOMBRES_AREA = {
     empresas: 'Empresas',
     prestadores: 'Prestadores',
@@ -552,28 +525,31 @@ async function cargarRoles() {
     configuracion: 'Configuración',
   };
 
-  // Se usa el orden de declaración del diccionario para ordenar visualmente.
+  // Array con el orden en que se muestran las areas
   const ORDEN = Object.keys(NOMBRES_AREA);
 
-  // Un objeto Map() es excelente aquí porque, a diferencia de los objetos normales {}, 
-  // conserva estrictamente el orden en el que se insertaron las llaves.
+  // Map para agrupar los permisos por area
   const grupos = new Map();
+  // Se ordenan los permisos por area y luego por codigo, y se recorren con for
   for (const p of [...permisos].sort((a, b) => {
     const ia = ORDEN.indexOf(a.codigo.split('.')[0]);
     const ib = ORDEN.indexOf(b.codigo.split('.')[0]);
     if (ia !== ib) return ia - ib;
     return a.codigo.localeCompare(b.codigo);
   })) {
+    // El area es la primera parte del codigo del permiso, antes del punto
     const area = p.codigo.split('.')[0];
     const titulo = NOMBRES_AREA[area] ?? area;
-    // Si el permiso depende de un módulo pago, se avisa en la pantalla.
+    // Si el permiso es de un modulo se agrega al nombre del grupo
     const clave = p.modulo ? `${titulo} · módulo ${p.modulo}` : titulo;
+    // Si el grupo no existe se crea y se agrega el permiso
     if (!grupos.has(clave)) grupos.set(clave, []);
     grupos.get(clave).push(p);
   }
 
   listaRoles.replaceChildren();
 
+  // Se recorre cada rol para crear su tarjeta
   for (const rol of roles) {
     const tarjeta = document.createElement('section');
     tarjeta.className = 'tarjeta rol-tarjeta';
@@ -593,12 +569,10 @@ async function cargarRoles() {
     const acciones = document.createElement('div');
     acciones.className = 'fila-botones';
 
-    // Medida de seguridad pasiva:
-    // El rol SUPER_ADMIN no se edita visualmente. Si se dejara editar y el administrador 
-    // se quitara a sí mismo el permiso de 'empresas.gestionar' por accidente, nadie 
-    // más en todo el sistema podría devolverle ese acceso.
+    // Variable para saber si el rol se puede editar, el SUPER_ADMIN no se deja editar
     const editable = rol.codigo !== 'SUPER_ADMIN';
 
+    // Si se puede editar se agrega el boton de guardar permisos
     if (editable) {
       const btnGuardar = document.createElement('button');
       btnGuardar.type = 'button';
@@ -608,8 +582,7 @@ async function cargarRoles() {
       acciones.append(btnGuardar);
     }
 
-    // Regla de integridad de BD: Solo se pueden borrar roles creados a mano 
-    // y que actualmente tengan cero (0) miembros asignados a ellos.
+    // Solo se puede eliminar un rol que no sea del sistema y que nadie tenga asignado
     if (!rol.esSistema && rol.asignaciones === 0) {
       const btnBorrar = document.createElement('button');
       btnBorrar.type = 'button';
@@ -622,6 +595,7 @@ async function cargarRoles() {
     cabecera.append(acciones);
     tarjeta.append(cabecera);
 
+    // Si no se puede editar se muestra una nota explicando por que
     if (!editable) {
       const nota = document.createElement('p');
       nota.className = 'apoyo';
@@ -630,7 +604,7 @@ async function cargarRoles() {
       tarjeta.append(nota);
     }
 
-    // Renderizado de los Fieldsets con los Checkboxes
+    // Se recorre cada grupo para pintar un fieldset con sus casillas
     for (const [nombreGrupo, lista] of grupos) {
       const grupo = document.createElement('fieldset');
       grupo.className = 'grupo';
@@ -639,6 +613,7 @@ async function cargarRoles() {
       leyenda.textContent = nombreGrupo;
       grupo.append(leyenda);
 
+      // Se crea una casilla por permiso, marcada si el rol ya lo tiene
       for (const permiso of lista) {
         const etiqueta = document.createElement('label');
         etiqueta.className = 'casilla casilla--permiso';
@@ -646,8 +621,8 @@ async function cargarRoles() {
         const casilla = document.createElement('input');
         casilla.type = 'checkbox';
         casilla.value = permiso.codigo;
-        // La marca (check) viene directa del servidor si el array `rol.permisos` la incluye
         casilla.checked = rol.permisos.includes(permiso.codigo);
+        // Si el rol no es editable las casillas quedan desactivadas
         casilla.disabled = !editable;
 
         const texto = document.createElement('span');
@@ -666,22 +641,18 @@ async function cargarRoles() {
   }
 }
 
-/**
- * ¿Por qué usa PUT y envía la lista completa de checkboxes?
- * En lugar de enviar comandos al servidor tipo "Agregó el permiso X" o "Quitó el Y", 
- * escaneamos el DOM buscando las casillas marcadas (`input:checked`) y enviamos 
- * el nuevo estado final. 
- * Esto es diseño "Idempotente": menos lógica condicional y menos posibilidad de 
- * desincronización por red.
- */
+// Funcion para guardar los permisos marcados de un rol
 async function guardarPermisos(idRol, tarjeta, boton) {
   avisoRoles.hidden = true;
+  // Se toman las casillas marcadas de la tarjeta y con map se saca el codigo de cada una
   const permisos = [...tarjeta.querySelectorAll('input[type="checkbox"]:checked')]
     .map((c) => c.value);
 
   boton.disabled = true;
   try {
+    // Se llama a pedir con PUT para reemplazar los permisos del rol
     await pedir(`/admin/roles/${idRol}/permisos`, { metodo: 'PUT', cuerpo: { permisos } });
+    // Los permisos van en el token, por eso aplican cuando la persona vuelve a iniciar sesion
     avisar(avisoRoles,
       'Permisos guardados. Aplican en el próximo inicio de sesión de cada persona.', true);
     await cargarRoles();
@@ -692,9 +663,11 @@ async function guardarPermisos(idRol, tarjeta, boton) {
   }
 }
 
+// Funcion para eliminar un rol, primero pide confirmacion
 async function eliminarRol(idRol, nombre) {
   if (!confirm(`¿Eliminar el rol "${nombre}"?`)) return;
   try {
+    // Se llama a pedir con DELETE para borrar el rol
     await pedir(`/admin/roles/${idRol}`, { metodo: 'DELETE' });
     await cargarRoles();
     avisar(avisoRoles, 'Rol eliminado.', true);
@@ -703,19 +676,23 @@ async function eliminarRol(idRol, nombre) {
   }
 }
 
+// Boton para mostrar el panel de nuevo rol
 document.getElementById('btn-nuevo-rol').addEventListener('click', () => {
   panelNuevoRol.hidden = false;
 });
 
+// Boton para cancelar y ocultar el panel de nuevo rol
 document.getElementById('btn-cancelar-rol').addEventListener('click', () => {
   panelNuevoRol.hidden = true;
   avisoRoles.hidden = true;
 });
 
+// Evento del formulario para crear un rol nuevo
 document.getElementById('form-rol').addEventListener('submit', async (evento) => {
   evento.preventDefault();
   avisoRoles.hidden = true;
   try {
+    // Se llama a pedir con POST y se mandan el codigo, nombre y descripcion del rol
     await pedir('/admin/roles', {
       metodo: 'POST',
       cuerpo: {
@@ -733,17 +710,17 @@ document.getElementById('form-rol').addEventListener('submit', async (evento) =>
   }
 });
 
-// --- Pestañas Empresas / Roles --- //
-
+// Pestañas de arriba de la plataforma, empresas y roles
 const grupoPestanas = document.getElementById('pestanas-plataforma');
 for (const pestana of grupoPestanas.querySelectorAll('.pestana')) {
   pestana.addEventListener('click', async () => {
+    // Se marca la pestaña elegida y se muestra solo su panel
     for (const otra of grupoPestanas.querySelectorAll('.pestana')) {
       const activa = otra === pestana;
       otra.setAttribute('aria-selected', String(activa));
       document.getElementById(otra.dataset.panel).hidden = !activa;
     }
-    // Optimización: Solo pide los roles a la API si el contenedor está vacío.
+    // Si se abre la pestaña de roles se oculta el detalle y se cargan los roles la primera vez
     if (pestana.dataset.panel === 'vista-roles') {
       vistaDetalle.hidden = true;
       if (listaRoles.children.length === 0) await cargarRoles();
@@ -751,58 +728,52 @@ for (const pestana of grupoPestanas.querySelectorAll('.pestana')) {
   });
 }
 
-// ------------------------------------------------------------------ //
-// Arranque                                                           //
-// ------------------------------------------------------------------ //
-
+// Boton para volver del detalle a la lista
 document.getElementById('btn-volver').addEventListener('click', volverALista);
 
+// Boton para cerrar sesion y volver al inicio
 document.getElementById('btn-salir').addEventListener('click', async () => {
   await salir();
   location.replace('index.html');
 });
 
-/**
- * Función de inicialización de la página (Bootstrap Frontend).
- */
+// Funcion que arranca la pantalla, revisa la sesion y carga los datos
 async function iniciar() {
+  // Se llama a restaurarSesion para renovar el token con la cookie del refresh
   const datos = await restaurarSesion();
-  // Si no hay token de sesión válido, lo expulsa.
+  // Si no hay sesion se manda al login, y si debe cambiar la contraseña se manda a esa pantalla
   if (!datos) return location.replace('index.html');
-  // Si requiere cambio de clave, lo manda a la vista correspondiente.
   if (datos.debeCambiarPassword) return location.replace('cambiar-password.html');
 
-  // PUERTA FRONTAL DEL CLIENTE:
-  // Si un usuario malintencionado edita el JavaScript para saltar este `if`, 
-  // no logrará nada, porque los middlewares del API backend le responderán 
-  // 403 Forbidden al intentar ejecutar `cargarEmpresas()`. Esta puerta es solo UX.
+  // Si el usuario no es SUPER_ADMIN no se le muestra nada de esta pantalla
   if (!sesionActual().rolesPlataforma?.includes('SUPER_ADMIN')) {
+    // Se muestra un aviso, igual el backend revisa el permiso en cada ruta de admin
     cargando.textContent = 'Esta sección es solo para el administrador de la plataforma.';
     return;
   }
 
   document.getElementById('barra-usuario').textContent = datos.usuario.email;
+  // Se cargan las empresas y los modulos y luego se muestra el contenido
   await cargarEmpresas();
   await cargarCatalogoModulos();
   cargando.hidden = true;
   contenido.hidden = false;
 }
 
+// Se llama a iniciar y con catch se manejan los errores
 iniciar().catch((error) => {
+  // Si el servidor pide cambiar la contraseña se manda a esa pantalla
   if (error?.codigo === 'DEBE_CAMBIAR_PASSWORD') {
     return location.replace('cambiar-password.html');
   }
-  
-  // Apunte de Experiencia de Usuario (UX) ante caídas:
-  // Redirigir SIEMPRE al login ante cualquier error esconde el verdadero problema y 
-  // genera bucles de redirección ('redirect loops'). 
-  // Solo devolvemos al login si confirmamos que fue un error explícito de sesión.
+
+  // Si el error es de sesion o de token se manda al login
   const esSesion = ['SIN_TOKEN', 'TOKEN_INVALIDO', 'REFRESH_INVALIDO',
                     'REFRESH_EXPIRADO', 'SIN_REFRESH_TOKEN'].includes(error?.codigo);
   if (esSesion) return location.replace('index.html');
 
+  // Si es otro error se muestra en la pantalla de carga
   console.error(error);
-  // Si fue un fallo de servidor o red, lo pinta en pantalla
   cargando.textContent = `No se pudo cargar la pantalla: ${error?.message ?? error}`;
   return undefined;
 });

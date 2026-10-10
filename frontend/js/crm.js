@@ -1,7 +1,7 @@
-// Importa las dependencias de comunicación y sesión //
+// Se importan de api.js las funciones de la sesion y pedir para llamar la API
 import { restaurarSesion, sesionActual, elegirEmpresa, pedir, salir } from './api.js';
 
-// Referencias al DOM //
+// Se toman los elementos de la pagina que se van a usar en el CRM
 const cargando = document.getElementById('cargando');
 const contenido = document.getElementById('contenido');
 const avisoCrm = document.getElementById('aviso-crm');
@@ -9,37 +9,43 @@ const selectorEmpresa = document.getElementById('selector-empresa');
 const tablaCasos = document.getElementById('tabla-casos');
 const detalleCaso = document.getElementById('detalle-caso');
 
-// Estado local //
+// Array para guardar los permisos del usuario en la empresa activa
 let permisos = [];
+// Variable para saber que caso esta abierto en el detalle
 let casoSeleccionado = null;
 
+// Funcion para saber si el usuario tiene un permiso
+// Esto solo oculta botones, el backend vuelve a validar el permiso en cada ruta
 const puede = (permiso) => permisos.includes(permiso);
 
-// ------------------------------------------------------------------ //
-// Utilidades                                                         //
-// ------------------------------------------------------------------ //
-
+// Funcion para mostrar un aviso arriba, en verde si salio bien
 function avisar(mensaje, bien = false) {
+  // Se usa textContent y no innerHTML para que no se pueda meter codigo (XSS)
   avisoCrm.textContent = mensaje;
   avisoCrm.classList.toggle('aviso--bien', bien);
   avisoCrm.hidden = false;
 }
 
+// Funcion que arma el texto del error con los detalles que manda el backend
 function mensajeError(error) {
+  // Si zod mando varios errores se unen en un solo texto
   const detalle = error?.detalles?.map((d) => d.mensaje).join(' · ');
   return detalle || error?.mensaje || 'Ocurrió un error inesperado.';
 }
 
+// Funcion para crear una celda de la tabla con su texto
 function celda(texto) {
   const td = document.createElement('td');
   td.textContent = texto ?? '—';
   return td;
 }
 
+// Funcion para mostrar la fecha en formato de Colombia
 function fecha(iso) {
   return new Date(iso).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+// Funcion para crear una opcion de un select
 function opcion(valor, texto) {
   const o = document.createElement('option');
   o.value = valor;
@@ -47,23 +53,12 @@ function opcion(valor, texto) {
   return o;
 }
 
-// ------------------------------------------------------------------ //
-// Casos                                                              //
-// ------------------------------------------------------------------ //
-
-/**
- * APUNTE ARQUITECTÓNICO (Dinámica de Vistas):
- * Trae los casos que la persona puede ver.
- * Es crucial notar que el frontend NO PIDE "mis casos" o "todos los casos". 
- * Simplemente hace un `GET /crm/casos`. El servidor es quien decide el 
- * alcance leyendo los permisos del token y lo devuelve en la respuesta 
- * (`alcance`).
- * Así, la misma función y la misma ruta le sirven a un cliente final, a un 
- * técnico asignado o al gerente general.
- */
+// Funcion que trae los casos del CRM y los pinta en la tabla
 async function cargarCasos() {
+  // Se llama a pedir y se le pasa la ruta para que devuelva los casos y el alcance del usuario
   const { casos, alcance } = await pedir('/crm/casos');
 
+  // Objeto con el subtitulo que se muestra segun el alcance (que casos puede ver)
   const textos = {
     propios: 'Estos son los casos que has radicado.',
     asignados: 'Casos asignados a ti.',
@@ -72,7 +67,9 @@ async function cargarCasos() {
   };
   document.getElementById('subtitulo-casos').textContent = textos[alcance] ?? '';
 
+  // Se limpia la tabla antes de volver a pintarla
   tablaCasos.replaceChildren();
+  // Se recorre la lista con for para pintar cada fila
   for (const c of casos) {
     const fila = document.createElement('tr');
     fila.className = 'fila-clicable';
@@ -85,8 +82,7 @@ async function cargarCasos() {
     fila.append(celda(c.cliente));
     fila.append(celda(c.asignado));
 
-    // UX: La prioridad se colorea con clases CSS (ej. .prioridad-alta).
-    // Lo crítico (ej. caída de servicio) tiene que saltar a la vista en la tabla.
+    // Celda con la prioridad como ficha de color
     const tdPrioridad = document.createElement('td');
     const fichaP = document.createElement('span');
     fichaP.className = `ficha prioridad-${c.prioridad.toLowerCase()}`;
@@ -94,6 +90,7 @@ async function cargarCasos() {
     tdPrioridad.append(fichaP);
     fila.append(tdPrioridad);
 
+    // Celda con el estado como ficha de color
     const tdEstado = document.createElement('td');
     const fichaE = document.createElement('span');
     fichaE.className = `ficha estado-${c.estado.toLowerCase()}`;
@@ -101,10 +98,12 @@ async function cargarCasos() {
     tdEstado.append(fichaE);
     fila.append(tdEstado);
 
+    // Al hacer clic en la fila se abre el detalle del caso
     fila.addEventListener('click', () => abrirCaso(c.idCaso));
     tablaCasos.append(fila);
   }
 
+  // Si no hay casos se muestra una fila con el mensaje
   if (casos.length === 0) {
     const fila = document.createElement('tr');
     const td = document.createElement('td');
@@ -116,13 +115,12 @@ async function cargarCasos() {
   }
 }
 
-/** 
- * Abre el panel de detalle lateral con la descripción completa, el origen 
- * del turno y el hilo de interacciones. 
- */
+// Funcion que trae un caso por su id y muestra el detalle
 async function abrirCaso(idCaso) {
   avisoCrm.hidden = true;
+  // Se usa try/catch para mostrar el error en el aviso si falla
   try {
+    // Se llama a pedir con el id del caso para traer sus datos
     const { caso } = await pedir(`/crm/casos/${idCaso}`);
     casoSeleccionado = caso;
 
@@ -130,12 +128,14 @@ async function abrirCaso(idCaso) {
     document.getElementById('dc-meta').textContent =
       `${caso.numero} · ${caso.tipo} · ${caso.cliente} · radicado ${fecha(caso.creadoEn)}`;
     document.getElementById('dc-descripcion').textContent = caso.descripcion;
-    
+
+    // Se pinta el turno que tiene relacionado el caso, si tiene
     pintarReservaVinculada(caso.reserva);
 
-    // Controles de Gestión: Solo aparecen para los empleados con permiso.
+    // Solo quien tiene casos.gestionar ve los campos para cambiar estado y prioridad
     const gestiona = puede('casos.gestionar');
     document.getElementById('dc-gestion').hidden = !gestiona;
+    // El formulario de interaccion solo sale con el permiso crm.registrar
     document.getElementById('dc-nueva-interaccion').hidden = !puede('crm.registrar');
 
     if (gestiona) {
@@ -143,8 +143,10 @@ async function abrirCaso(idCaso) {
       document.getElementById('dc-prioridad').value = caso.prioridad;
     }
 
+    // Se pintan las interacciones del caso
     pintarInteracciones(caso.interacciones);
 
+    // Se muestra el panel del detalle y se baja hasta el
     detalleCaso.hidden = false;
     detalleCaso.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } catch (error) {
@@ -152,17 +154,12 @@ async function abrirCaso(idCaso) {
   }
 }
 
-/**
- * APUNTE INTEGRACIÓN MULTI-MÓDULO:
- * Muestra el turno del que nació el caso. Es la conexión entre la Agenda y el CRM.
- * El resolutor técnico (ej. un administrador de casos) puede leer qué anotó el 
- * empleado de mostrador durante la cita, sin tener que cerrar la ventana ni 
- * buscar la reserva en el otro módulo.
- */
+// Funcion que pinta el turno vinculado al caso con sus observaciones
 function pintarReservaVinculada(reserva) {
   const caja = document.getElementById('dc-reserva');
   caja.replaceChildren();
   caja.hidden = !reserva;
+  // Si el caso no tiene turno se deja la caja oculta y se sale
   if (!reserva) return;
 
   const titulo = document.createElement('h3');
@@ -179,6 +176,7 @@ function pintarReservaVinculada(reserva) {
 
   const ul = document.createElement('ul');
   ul.className = 'observaciones';
+  // Se recorre la lista de observaciones que dejo el empleado en el turno
   for (const o of reserva.observaciones) {
     const li = document.createElement('li');
     const t = document.createElement('span');
@@ -189,6 +187,7 @@ function pintarReservaVinculada(reserva) {
     li.append(t, m);
     ul.append(li);
   }
+  // Si no hay observaciones se pone un mensaje
   if (reserva.observaciones.length === 0) {
     const li = document.createElement('li');
     li.className = 'observaciones__vacio';
@@ -198,16 +197,12 @@ function pintarReservaVinculada(reserva) {
   caja.append(ul);
 }
 
-/**
- * APUNTE SEGURIDAD DOM:
- * Siempre se inyectan los detalles con `textContent`. El cuerpo de una interacción
- * lo escribe un humano libremente en un área de texto y podría intentar inyectar
- * etiquetas `<script>` o `<img>` maliciosas. `textContent` neutraliza la amenaza.
- */
+// Funcion que pinta la lista de interacciones del caso
 function pintarInteracciones(lista) {
   const caja = document.getElementById('dc-interacciones');
   caja.replaceChildren();
 
+  // Se recorre la lista con for para crear un li por cada interaccion
   for (const i of lista) {
     const li = document.createElement('li');
     const titulo = document.createElement('span');
@@ -221,6 +216,7 @@ function pintarInteracciones(lista) {
     caja.append(li);
   }
 
+  // Si no hay interacciones se muestra un mensaje
   if (lista.length === 0) {
     const li = document.createElement('li');
     li.className = 'observaciones__vacio';
@@ -229,14 +225,16 @@ function pintarInteracciones(lista) {
   }
 }
 
+// Evento del boton cerrar, oculta el detalle y limpia el caso elegido
 document.getElementById('dc-cerrar').addEventListener('click', () => {
   detalleCaso.hidden = true;
   casoSeleccionado = null;
 });
 
-// Actualiza Estado y Prioridad //
+// Evento para guardar el estado y la prioridad del caso
 document.getElementById('dc-guardar').addEventListener('click', async () => {
   try {
+    // Se llama a pedir con PATCH para actualizar el caso en el servidor
     await pedir(`/crm/casos/${casoSeleccionado.idCaso}`, {
       metodo: 'PATCH',
       cuerpo: {
@@ -244,20 +242,22 @@ document.getElementById('dc-guardar').addEventListener('click', async () => {
         prioridad: document.getElementById('dc-prioridad').value,
       },
     });
+    // Se recarga la tabla y el detalle para ver los cambios
     await cargarCasos();
-    // Re-abrimos el caso para forzar la recarga visual de los datos frescos //
     await abrirCaso(casoSeleccionado.idCaso);
     avisar('Caso actualizado.', true);
   } catch (error) { avisar(mensajeError(error)); }
 });
 
-// Radica un nuevo mensaje/interacción dentro del hilo del caso //
+// Evento para registrar una interaccion nueva en el caso
 document.getElementById('i-guardar').addEventListener('click', async () => {
   const asunto = document.getElementById('i-asunto').value.trim();
   const detalle = document.getElementById('i-detalle').value.trim();
+  // Si falta el asunto o el detalle no se envia nada
   if (!asunto || !detalle) return avisar('Escribe el asunto y el detalle.');
 
   try {
+    // Se llama a pedir con POST para crear la interaccion con el cliente y el caso
     await pedir('/crm/interacciones', {
       metodo: 'POST',
       cuerpo: {
@@ -268,6 +268,7 @@ document.getElementById('i-guardar').addEventListener('click', async () => {
         detalle,
       },
     });
+    // Se limpian los campos y se vuelve a abrir el caso
     document.getElementById('i-asunto').value = '';
     document.getElementById('i-detalle').value = '';
     await abrirCaso(casoSeleccionado.idCaso);
@@ -276,47 +277,47 @@ document.getElementById('i-guardar').addEventListener('click', async () => {
   return undefined;
 });
 
-// --- Radicar un Caso Nuevo --- //
-
+// Boton para mostrar el panel de nuevo caso
 document.getElementById('btn-nuevo-caso').addEventListener('click', () => {
   document.getElementById('panel-nuevo-caso').hidden = false;
 });
 
+// Boton para ocultar el panel de nuevo caso
 document.getElementById('btn-cancelar-caso').addEventListener('click', () => {
   document.getElementById('panel-nuevo-caso').hidden = true;
 });
 
+// Evento del formulario para radicar un caso nuevo
 document.getElementById('form-caso').addEventListener('submit', async (evento) => {
+  // Se usa preventDefault para que la pagina no se recargue al enviar
   evento.preventDefault();
   avisoCrm.hidden = true;
 
+  // Objeto con los datos del caso que se mandan al servidor
   const cuerpo = {
     tipo: document.getElementById('c-tipo').value,
     asunto: document.getElementById('c-asunto').value.trim(),
     descripcion: document.getElementById('c-descripcion').value.trim(),
   };
 
-  // Dinamismo de Permisos:
-  // Estos dos campos solo los ve el personal. Si un cliente final abre esta 
-  // vista, solo puede crear un caso para SÍ MISMO. La API ignoraría cualquier 
-  // `idCliente` manual que enviara un cliente intentando suplantar a otro.
+  // Si se ve el campo de cliente (quien gestiona) hay que elegir el cliente
   if (!document.getElementById('campo-cliente-caso').hidden) {
     if (!clienteElegido) return avisar('Busca y selecciona un cliente.');
     cuerpo.idCliente = clienteElegido.idMembresia;
   }
+  // La prioridad solo se manda si el campo esta visible
   if (!document.getElementById('campo-prioridad').hidden) {
     cuerpo.prioridad = document.getElementById('c-prioridad').value;
   }
 
-  // Integración de Turnos (Agenda):
-  // El ID del turno sale del selector. Si el usuario llegó a esta vista 
-  // haciendo clic en "Radicar Caso" desde un turno en `agenda.js`, este `<select>` 
-  // ya vendrá pre-llenado gracias a la Query String.
+  // Si se eligio un turno se manda para relacionarlo con el caso
   const idTurno = document.getElementById('c-turno').value;
   if (idTurno) cuerpo.idReserva = idTurno;
 
   try {
+    // Se llama a pedir con POST para crear el caso
     const { caso } = await pedir('/crm/casos', { metodo: 'POST', cuerpo });
+    // Se limpia el formulario, se cierra el panel y se recargan los casos
     evento.target.reset();
     mostrarClienteElegido(null);
     document.getElementById('panel-nuevo-caso').hidden = true;
@@ -325,35 +326,32 @@ document.getElementById('form-caso').addEventListener('submit', async (evento) =
   } catch (error) { avisar(mensajeError(error)); }
 });
 
-// ------------------------------------------------------------------ //
-// Historial 360                                                      //
-// ------------------------------------------------------------------ //
-
+// Variable para saber que cliente se eligio en la busqueda
 let clienteElegido = null;
 
-/**
- * APUNTE DE RENDIMIENTO (Buscador "Debounce"):
- * Evita bombardear a la API mientras el usuario teclea el nombre del cliente.
- * El backend filtra con un LIMIT de 20 para proteger la memoria, y solo 
- * envía coincidencias relevantes.
- */
+// Variable para el temporizador de la busqueda
 let temporizadorBusqueda;
+// Evento que busca clientes mientras se escribe
 document.getElementById('c-cliente-busca').addEventListener('input', (e) => {
+  // Se espera 300 ms despues de la ultima tecla para no llamar la API en cada letra
   clearTimeout(temporizadorBusqueda);
   const termino = e.target.value.trim();
   temporizadorBusqueda = setTimeout(() => buscarClientes(termino), 300);
 });
 
+// Funcion que busca clientes por el texto escrito y muestra los resultados
 async function buscarClientes(termino) {
   const caja = document.getElementById('c-cliente-resultados');
   caja.replaceChildren();
 
-  // No busca si hay menos de 2 letras
+  // Si escribio menos de 2 letras no se busca
   if (termino.length < 2) return (caja.hidden = true);
 
   try {
+    // Se usa encodeURIComponent para que el texto vaya bien en la URL
     const { clientes } = await pedir(`/clientes?q=${encodeURIComponent(termino)}`);
 
+    // Se recorre la lista con for para crear un boton por cada cliente
     for (const c of clientes) {
       const li = document.createElement('li');
       const boton = document.createElement('button');
@@ -364,14 +362,14 @@ async function buscarClientes(termino) {
       nombre.textContent = `${c.nombres} ${c.apellidos}`;
       const datos = document.createElement('span');
       datos.className = 'resultado__datos';
+      // Se usa filter(Boolean) para quitar los datos vacios antes de unirlos
       datos.textContent = [c.email, c.telefono, c.documento].filter(Boolean).join(' · ');
 
       boton.append(nombre, datos);
+      // Al elegir el cliente se guarda y se cargan sus turnos
       boton.addEventListener('click', () => {
         clienteElegido = c;
-        // UX: Cambia la caja de texto por una etiqueta estática con el nombre elegido
         mostrarClienteElegido(`${c.nombres} ${c.apellidos} — ${c.email}`);
-        // Detona la carga de los turnos de ESA persona para el selector de 'Turno Vinculado'
         cargarTurnosDeCliente(c.idMembresia);
       });
 
@@ -379,6 +377,7 @@ async function buscarClientes(termino) {
       caja.append(li);
     }
 
+    // Si no hay resultados se muestra un mensaje
     if (clientes.length === 0) {
       const li = document.createElement('li');
       li.className = 'resultado__vacio';
@@ -392,12 +391,11 @@ async function buscarClientes(termino) {
   return undefined;
 }
 
-/** 
- * En la vista de Historial general, sí cargamos un `<select>`.
- * Son los primeros 20 clientes estáticos para navegar rápido.
- */
+// Funcion que llena el select de clientes para la pestaña de historial
 async function cargarClientesHistorial() {
+  // Si no tiene el permiso crm.ver_historial no se carga nada
   if (!puede('crm.ver_historial')) return;
+  // Se llama a pedir para traer los clientes de la empresa
   const { clientes } = await pedir('/clientes');
   const select = document.getElementById('h-cliente');
   select.replaceChildren(opcion('', 'Elige un cliente…'));
@@ -406,21 +404,17 @@ async function cargarClientesHistorial() {
   }
 }
 
-/**
- * APUNTE CRM: Consolidación.
- * Esto diferencia una lista de tickets de un verdadero CRM. Reúne todo el contexto 
- * de la persona (turnos, casos, interacciones) extraídos en una sola petición a 
- * la API. Ahorra tiempo crítico al asesor.
- */
+// Funcion que trae el historial completo de un cliente y lo pinta
 async function cargarHistorial(idCliente) {
   const caja = document.getElementById('h-resultado');
   caja.replaceChildren();
   if (!idCliente) return;
 
   try {
+    // Se llama a pedir con el id del cliente para traer turnos, casos e interacciones
     const datos = await pedir(`/clientes/${idCliente}/historial`);
 
-    // Ficha Resumen del Cliente
+    // Tarjeta con el nombre y los datos de contacto del cliente
     const ficha = document.createElement('section');
     ficha.className = 'tarjeta tarjeta--identidad';
     const nombre = document.createElement('h2');
@@ -433,7 +427,8 @@ async function cargarHistorial(idCliente) {
     ficha.append(nombre, contacto);
     caja.append(ficha);
 
-    // Renderiza las tres secciones delegando el formato a la función helper
+    // Se agrega un bloque para turnos, otro para casos y otro para interacciones
+    // A cada bloque se le pasan funciones que dicen que texto mostrar
     caja.append(
       bloqueHistorial('Turnos', datos.turnos,
         (t) => `${fecha(t.fecha)} · ${t.servicio} · ${t.prestador}`,
@@ -450,7 +445,7 @@ async function cargarHistorial(idCliente) {
   }
 }
 
-/** Helper de UI para pintar un bloque completo de historial con su título y lista */
+// Funcion que arma una seccion del historial con su titulo y su lista
 function bloqueHistorial(titulo, lista, linea, meta) {
   const seccion = document.createElement('section');
   seccion.className = 'tarjeta';
@@ -463,6 +458,7 @@ function bloqueHistorial(titulo, lista, linea, meta) {
 
   const ul = document.createElement('ul');
   ul.className = 'observaciones';
+  // Se recorre la lista y se usan las funciones linea y meta para el texto
   for (const item of lista) {
     const li = document.createElement('li');
     const t = document.createElement('span');
@@ -473,6 +469,7 @@ function bloqueHistorial(titulo, lista, linea, meta) {
     li.append(t, m);
     ul.append(li);
   }
+  // Si la lista esta vacia se pone un mensaje
   if (lista.length === 0) {
     const li = document.createElement('li');
     li.className = 'observaciones__vacio';
@@ -483,38 +480,37 @@ function bloqueHistorial(titulo, lista, linea, meta) {
   return seccion;
 }
 
-// Disparador reactivo para el selector de la pestaña "Historial"
+// Cuando se cambia el cliente del select se carga su historial
 document.getElementById('h-cliente').addEventListener('change', (e) => {
   cargarHistorial(e.target.value);
 });
 
-// ------------------------------------------------------------------ //
-// Pestañas, Empresa y Arranque                                       //
-// ------------------------------------------------------------------ //
-
+// Pestañas del CRM, al hacer clic se muestra su panel y se ocultan los otros
 const grupoPestanas = document.getElementById('pestanas-crm');
 for (const pestana of grupoPestanas.querySelectorAll('.pestana')) {
   pestana.addEventListener('click', () => {
     for (const otra of grupoPestanas.querySelectorAll('.pestana')) {
       const activa = otra === pestana;
+      // Se cambia aria-selected para la accesibilidad
       otra.setAttribute('aria-selected', String(activa));
       document.getElementById(otra.dataset.panel).hidden = !activa;
     }
   });
 }
 
-/** Lo propio de esta pantalla. El menú lo maneja js/menu.js. */
+// Funcion que oculta o muestra partes de la pantalla segun los permisos
 function aplicarPermisos() {
-  // Controles de administrador vs cliente
   const gestiona = puede('casos.gestionar');
   document.getElementById('campo-cliente-caso').hidden = !gestiona;
   document.getElementById('campo-prioridad').hidden = !gestiona;
 
   document.getElementById('tab-historial').hidden = !puede('crm.ver_historial');
+  // El boton de nuevo caso sale si puede crear o gestionar casos
   document.getElementById('btn-nuevo-caso').hidden =
     !puede('casos.crear') && !gestiona;
 }
 
+// Funcion que llena el selector con las empresas del usuario
 function pintarSelectorEmpresa() {
   const datos = sesionActual();
   selectorEmpresa.replaceChildren();
@@ -523,39 +519,35 @@ function pintarSelectorEmpresa() {
     o.selected = empresa.idEmpresa === datos.empresaActiva?.idEmpresa;
     selectorEmpresa.append(o);
   }
+  // Si solo tiene una empresa el selector se oculta
   selectorEmpresa.hidden = datos.empresas.length < 2;
 }
 
+// Funcion que carga los permisos y los datos de la pantalla
 async function cargarTodo() {
-  // Los permisos deciden qué se pinta en pantalla. 
-  // Es vital que esto corra PRIMERO de forma síncrona, antes de los `await` HTTP.
   permisos = sesionActual().empresaActiva?.permisos ?? [];
   aplicarPermisos();
   pintarSelectorEmpresa();
-  
+
+  // Se usa Promise.all para traer los casos y los clientes al mismo tiempo
   await Promise.all([cargarCasos(), cargarClientesHistorial()]);
 
-  // APUNTE (Cross-Site Linkage):
-  // Atrapa los parámetros de la URL si el usuario hizo clic en "Radicar Caso" 
-  // en la vista de la Agenda.
+  // Se leen los parametros de la URL por si se viene desde la agenda o clientes
   const params = new URLSearchParams(location.search);
   const idReserva = params.get('reserva');
   const idCliente = params.get('cliente');
   const nombreCliente = params.get('nombre');
 
-  // Llega desde un turno (agenda) o desde la ficha del cliente (clientes):
-  // abre el formulario con el cliente, y el turno si viene.
-  // Solo lo usa quien gestiona casos (los que ven el campo de cliente).
   const gestiona = !document.getElementById('campo-cliente-caso').hidden;
+  // Si llego un turno o un cliente en la URL se abre el formulario ya lleno
   if ((idReserva || idCliente) && gestiona) {
-    // Se limpia la URL: al recargar no se vuelve a abrir el formulario.
+    // Se quitan los parametros de la URL para que no se repita al recargar
     history.replaceState({}, '', 'crm.html');
     document.getElementById('panel-nuevo-caso').hidden = false;
 
     if (idCliente) {
       clienteElegido = { idMembresia: idCliente };
       mostrarClienteElegido(nombreCliente ?? 'Cliente seleccionado');
-      // Llena el selector de turnos de ese cliente (y deja elegido el del enlace).
       await cargarTurnosDeCliente(idCliente, idReserva);
     }
     avisar(idReserva
@@ -564,20 +556,19 @@ async function cargarTodo() {
   }
 }
 
-/**
- * Carga los turnos (AGENDA) de un cliente específico para rellenar 
- * el desplegable "Turno Relacionado" al radicar un nuevo caso CRM.
- */
+// Funcion que trae los turnos del cliente para relacionarlos con el caso
 async function cargarTurnosDeCliente(idCliente, idPreseleccionado = null) {
   const select = document.getElementById('c-turno');
   select.replaceChildren(opcion('', 'Sin turno relacionado'));
   if (!idCliente) return;
 
   try {
+    // Se llama a pedir con el id del cliente para traer sus turnos
     const { turnos } = await pedir(`/crm/clientes/${idCliente}/turnos`);
     for (const t of turnos) {
       const o = opcion(t.idReserva,
         `${fecha(t.fecha)} · ${t.servicio} · ${t.prestador} · ${t.estado}`);
+      // Se deja marcado el turno que venia en la URL
       o.selected = t.idReserva === idPreseleccionado;
       select.append(o);
     }
@@ -586,7 +577,7 @@ async function cargarTurnosDeCliente(idCliente, idPreseleccionado = null) {
   }
 }
 
-/** Helpers de UI para el buscador */
+// Funcion que muestra el cliente elegido o vuelve a mostrar la busqueda
 function mostrarClienteElegido(texto) {
   const caja = document.getElementById('c-cliente-elegido-caja');
   const busca = document.getElementById('c-cliente-busca');
@@ -595,6 +586,7 @@ function mostrarClienteElegido(texto) {
     document.getElementById('c-cliente-elegido').value = texto;
     caja.hidden = false;
     busca.hidden = true;
+  // Si no hay texto se limpia el cliente y se vuelve a mostrar el buscador
   } else {
     clienteElegido = null;
     caja.hidden = true;
@@ -604,36 +596,44 @@ function mostrarClienteElegido(texto) {
   document.getElementById('c-cliente-resultados').hidden = true;
 }
 
+// Boton para cambiar el cliente, limpia el elegido y sus turnos
 document.getElementById('c-cliente-cambiar').addEventListener('click', () => {
   mostrarClienteElegido(null);
   document.getElementById('c-turno').replaceChildren(opcion('', 'Sin turno relacionado'));
 });
 
-// Selector global de Tenancy
+// Al cambiar de empresa se pide un token nuevo con esa empresa y se recarga todo
 selectorEmpresa.addEventListener('change', async () => {
   selectorEmpresa.disabled = true;
   try {
     await elegirEmpresa(selectorEmpresa.value);
     await cargarTodo();
+  // Se usa finally para volver a activar el selector aunque falle
   } finally {
     selectorEmpresa.disabled = false;
   }
 });
 
+// Boton para cerrar sesion y volver al inicio
 document.getElementById('btn-salir').addEventListener('click', async () => {
   await salir();
   location.replace('index.html');
 });
 
+// Funcion que arranca la pantalla, primero revisa la sesion
 async function iniciar() {
+  // Se llama a restaurarSesion para renovar el token con la cookie del refresh
   const datos = await restaurarSesion();
+  // Si no hay sesion o falta elegir empresa se manda al login
   if (!datos || datos.requiereSeleccion) return location.replace('index.html');
+  // Si tiene que cambiar la contraseña se manda a esa pantalla
   if (datos.debeCambiarPassword) return location.replace('cambiar-password.html');
 
   if (!datos.empresaActiva) {
     cargando.textContent = 'Elige una empresa para ver su CRM.';
     return;
   }
+  // Si la empresa no tiene el modulo CRM no se carga la pantalla
   if (!datos.empresaActiva.modulos.includes('CRM')) {
     cargando.textContent = 'Esta empresa no tiene contratado el módulo de CRM.';
     return;
@@ -644,10 +644,12 @@ async function iniciar() {
   contenido.hidden = false;
 }
 
+// Se llama a iniciar y si falla se revisa que error fue
 iniciar().catch((error) => {
   if (error?.codigo === 'DEBE_CAMBIAR_PASSWORD') {
     return location.replace('cambiar-password.html');
   }
+  // Si el error es de token o de sesion se manda al login
   const esSesion = ['SIN_TOKEN', 'TOKEN_INVALIDO', 'REFRESH_INVALIDO',
                     'REFRESH_EXPIRADO', 'SIN_REFRESH_TOKEN'].includes(error?.codigo);
   if (esSesion) return location.replace('index.html');

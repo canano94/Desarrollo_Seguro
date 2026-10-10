@@ -25,3 +25,6 @@ npm-debug.log*
 .idea/
 Thumbs.db
 Desktop.ini
+
+# Respaldo de comentarios
+_respaldo_comentarios/

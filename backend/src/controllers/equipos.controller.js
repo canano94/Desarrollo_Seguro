@@ -1,16 +1,17 @@
+// Se importan las funciones del servicio de equipos
 import * as equiposService from '../services/equipos.service.js';
 
+// Funcion corta para saber si el usuario tiene un permiso
 const puede = (req, permiso) => req.usuario.permisos.includes(permiso);
 
-/**
- * Ámbito de equipos: null = toda la empresa (equipos.ver_todos);
- * si no, solo los prestadores asignados a la persona.
- */
+// Funcion que devuelve el ambito del usuario
+// Si puede ver todos los equipos devuelve null, si no devuelve sus prestadores
 const ambitoDe = (req) => (puede(req, 'equipos.ver_todos') ? null : (req.usuario.prestadores ?? []));
 
-/* --- Equipos ------------------------------------------------------- */
-
+// Se exporta la funcion listarEquipos para usarla en las rutas
+// Trae los equipos de la empresa segun el ambito del usuario
 export async function listarEquipos(req, res, next) {
+  // Se usa try/catch para capturar el error y mandarlo al middleware
   try {
     res.json({
       equipos: await equiposService.listarEquipos(req.usuario.idEmpresa, ambitoDe(req)),
@@ -18,7 +19,7 @@ export async function listarEquipos(req, res, next) {
   } catch (error) { next(error); }
 }
 
-/** Equipos que un cliente tiene hoy, para la pestaña Equipos de su ficha. */
+// Funcion que trae los equipos de un cliente
 export async function equiposDeCliente(req, res, next) {
   try {
     res.json({
@@ -29,6 +30,7 @@ export async function equiposDeCliente(req, res, next) {
   } catch (error) { next(error); }
 }
 
+// Funcion que trae el detalle de un equipo segun su id
 export async function detalleEquipo(req, res, next) {
   try {
     res.json({
@@ -37,6 +39,7 @@ export async function detalleEquipo(req, res, next) {
   } catch (error) { next(error); }
 }
 
+// Funcion para crear un equipo nuevo, se guarda quien lo creo con idMembresia
 export async function crearEquipo(req, res, next) {
   try {
     const equipo = await equiposService.crearEquipo(
@@ -46,6 +49,7 @@ export async function crearEquipo(req, res, next) {
   } catch (error) { next(error); }
 }
 
+// Funcion para actualizar los datos de un equipo
 export async function actualizarEquipo(req, res, next) {
   try {
     res.json({
@@ -56,6 +60,7 @@ export async function actualizarEquipo(req, res, next) {
   } catch (error) { next(error); }
 }
 
+// Funcion para asignar un equipo a un cliente
 export async function asignarEquipocliente(req, res, next) {
   try {
     res.json({
@@ -66,20 +71,17 @@ export async function asignarEquipocliente(req, res, next) {
   } catch (error) { next(error); }
 }
 
-/* --- Mantenimientos ------------------------------------------------ */
-
-/**
- * Quien tiene mantenimiento.gestionar puede registrar a nombre de otro
- * empleado; los demás, siempre a su propio nombre. El spread pone
- * idEmpleado AL FINAL para pisar cualquier valor que venga en el body.
- */
+// Funcion para registrar un mantenimiento (hoja de servicio) de un equipo
 export async function registrarMantenimiento(req, res, next) {
   try {
+    // Si tiene el permiso mantenimiento.gestionar puede poner a otro empleado
+    // Si no, el mantenimiento queda a nombre del mismo usuario
     const puedeAsignarAOtros = puede(req, 'mantenimiento.gestionar');
     const idEmpleado = puedeAsignarAOtros && req.body.idEmpleado
       ? req.body.idEmpleado
       : req.usuario.idUsuario;
 
+    // Objeto con los datos del body mas el empleado y el equipo de la URL
     const datos = { ...req.body, idEmpleado, idEquipo: req.params.idEquipo };
 
     const mantenimiento = await equiposService.registrarMantenimiento(
@@ -89,6 +91,7 @@ export async function registrarMantenimiento(req, res, next) {
   } catch (error) { next(error); }
 }
 
+// Funcion que trae los mantenimientos de un equipo
 export async function listarMantenimientos(req, res, next) {
   try {
     res.json({
@@ -99,6 +102,7 @@ export async function listarMantenimientos(req, res, next) {
   } catch (error) { next(error); }
 }
 
+// Funcion que trae el detalle de un mantenimiento
 export async function detalleMantenimiento(req, res, next) {
   try {
     res.json({
@@ -109,8 +113,7 @@ export async function detalleMantenimiento(req, res, next) {
   } catch (error) { next(error); }
 }
 
-/* --- Apoyo para formularios ---------------------------------------- */
-
+// Funcion que trae los prestadores segun el ambito del usuario
 export async function listarPrestadores(req, res, next) {
   try {
     res.json({
@@ -119,8 +122,8 @@ export async function listarPrestadores(req, res, next) {
   } catch (error) { next(error); }
 }
 
-/* --- Ficha pública del QR (sin sesión) ----------------------------- */
-
+// Funcion que trae la ficha de un equipo leyendo el codigo QR
+// Aqui la empresa llega en la URL porque esta ruta se puede abrir sin sesion
 export async function fichaPorQR(req, res, next) {
   try {
     res.json({
@@ -129,7 +132,7 @@ export async function fichaPorQR(req, res, next) {
   } catch (error) { next(error); }
 }
 
-/** Escáner del celular: token del QR -> id del equipo. */
+// Funcion que busca el id del equipo a partir del token del QR, dentro de la empresa del usuario
 export async function equipoPorQR(req, res, next) {
   try {
     res.json(await equiposService.idEquipoPorQR(req.usuario.idEmpresa, req.params.qrToken));

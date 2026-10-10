@@ -1,57 +1,30 @@
-// Define la URL base a donde apuntarán todas las peticiones fetch de la app //
+// Constante con la ruta base de la API
 const BASE = '/api';
-/**
- * APUNTE ESTRELLA DE SEGURIDAD FRONTEND: ¿Dónde guardar el Token?
- * El access token vive AQUÍ, en una variable local del módulo, es decir, 
- * en la memoria viva (RAM) de la pestaña del navegador.
- * 
- * NUNCA se guarda en localStorage ni en sessionStorage. 
- * ¿Por qué? Porque cualquier script malicioso de terceros incrustado en tu 
- * página (Ataque XSS) podría leer localStorage con un simple `localStorage.getItem()`. 
- * Al estar en una variable local de JS, ningún otro script puede acceder a él.
- * 
- * Si el usuario recarga la página (F5), el access token se destruye de la memoria. 
- * Esto NO es un problema: la aplicación está diseñada para usar la cookie segura 
- * (httpOnly) del refresh token para pedir silenciosamente uno nuevo al servidor 
- * ejecutando `restaurarSesion()`.
- */
+// Variable para guardar el token de acceso, solo queda en memoria y no en localStorage
+// Asi si alguien mete codigo en la pagina no lo puede leer de ahi tan facil
 let accessToken = null;
+// Variable para guardar los datos de la sesion (usuario, empresas, permisos)
 let sesion = null;
 
-/** 
- * Qué empresa tenía abierta el usuario por última vez.
- * Esto NO es un secreto, es una simple preferencia de navegación (UX). 
- * El servidor siempre verificará la membresía real en el backend, por eso 
- * este dato sí es seguro almacenarlo en sessionStorage. 
- */
+// Constante con el nombre con el que se guarda la empresa elegida en sessionStorage
 const CLAVE_EMPRESA = 'empresaActiva';
 
-// Retorna el objeto completo con los datos del usuario y la empresa actual //
+// Se exporta la funcion sesionActual para que las otras paginas lean los datos de la sesion
 export function sesionActual() {
   return sesion;
 }
 
-/** 
- * Evalúa si la contraseña actual es una clave temporal (Ej. "A1gT5...").
- * Mientras esto sea true, la API backend rechazará automáticamente con un 403 
- * casi cualquier acción que intente el usuario, forzándolo a ir a la vista de 
- * cambio de contraseña.
- */
+// Funcion que dice si el usuario tiene que cambiar la contraseña antes de seguir
 export function debeCambiarPassword() {
   return sesion?.debeCambiarPassword === true;
 }
 
-// Retorna el ID de la empresa que quedó guardado en el navegador //
+// Funcion que trae la empresa que el usuario eligio la ultima vez
 export function empresaRecordada() {
   return sessionStorage.getItem(CLAVE_EMPRESA);
 }
 
-/**
- * Clase de Error personalizada para el Frontend.
- * Extiende la clase Error nativa de JS, permitiéndonos empaquetar de forma 
- * ordenada los códigos HTTP y los detalles que nos devuelve la API backend, 
- * facilitando pintar mensajes de error amigables en el HTML.
- */
+// Clase para los errores de la API, guarda el codigo, el status y los detalles que manda el servidor
 class ErrorApi extends Error {
   constructor(mensaje, codigo, status, detalles) {
     super(mensaje);
@@ -61,50 +34,41 @@ class ErrorApi extends Error {
   }
 }
 
-/**
- * Función central de comunicación (Wrapper de Fetch).
- * Todas las peticiones de la aplicación pasan obligatoriamente por aquí.
- * 
- * @param {string} ruta - El endpoint de la API (Ej. '/auth/login').
- * @param {Object} opciones - Configuración de método, body y si requiere token.
- */
+// Funcion que hace la peticion al servidor con fetch y devuelve la respuesta en JSON
 async function llamar(ruta, { metodo = 'GET', cuerpo, conToken = true } = {}) {
+  // Objeto con las opciones del fetch, credentials include es para que se mande la cookie del refresh token
   const opciones = {
     method: metodo,
     headers: {},
-    // VITAL PARA CORS MULTIPUERTO:
-    // Si el front está en el puerto 5173 y la API en el 3000, el navegador 
-    // bloqueará el envío de cookies a menos que declares explícitamente 'include'.
-    // Sin esto, el sistema de Refresh Tokens fallará silenciosamente.
     credentials: 'include',
   };
 
-  // Si enviamos un JSON en el body, configuramos la cabecera correspondiente //
+  // Si hay cuerpo se manda como JSON
   if (cuerpo !== undefined) {
     opciones.headers['Content-Type'] = 'application/json';
     opciones.body = JSON.stringify(cuerpo);
   }
-  
-  // Si la petición requiere seguridad y ya tenemos el token en memoria, lo inyectamos //
+
+  // Si la ruta necesita token se pone en el header Authorization
   if (conToken && accessToken) {
     opciones.headers.Authorization = `Bearer ${accessToken}`;
   }
 
   let respuesta;
+  // Se usa try/catch porque si no hay conexion el fetch falla y se lanza un error propio
   try {
     respuesta = await fetch(BASE + ruta, opciones);
   } catch {
-    // Si fetch falla antes de recibir status (Ej. el servidor está apagado o no hay internet) //
     throw new ErrorApi('No se pudo conectar con el servidor.', 'SIN_CONEXION', 0);
   }
 
-  // Si la API responde 204 No Content (como en los deletes o logouts), no hay JSON que parsear //
+  // Si el servidor responde 204 no hay datos que leer
   if (respuesta.status === 204) return null;
 
-  // Intentamos parsear la respuesta JSON. Si falla, asignamos un objeto vacío como respaldo //
+  // Se lee el JSON y si viene vacio se deja un objeto vacio para que no se rompa
   const datos = await respuesta.json().catch(() => ({}));
 
-  // Manejo centralizado de errores. Si la respuesta no es 200/201, lanzamos el ErrorApi //
+  // Si la respuesta no es correcta se lanza un ErrorApi con el mensaje que mando el servidor
   if (!respuesta.ok) {
     const error = datos.error ?? {};
     throw new ErrorApi(
@@ -118,65 +82,48 @@ async function llamar(ruta, { metodo = 'GET', cuerpo, conToken = true } = {}) {
   return datos;
 }
 
-/**
- * Guarda los datos de autenticación devueltos por el login o el refresh 
- * en las variables de memoria (accessToken y sesion).
- */
+// Funcion para guardar el token y los datos de la sesion despues de entrar o renovar
 function guardarSesion(datos) {
   accessToken = datos.accessToken;
-  // El backend manda la flag dentro de `usuario`. La elevamos a la raíz 
-  // para que toda la UI pueda leerla fácilmente.
+  // Se revisa si el usuario debe cambiar la contraseña, venga donde venga ese dato
   datos.debeCambiarPassword =
     datos.debeCambiarPassword ?? datos.usuario?.debeCambiarPassword ?? false;
-  
+
   sesion = datos;
-  
-  // Guardamos la preferencia de empresa en la sesión del navegador //
+
+  // Si hay empresa activa se guarda en sessionStorage para recordarla al recargar
   if (datos.empresaActiva) {
     sessionStorage.setItem(CLAVE_EMPRESA, datos.empresaActiva.idEmpresa);
   }
   return datos;
 }
 
-/** 
- * Función proxy inteligente para peticiones protegidas.
- * 
- * Si el backend responde 'TOKEN_EXPIRADO' (porque pasaron 15 minutos), 
- * esta función atrapa el error silenciosamente, ejecuta `refrescar()` 
- * usando la cookie y, si obtiene un nuevo token, repite automáticamente 
- * la petición original. ¡La experiencia del usuario nunca se interrumpe! 
- */
+// Se exporta la funcion pedir que usan todas las paginas para llamar la API
+// Si el token vencio lo renueva y vuelve a intentar la peticion una vez
 export async function pedir(ruta, opciones = {}) {
   try {
     return await llamar(ruta, opciones);
   } catch (error) {
-    // Si el error es diferente a caducidad de token, dejamos que explote normal //
+    // Si el error no es por el token se lanza tal cual
     if (error.codigo !== 'TOKEN_EXPIRADO' && error.codigo !== 'SIN_TOKEN') throw error;
-    
-    // Auto-Renovación silenciosa //
+
+    // Se llama a refrescar para pedir un token nuevo con la cookie
     await refrescar();
-    // Si la renovación no trajo token (por ejemplo, falta elegir empresa),
-    // reintentar solo repetiría el mismo SIN_TOKEN: se avisa de una vez.
     if (!accessToken) throw error;
     return llamar(ruta, opciones);
   }
 }
 
-/**
- * Pide un nuevo Access Token enviando la cookie segura HTTPOnly.
- *
- * UNA SOLA RENOVACIÓN A LA VEZ: si dos peticiones fallan al mismo tiempo
- * (por ejemplo, Promise.all de casos + clientes), las dos esperan la
- * MISMA renovación. Sin esto saldrían dos /auth/refresh con la misma
- * cookie; como el refresh token rota, el segundo llegaría con una cookie
- * ya usada, el backend lo tomaría como robo (detección de reutilización)
- * y cerraría la sesión.
- */
+// Variable para guardar la renovacion que esta en curso
 let renovacionEnCurso = null;
 
+// Funcion para renovar el token con el refresh token que va en la cookie httpOnly
 export function refrescar() {
+  // Si ya hay una renovacion en curso se reutiliza, asi no se piden dos tokens al mismo tiempo
+  // Esto importa porque el refresh token se rota y el segundo pedido fallaria
   if (!renovacionEnCurso) {
     const idEmpresa = empresaRecordada();
+    // Se llama al servidor para renovar y se le manda la empresa que estaba elegida
     renovacionEnCurso = llamar('/auth/refresh', {
       metodo: 'POST',
       conToken: false,
@@ -188,11 +135,7 @@ export function refrescar() {
   return renovacionEnCurso;
 }
 
-/** 
- * Proceso de autenticación inicial. 
- * Fíjate que el login ya no pide la empresa, centralizando la identidad 
- * solo en correo y contraseña.
- */
+// Funcion para iniciar sesion con el correo y la contraseña
 export async function entrar(email, password) {
   const datos = await llamar('/auth/login', {
     metodo: 'POST',
@@ -202,10 +145,7 @@ export async function entrar(email, password) {
   return guardarSesion(datos);
 }
 
-/** 
- * Sirve para elegir empresa si el usuario tiene varias (pantalla post-login), 
- * o para saltar de un tenant a otro durante la operación del sistema. 
- */
+// Funcion para elegir con que empresa se va a trabajar, el servidor devuelve un token de esa empresa
 export async function elegirEmpresa(idEmpresa) {
   const datos = await llamar('/auth/empresa', {
     metodo: 'POST',
@@ -215,10 +155,7 @@ export async function elegirEmpresa(idEmpresa) {
   return guardarSesion(datos);
 }
 
-/**
- * Función que se ejecuta al abrir o recargar cualquier página de la app 
- * para verificar si la cookie de sesión sigue viva.
- */
+// Funcion para recuperar la sesion al cargar la pagina, si no hay cookie valida devuelve null
 export async function restaurarSesion() {
   try {
     return await refrescar();
@@ -227,15 +164,11 @@ export async function restaurarSesion() {
   }
 }
 
-/**
- * Destruye la sesión de forma limpia.
- * 1. Llama al backend para revocar el Refresh Token de la BD y borrar la Cookie.
- * 2. Vacia la memoria RAM (`accessToken = null`).
- * 3. Limpia las preferencias visuales de `sessionStorage`.
- */
+// Funcion para cerrar sesion, el servidor borra la cookie
 export async function salir() {
   try {
     await llamar('/auth/logout', { metodo: 'POST', conToken: false });
+  // En el finally se limpia el token y la sesion aunque falle la peticion
   } finally {
     accessToken = null;
     sesion = null;
@@ -243,27 +176,23 @@ export async function salir() {
   }
 }
 
-// --- Métodos de acceso rápido a endpoints de perfil --- //
+// Funcion que trae los datos del perfil del usuario
 export function obtenerPerfil() {
   return pedir('/auth/perfil');
 }
 
+// Funcion para guardar los cambios del perfil con PATCH
 export function guardarPerfil(cambios) {
   return pedir('/auth/perfil', { metodo: 'PATCH', cuerpo: cambios });
 }
 
-/**
- * El access token es POR EMPRESA. Quien pertenece a varias empresas y
- * entra con contraseña temporal recibe "requiereSeleccion" y ningún
- * token, así que POST /auth/password fallaba con SIN_TOKEN. Antes de
- * cambiar la contraseña se elige una empresa (la recordada o la primera)
- * solo para obtener el token; la contraseña es de la persona, no de la
- * empresa, así que cualquiera de sus empresas sirve.
- */
+// Funcion para asegurar que haya token antes de cambiar la contraseña
 async function asegurarToken() {
+  // Si ya hay token no hace nada, si no hay empresas tampoco
   if (accessToken) return;
   const empresas = sesion?.empresas ?? [];
   if (empresas.length === 0) return;
+  // Se usa la empresa recordada si el usuario todavia pertenece a ella, si no se usa la primera
   const recordada = empresaRecordada();
   const idEmpresa = empresas.some((e) => e.idEmpresa === recordada)
     ? recordada
@@ -271,6 +200,7 @@ async function asegurarToken() {
   await elegirEmpresa(idEmpresa);
 }
 
+// Se exporta la funcion cambiarPassword que manda la contraseña actual y la nueva al servidor
 export async function cambiarPassword(passwordActual, passwordNueva) {
   await asegurarToken();
   return pedir('/auth/password', {

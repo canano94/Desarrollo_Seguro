@@ -1,10 +1,10 @@
-// Importa el enrutador de Express //
+// Se importa Router de express para crear las rutas
 import { Router } from 'express';
-// Importa el controlador de la agenda //
+// Se importa el controlador de agenda
 import * as ctrl from '../controllers/agenda.controller.js';
-// Importa el validador //
+// Se importa validar para revisar el body con zod
 import { validar } from '../validators/auth.schemas.js';
-// Importa los esquemas de validación exclusivos de reservas y prestadores //
+// Se importan los esquemas de zod de la agenda
 import {
   crearPrestadorSchema,
   crearServicioSchema,
@@ -18,9 +18,9 @@ import {
   actualizarServicioSchema,
   actualizarMiembroAgendaSchema,
 } from '../validators/agenda.schemas.js';
-// Importa los validadores genéricos de UUIDs y query params //
+// Se importan los validadores del id en la URL y de la query
 import { validarParamUuid, validarConsulta } from '../validators/admin.schemas.js';
-// Importa las barreras de seguridad del sistema multitenant //
+// Se importan los middlewares de autenticacion y permisos
 import {
   autenticar,
   exigirEmpresaActiva,
@@ -30,115 +30,95 @@ import {
   exigirPasswordDefinitiva,
 } from '../middleware/auth.js';
 
-// Instancia el enrutador //
+// Se crea el router de la agenda
 const router = Router();
 
-/**
- * Bloqueo maestro del módulo (Arquitectura SaaS):
- * Estas condiciones aplican a TODAS las rutas de agendamiento:
- *  1. autenticar          -> El token no ha sido alterado ni expiró.
- *  2. exigirPasswordDef   -> No está usando una clave temporal.
- *  3. exigirEmpresaActiva -> El usuario tiene un tenant seleccionado.
- *  4. exigirModulo('AGENDA')-> MAGIA PURA: Si la empresa no está pagando la 
- *                            suscripción del módulo AGENDA, devuelve un 402 Payment Required 
- *                            sin ejecutar una sola línea de código más.
- */
+// Todas las rutas piden token, contraseña definitiva, empresa activa y el modulo AGENDA activo
 router.use(autenticar, exigirPasswordDefinitiva, exigirEmpresaActiva, exigirModulo('AGENDA'));
 
-// --- Prestadores --------------------------------------------------- //
-
+// Ruta para listar los prestadores
 router.get('/prestadores', ctrl.prestadores);
+// Ruta para crear un prestador, primero pide el permiso y valida los datos
 router.post('/prestadores',
   exigirPermisos('prestadores.gestionar'),
   validar(crearPrestadorSchema),
   ctrl.crearPrestador);
 
-// --- Servicios ----------------------------------------------------- //
-
+// Ruta para listar los servicios
 router.get('/servicios', ctrl.servicios);
+// Ruta para crear un servicio, pide el permiso servicios.gestionar y valida los datos
 router.post('/servicios',
   exigirPermisos('servicios.gestionar'),
   validar(crearServicioSchema),
   ctrl.crearServicio);
 
-// --- Miembros ------------------------------------------------------ //
-
-/**
- * ¿Cómo funciona el acceso dinámico (ámbito)?
- * El permiso 'empleados.gestionar' lo tienen tanto el PRESTADOR como el ADMIN_EMPRESA. 
- * El ámbito configurado en el token decide a quién ve cada uno en el controlador: 
- * el administrador ve a todos, el prestador solo a los suyos.
- */
+// Ruta para listar los miembros, solo con el permiso empleados.gestionar
 router.get('/miembros', exigirPermisos('empleados.gestionar'), ctrl.miembros);
+// Ruta para invitar un miembro, pide el permiso y valida los datos
 router.post('/miembros',
   exigirPermisos('empleados.gestionar'),
   validar(invitarMiembroSchema),
   ctrl.invitarMiembro);
 
-// --- Reservas ------------------------------------------------------ //
-
-/**
- * Consulta de reservas generales.
- * Va sin permiso extra porque el controlador decide inteligente y 
- * automáticamente si ve TODAS las de la empresa o solo LAS SUYAS.
- */
+// Ruta para listar las reservas, el controlador filtra segun los permisos
 router.get('/reservas', ctrl.reservas);
 
+// Ruta para crear una reserva, pide el permiso reservas.crear y valida los datos
 router.post('/reservas',
   exigirPermisos('reservas.crear'),
   validar(crearReservaSchema),
   ctrl.crearReserva);
 
-/**
- * Consulta de horas disponibles.
- * Va sin permiso extra de lectura, porque un cliente final (sin rol administrativo) 
- * necesita ver las horas libres para elegir su turno. Por seguridad, esto 
- * SOLO devuelve inicio y fin, ocultando quién más tiene cita.
- */
+// Ruta para ver los horarios libres, valida el servicio y la fecha que llegan en la query
 router.get('/disponibilidad', validarConsulta(disponibilidadSchema), ctrl.disponibilidad);
 
+// Ruta para cambiar el estado de una reserva, valida el id y el body
 router.patch('/reservas/:idReserva/estado',
   exigirPermisos('reservas.aprobar'),
   validarParamUuid('idReserva'),
   validar(cambiarEstadoReservaSchema),
   ctrl.cambiarEstadoReserva);
 
+// Ruta para reprogramar una reserva
 router.patch('/reservas/:idReserva/reprogramar',
   exigirPermisos('reservas.reprogramar'),
   validarParamUuid('idReserva'),
   validar(reprogramarReservaSchema),
   ctrl.reprogramarReserva);
 
-// --- Observaciones sobre un turno ---------------------------------- //
-
+// Ruta para ver las observaciones de una reserva
 router.get('/reservas/:idReserva/observaciones',
   exigirPermisos('reservas.observar'),
   validarParamUuid('idReserva'),
   ctrl.observaciones);
 
+// Ruta para agregar una observacion a una reserva
 router.post('/reservas/:idReserva/observaciones',
   exigirPermisos('reservas.observar'),
   validarParamUuid('idReserva'),
   validar(observacionSchema),
   ctrl.agregarObservacion);
 
+// Ruta para editar un prestador
 router.patch('/prestadores/:idPrestador',
   exigirPermisos('prestadores.gestionar'),
   validarParamUuid('idPrestador'),
   validar(actualizarPrestadorSchema),
   ctrl.actualizarPrestador);
 
+// Ruta para editar un servicio
 router.patch('/servicios/:idServicio',
   exigirPermisos('servicios.gestionar'),
   validarParamUuid('idServicio'),
   validar(actualizarServicioSchema),
   ctrl.actualizarServicio);
 
+// Ruta para editar un miembro, basta con uno de los dos permisos
 router.patch('/miembros/:idMembresia',
   exigirAlgunPermiso('empleados.gestionar', 'clientes.gestionar'),
   validarParamUuid('idMembresia'),
   validar(actualizarMiembroAgendaSchema),
   ctrl.actualizarMiembro);
 
-// Exporta el enrutador configurado //
+// Se exporta el router para montarlo en la app
 export default router;

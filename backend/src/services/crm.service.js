@@ -1,44 +1,21 @@
+// Se importa conEmpresa para abrir la conexion con la empresa y que la RLS filtre los datos
 import { conEmpresa } from '../db/pool.js';
+// Se importa AppError para lanzar los errores con su codigo
 import { AppError } from '../utils/errors.js';
+// Se importan las funciones de clientes para buscar la ficha del cliente y armar el nombre
 import {
   idClienteDeMembresia,
   SQL_CLIENTE_DE_MEMBRESIA_P2,
   nombreCompleto,
 } from './clientes.service.js';
-/**
- * El usuario busca TEXTO: % y _ no deben funcionar como comodines del
- * LIKE (buscar "%" traería a todos los clientes). En PostgreSQL la barra
- * invertida ya es el escape por defecto del LIKE.
- */
+// Funcion para escapar los caracteres % y _ del texto que se busca con ILIKE
 const escaparLike = (texto) => texto.replace(/[\\%_]/g, (c) => `\\${c}`);
 
-/**
- * TODO en este archivo corre dentro de conEmpresa(), igual que agenda.
- * Eso significa que RLS filtra por empresa automáticamente y verás
- * consultas sin "WHERE id_empresa": no es un olvido, es el motor.
- *
- * DECISIÓN DE DISEÑO: los casos NO se filtran por ámbito de prestador.
- * Un caso pertenece a la empresa, no a una sede — "la atención
- * telefónica fue mala" no es de Chapinero ni de Usaquén. Lo que sí
- * cambia por rol es el ALCANCE: un empleado ve solo los suyos.
- *
- * DESDE LA SEPARACIÓN DE CLIENTES: c.id_cliente apunta a app.clientes
- * (la ficha), no a una membresía. El PERSONAL (asignado, autor de una
- * interacción, empleado de un turno) sigue siendo membresía + usuario.
- */
-
-// ================================================================== //
-// CASOS DE SERVICIO (PQR)                                            //
-// ================================================================== //
-
-/**
- * @param alcance 'propios'  -> CLIENTE: solo los que radicó
- *                'asignados'-> EMPLEADO: solo los que le asignaron
- *                'ambito'   -> PRESTADOR: los de SUS sedes
- *                'todos'    -> ADMIN_EMPRESA: toda la empresa
- */
+// Se exporta la funcion listarCasos para usarla en el controlador
+// Trae los casos segun el alcance del usuario: los propios, los asignados o los de su ambito
 export async function listarCasos(idEmpresa, idMembresia, alcance, ambito = []) {
   return conEmpresa(idEmpresa, async (client) => {
+    // Consulta SQL para traer los casos con el cliente, el asignado, el prestador y cuantas interacciones tiene
     const { rows } = await client.query(
       `SELECT c.id_caso, c.numero_caso, c.tipo, c.prioridad, c.estado,
               c.asunto, c.created_at, c.fecha_cierre,
@@ -67,9 +44,11 @@ export async function listarCasos(idEmpresa, idMembresia, alcance, ambito = []) 
                            WHEN 'MEDIA' THEN 3 ELSE 4 END,
           c.created_at DESC
         LIMIT 200`,
+      // Se ordenan por prioridad y fecha, y maximo 200
       [alcance, idMembresia, ambito],
     );
 
+    // Se utiliza el metodo map para poder recorrer las filas y devolver un objeto por cada caso
     return rows.map((c) => ({
       idCaso: c.id_caso,
       numero: c.numero_caso,
@@ -87,9 +66,11 @@ export async function listarCasos(idEmpresa, idMembresia, alcance, ambito = []) 
   });
 }
 
-/** Detalle de un caso, con su descripción completa y sus interacciones. */
+// Se exporta la funcion detalleCaso para usarla en el controlador
+// Trae un caso con sus interacciones y el turno relacionado si tiene
 export async function detalleCaso(idEmpresa, idCaso) {
   return conEmpresa(idEmpresa, async (client) => {
+    // Consulta SQL para traer los datos del caso con el nombre del cliente y del asignado
     const { rows } = await client.query(
       `SELECT c.id_caso, c.numero_caso, c.tipo, c.prioridad, c.estado,
               c.asunto, c.descripcion, c.created_at, c.fecha_cierre,
@@ -103,13 +84,14 @@ export async function detalleCaso(idEmpresa, idCaso) {
         WHERE c.id_caso = $1`,
       [idCaso],
     );
-    // Si el caso es de otra empresa, RLS lo ocultó y no llega nada.
+    // Si no encuentra el caso se lanza un error 404
     if (rows.length === 0) {
       throw new AppError(404, 'CASO_NO_ENCONTRADO', 'Ese caso no existe.');
     }
 
     const c = rows[0];
 
+    // Consulta SQL para traer las interacciones del caso con su autor, de la mas nueva a la mas vieja
     const { rows: interacciones } = await client.query(
       `SELECT i.id_interaccion, i.canal, i.asunto, i.detalle, i.fecha_interaccion,
               CONCAT_WS(' ', u.nombres, u.apellidos) AS autor
@@ -121,13 +103,11 @@ export async function detalleCaso(idEmpresa, idCaso) {
       [idCaso],
     );
 
-    /**
-     * Si el caso nació de un turno, traemos ese turno CON sus
-     * observaciones internas, para que quien resuelve vea qué anotó el
-     * empleado ese día sin ir a buscarlo a la agenda.
-     */
+    // Variable para el turno del caso, queda en null si el caso no viene de un turno
     let reserva = null;
+    // Si el caso tiene reserva se busca el turno
     if (c.id_reserva) {
+      // Consulta SQL para traer el turno con el servicio, el prestador y el empleado
       const { rows: reservas } = await client.query(
         `SELECT r.id_reserva, r.fecha_inicio, r.estado,
                 s.nombre AS servicio, p.nombre AS prestador,
@@ -141,7 +121,9 @@ export async function detalleCaso(idEmpresa, idCaso) {
         [c.id_reserva],
       );
 
+      // Si el turno existe se traen tambien sus observaciones
       if (reservas[0]) {
+        // Consulta SQL para traer las observaciones del turno con quien las escribio
         const { rows: observaciones } = await client.query(
           `SELECT o.detalle, o.created_at,
                   CONCAT_WS(' ', u.nombres, u.apellidos) AS autor
@@ -154,6 +136,7 @@ export async function detalleCaso(idEmpresa, idCaso) {
         );
 
         const r = reservas[0];
+        // Objeto con los datos del turno y sus observaciones para el frontend
         reserva = {
           idReserva: r.id_reserva,
           fecha: r.fecha_inicio,
@@ -170,6 +153,7 @@ export async function detalleCaso(idEmpresa, idCaso) {
       }
     }
 
+    // Se devuelve el caso con el turno y la lista de interacciones
     return {
       idCaso: c.id_caso,
       numero: c.numero_caso,
@@ -197,52 +181,48 @@ export async function detalleCaso(idEmpresa, idCaso) {
   });
 }
 
-/**
- * Radica un caso nuevo.
- * El número lo genera fn_siguiente_caso con un UPDATE ... RETURNING,
- * que bloquea la fila del contador: dos personas radicando a la vez
- * NO pueden obtener el mismo número.
- */
+// Se exporta la funcion crearCaso para usarla en el controlador
 export async function crearCaso(idEmpresa, idMembresiaSolicitante, datos, puedeRadicarAOtros) {
+  // Se llama a conEmpresa para que el caso quede solo en la empresa del usuario
   return conEmpresa(idEmpresa, async (client) => {
-    // El personal radica a nombre de la ficha que elija. Un cliente
-    // siempre radica para sí mismo: se busca SU ficha a partir de su
-    // membresía, diga lo que diga el body.
+    // Si puede radicar para otros se usa el cliente que mando, si no se usa la ficha del mismo usuario
+    // Asi un cliente no puede crear casos a nombre de otro
     const idCliente = puedeRadicarAOtros && datos.idCliente
       ? datos.idCliente
       : await idClienteDeMembresia(client, idMembresiaSolicitante);
 
+    // Consulta SQL para sacar el siguiente numero de caso de la empresa
     const { rows: numeros } = await client.query(
       'SELECT app.fn_siguiente_caso($1) AS numero',
       [idEmpresa],
     );
 
-    /**
-     * Si el caso nace de un turno, heredamos su prestador y su empleado:
-     * quien atendió es quien tiene el contexto de lo que pasó ese día.
-     */
+    // Variables para el prestador y el empleado, se llenan si el caso viene de un turno
     let idPrestador = null;
     let idAsignado = null;
 
+    // Si el caso viene de un turno se busca ese turno
     if (datos.idReserva) {
+      // Consulta SQL para traer el cliente, el prestador y el empleado del turno
       const { rows: reservas } = await client.query(
         'SELECT id_cliente, id_prestador, id_empleado FROM app.reservas WHERE id_reserva = $1',
         [datos.idReserva],
       );
       const turno = reservas[0];
 
-      // El personal puede vincular cualquier turno de la empresa; un
-      // cliente solo los suyos. Sin esto, alguien podría radicar sobre
-      // la cita de otro y leer sus observaciones internas.
+      // Si el turno no existe o no es del cliente se lanza un error 404
       if (!turno || (!puedeRadicarAOtros && turno.id_cliente !== idCliente)) {
         throw new AppError(404, 'RESERVA_NO_ENCONTRADA', 'Ese turno no existe.');
       }
 
+      // El caso se asigna al mismo prestador y empleado del turno
       idPrestador = turno.id_prestador;
       idAsignado = turno.id_empleado;
     }
 
+    // Se usa try/catch para capturar el error de la base de datos
     try {
+      // Consulta SQL para crear el caso, si no mandan prioridad queda en MEDIA
       const { rows } = await client.query(
         `INSERT INTO app.casos_servicio
            (id_empresa, numero_caso, id_cliente, id_reserva, id_prestador, id_asignado,
@@ -268,20 +248,23 @@ export async function crearCaso(idEmpresa, idMembresiaSolicitante, datos, puedeR
         estado: rows[0].estado,
       };
     } catch (error) {
-      // 23503 = llave foránea: el cliente o la reserva no son de esta
-      // empresa. Lo impide el motor con las FK compuestas.
+      // El codigo 23503 es de llave foranea, pasa cuando el cliente o la reserva no existen
+      // En ese caso se lanza un error 404
       if (error.code === '23503') {
         throw new AppError(404, 'REFERENCIA_INVALIDA',
           'El cliente o la reserva no existen en tu empresa.');
       }
+      // Si es otro error se vuelve a lanzar para que lo maneje el middleware
       throw error;
     }
   });
 }
 
-/** Atiende un caso: estado, prioridad o asignación. */
+// Se exporta la funcion actualizarCaso para usarla en el controlador
+// Cambia el estado, la prioridad o el asignado del caso
 export async function actualizarCaso(idEmpresa, idCaso, datos) {
   return conEmpresa(idEmpresa, async (client) => {
+    // Consulta SQL para actualizar solo lo que venga, con COALESCE se deja el valor anterior si viene null
     const { rows } = await client.query(
       `UPDATE app.casos_servicio
           SET estado     = COALESCE($2::app.estado_caso, estado),
@@ -296,8 +279,10 @@ export async function actualizarCaso(idEmpresa, idCaso, datos) {
                                   ELSE fecha_cierre END
         WHERE id_caso = $1
         RETURNING id_caso, numero_caso, estado, prioridad`,
+      // Si el asignado viene vacio se quita la asignacion
       [idCaso, datos.estado ?? null, datos.prioridad ?? null, datos.idAsignado ?? null],
     );
+    // Si no se actualizo ningun caso se lanza un error 404
     if (rows.length === 0) {
       throw new AppError(404, 'CASO_NO_ENCONTRADO', 'Ese caso no existe.');
     }
@@ -310,14 +295,13 @@ export async function actualizarCaso(idEmpresa, idCaso, datos) {
   });
 }
 
-// ================================================================== //
-// INTERACCIONES                                                      //
-// ================================================================== //
-
-/** datos.idCliente es la FICHA del cliente; quien registra es personal. */
+// Se exporta la funcion registrarInteraccion para usarla en el controlador
+// Guarda una interaccion con el cliente (llamada, correo, etc.) y si quiere la liga a un caso
 export async function registrarInteraccion(idEmpresa, idMembresia, datos) {
   return conEmpresa(idEmpresa, async (client) => {
+    // Se usa try/catch para capturar el error de la base de datos
     try {
+      // Consulta SQL para guardar la interaccion con quien la registro
       const { rows } = await client.query(
         `INSERT INTO app.interacciones_crm
            (id_empresa, id_cliente, id_registrada_por, id_caso, canal, asunto, detalle)
@@ -342,30 +326,22 @@ export async function registrarInteraccion(idEmpresa, idMembresia, datos) {
         fecha: i.fecha_interaccion,
       };
     } catch (error) {
+      // Si el cliente o el caso no existen en la empresa se lanza un error 404
       if (error.code === '23503') {
         throw new AppError(404, 'REFERENCIA_INVALIDA',
           'El cliente o el caso no existen en tu empresa.');
       }
+      // Si es otro error se manda al middleware
       throw error;
     }
   });
 }
 
-// ================================================================== //
-// HISTORIAL 360 DEL CLIENTE                                          //
-// ================================================================== //
-
-/**
- * Reúne en una sola vista TODO lo que ha pasado con un cliente: sus
- * turnos, sus casos y sus interacciones. Es lo que diferencia un CRM de
- * una simple lista de tickets.
- *
- * Ahora parte de la FICHA (app.clientes). Si el cliente además tiene
- * acceso a la plataforma, se completa con los datos de su usuario
- * (estado de la cuenta, último ingreso) mediante un LEFT JOIN.
- */
+// Se exporta la funcion historialCliente para usarla en el controlador
+// Trae la ficha del cliente con sus turnos, casos e interacciones
 export async function historialCliente(idEmpresa, idCliente) {
   return conEmpresa(idEmpresa, async (client) => {
+    // Consulta SQL para traer el perfil del cliente con el total de turnos, inasistencias y casos abiertos
     const { rows: perfil } = await client.query(
       `SELECT cl.id_cliente, cl.id_usuario, cl.nombres, cl.apellidos, cl.email,
               cl.telefono, cl.tipo_documento, cl.documento, cl.direccion, cl.ciudad,
@@ -381,11 +357,14 @@ export async function historialCliente(idEmpresa, idCliente) {
         WHERE cl.id_cliente = $1`,
       [idCliente],
     );
+    // Si no encuentra el cliente se lanza un error 404
     if (perfil.length === 0) {
       throw new AppError(404, 'CLIENTE_NO_ENCONTRADO', 'Ese cliente no existe en tu empresa.');
     }
 
+    // Se usa Promise.all para hacer las tres consultas al mismo tiempo
     const [turnos, casos, interacciones] = await Promise.all([
+      // Consulta SQL para traer los ultimos 50 turnos del cliente
       client.query(
         `SELECT r.id_reserva, r.fecha_inicio, r.estado, s.nombre AS servicio,
                 p.nombre AS prestador
@@ -396,6 +375,7 @@ export async function historialCliente(idEmpresa, idCliente) {
           ORDER BY r.fecha_inicio DESC LIMIT 50`,
         [idCliente],
       ),
+      // Consulta SQL para traer los ultimos 50 casos del cliente
       client.query(
         `SELECT id_caso, numero_caso, tipo, estado, prioridad, asunto, created_at
            FROM app.casos_servicio
@@ -403,6 +383,7 @@ export async function historialCliente(idEmpresa, idCliente) {
           ORDER BY created_at DESC LIMIT 50`,
         [idCliente],
       ),
+      // Consulta SQL para traer las ultimas 50 interacciones con su autor
       client.query(
         `SELECT i.id_interaccion, i.canal, i.asunto, i.detalle, i.fecha_interaccion,
                 CONCAT_WS(' ', u.nombres, u.apellidos) AS autor
@@ -416,10 +397,12 @@ export async function historialCliente(idEmpresa, idCliente) {
     ]);
 
     const p = perfil[0];
+    // Se devuelve todo el historial en un solo objeto
     return {
       cliente: {
         idCliente: p.id_cliente,
         idUsuario: p.id_usuario,
+        // Si el cliente tiene usuario quiere decir que puede entrar a la app
         tieneAcceso: p.id_usuario !== null,
         nombres: p.nombres,
         apellidos: p.apellidos,
@@ -429,17 +412,17 @@ export async function historialCliente(idEmpresa, idCliente) {
         documento: p.documento,
         direccion: p.direccion,
         ciudad: p.ciudad,
-        // estado = la cuenta de acceso (null si no tiene);
-        // estadoMembresia se conserva para no romper el frontend actual.
         estado: p.estado,
         estadoMembresia: p.activo ? 'ACTIVA' : 'INACTIVA',
         cargo: null,
         clienteDesde: p.created_at,
         ultimoLogin: p.ultimo_login,
+        // Se usa Number porque count llega como texto desde PostgreSQL
         totalTurnos: Number(p.total_turnos),
         inasistencias: Number(p.inasistencias),
         casosAbiertos: Number(p.casos_abiertos),
       },
+      // Se utiliza el metodo map para convertir los turnos, casos e interacciones al formato del frontend
       turnos: turnos.rows.map((r) => ({
         idReserva: r.id_reserva,
         fecha: r.fecha_inicio,
@@ -468,12 +451,7 @@ export async function historialCliente(idEmpresa, idCliente) {
   });
 }
 
-/**
- * Forma común de un cliente en listados y búsquedas.
- * idMembresia se devuelve con el MISMO valor que idCliente solo para no
- * romper el frontend que todavía lee ese nombre; el dato correcto es
- * idCliente. Cuando actualices el front, quita idMembresia.
- */
+// Funcion que convierte una fila de la tabla clientes al formato que usa el frontend
 function aCliente(c) {
   return {
     idCliente: c.id_cliente,
@@ -488,9 +466,11 @@ function aCliente(c) {
   };
 }
 
-/** Clientes activos de la empresa, para el selector del historial. */
+// Se exporta la funcion listarClientes para usarla en el controlador
+// Trae los clientes activos de la empresa, maximo 500
 export async function listarClientes(idEmpresa) {
   return conEmpresa(idEmpresa, async (client) => {
+    // Consulta SQL para traer los clientes activos ordenados por nombre
     const { rows } = await client.query(
       `SELECT id_cliente, id_usuario, nombres, apellidos, email, telefono, documento
          FROM app.clientes
@@ -498,21 +478,16 @@ export async function listarClientes(idEmpresa) {
         ORDER BY nombres, apellidos
         LIMIT 500`,
     );
+    // Se usa map con aCliente para dejar cada fila con el formato del frontend
     return rows.map(aCliente);
   });
 }
 
-/**
- * Busca clientes por nombre, correo, teléfono o documento.
- *
- * El texto viaja PARAMETRIZADO ($1), nunca concatenado al SQL: si
- * alguien busca "'; DROP TABLE..." el driver lo trata como texto.
- *
- * El LIMIT no es opcional: sin él, una búsqueda de una sola letra
- * traería la base entera.
- */
+// Se exporta la funcion buscarClientes para usarla en el controlador
+// Busca clientes por nombre, apellido, correo, telefono o documento
 export async function buscarClientes(idEmpresa, termino) {
   return conEmpresa(idEmpresa, async (client) => {
+    // Consulta SQL para buscar clientes que contengan el texto, maximo 20
     const { rows } = await client.query(
       `SELECT id_cliente, id_usuario, nombres, apellidos, email, telefono, documento
          FROM app.clientes
@@ -526,18 +501,19 @@ export async function buscarClientes(idEmpresa, termino) {
           ))
         ORDER BY nombres, apellidos
         LIMIT 20`,
+      // Se escapa el texto para que % y _ se busquen como letras normales
+      // Si no se escribe nada se manda null y salen todos
       [termino && termino.length > 0 ? escaparLike(termino) : null],
     );
     return rows.map(aCliente);
   });
 }
 
-/**
- * Turnos de un cliente, para vincularlos a un caso.
- * No cambia: r.id_cliente ya es la ficha del cliente.
- */
+// Se exporta la funcion turnosDeCliente para usarla en el controlador
+// Trae los turnos de un cliente, filtrando por el ambito del usuario si tiene
 export async function turnosDeCliente(idEmpresa, idCliente, ambito = []) {
   return conEmpresa(idEmpresa, async (client) => {
+    // Consulta SQL para traer los ultimos 30 turnos del cliente con servicio y prestador
     const { rows } = await client.query(
       `SELECT r.id_reserva, r.fecha_inicio, r.estado,
               s.nombre AS servicio, p.nombre AS prestador
@@ -552,6 +528,7 @@ export async function turnosDeCliente(idEmpresa, idCliente, ambito = []) {
         LIMIT 30`,
       [idCliente, ambito],
     );
+    // Se utiliza el metodo map para devolver un objeto por cada turno
     return rows.map((r) => ({
       idReserva: r.id_reserva,
       fecha: r.fecha_inicio,

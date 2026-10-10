@@ -1,91 +1,84 @@
-// Importa la librería zod de validaciones //
+// Se importa zod para validar los datos de la agenda
 import { z } from 'zod';
 
-// uuid() valida el formato antes de que el valor llegue a la base //
-// una cadena rara nunca alcanza a convertirse en consulta previniendo inyecciones //
+// Esquema para los identificadores, deben ser UUID
 const uuid = z.string().uuid('Identificador inválido.');
 
-/**
- * Función que limpia un campo de texto libre.
- * Recorta espacios y elimina caracteres de control.
- * El escape definitivo contra XSS lo hace el frontend al renderizar.
- */
+// Funcion que arma un esquema de texto obligatorio con el maximo que se le pase
 const texto = (max) =>
   z
     .string()
     .trim()
     .min(1)
     .max(max)
+    // Se usa transform para quitar los caracteres de control que no se ven
     // eslint-disable-next-line no-control-regex
     .transform((v) => v.replace(/[\u0000-\u001F\u007F]/g, ''));
 
-// Almacena una regla de campo de texto opcional o vacío //
+// Funcion para un texto opcional que tambien se puede mandar vacio
 const opcional = (max) => z.string().trim().max(max).optional().or(z.literal(''));
 
-// --- Prestadores --------------------------------------------------- //
+// Esquema de zod para validar los datos al crear un prestador
 export const crearPrestadorSchema = z
   .object({
-    nombre: texto(150),          // "Sede Chapinero", "Dra. Pérez"
+    nombre: texto(150),
     descripcion: opcional(500),
     direccion: opcional(200),
     telefono: opcional(30),
   })
-  .strict();                     // .strict() rechaza campos no declarados
+  .strict();
 
-// --- Servicios ----------------------------------------------------- //
-
-/**
- * Precio opcional. null = el servicio no se cobra; ausente = no se toca.
- * OJO: z.coerce.number() solo convertía null en 0 (Number(null) === 0),
- * por eso "sin precio" terminaba guardado como $0. .nullable() deja pasar
- * el null ANTES de convertir, y un texto vacío también se toma como null.
- */
+// Esquema para el precio del servicio
 const precio = z.preprocess(
+  // Se usa preprocess para que si llega vacio se guarde como null
   (v) => (v === '' ? null : v),
   z.coerce.number().min(0, 'El precio no puede ser negativo.').max(99999999).nullable(),
 ).optional();
 
+// Esquema para crear un servicio del prestador
 export const crearServicioSchema = z
   .object({
-    idPrestador: uuid,                                   // a quién pertenece
+    idPrestador: uuid,
     nombre: texto(120),
     descripcion: opcional(500),
+    // La duracion va en minutos, entre 5 minutos y un dia completo
     duracionMinutos: z.coerce.number().int().min(5).max(1440),
     precio,
   })
   .strict();
 
-// --- Miembros de la empresa ---------------------------------------- //
+// Esquema para invitar a un miembro a la empresa desde la agenda
 export const invitarMiembroSchema = z
   .object({
     email: z.string().trim().toLowerCase().email().max(254),
     nombres: texto(100),
     apellidos: texto(100),
-    // Lista cerrada: el cliente NO puede inventarse un rol ni pedir
-    // SUPER_ADMIN. Es la defensa contra escalada de privilegios.
     rol: z.enum(['CLIENTE', 'EMPLEADO', 'PRESTADOR', 'ADMIN_EMPRESA']),
     cargo: opcional(80),
-    // A qué prestadores queda atada la persona. Obligatorio para
-    // EMPLEADO y PRESTADOR; se ignora para CLIENTE y ADMIN_EMPRESA.
+    // Lista de prestadores a los que queda asignado el miembro
     prestadores: z.array(uuid).max(20).optional(),
   })
   .strict()
+  // Se usa refine para que un empleado o prestador quede con al menos un prestador asignado
   .refine(
     (d) => !['EMPLEADO', 'PRESTADOR'].includes(d.rol) || (d.prestadores?.length ?? 0) > 0,
     { message: 'Un empleado o prestador debe quedar asignado a al menos un prestador.' },
   );
 
-// --- Reservas ------------------------------------------------------ //
+// Esquema de zod para validar los datos del turno al crear una reserva
 export const crearReservaSchema = z
   .object({
     idServicio: uuid,
-    fechaInicio: z.string().datetime({ offset: true }),  // ISO con zona horaria
-    idCliente: uuid.optional(),      // solo lo usa quien administra la agenda
+    // La fecha debe venir en formato ISO con la zona horaria
+    fechaInicio: z.string().datetime({ offset: true }),
+    // El cliente y el empleado son opcionales porque el cliente puede reservar para si mismo
+    idCliente: uuid.optional(),
     idEmpleado: uuid.optional(),
     notas: opcional(500),
   })
   .strict();
 
+// Esquema para cambiar el estado de una reserva, solo deja los estados de la lista
 export const cambiarEstadoReservaSchema = z
   .object({
     estado: z.enum(['CONFIRMADA', 'RECHAZADA', 'CANCELADA', 'COMPLETADA', 'NO_ASISTIO']),
@@ -93,31 +86,30 @@ export const cambiarEstadoReservaSchema = z
   })
   .strict();
 
-// --- Reprogramar y observar ---------------------------------------- //
-
+// Esquema para reprogramar una reserva a otra fecha
 export const reprogramarReservaSchema = z
   .object({
-    // La duración NO se manda: se toma del servicio, igual que al crear.
     fechaInicio: z.string().datetime({ offset: true }),
   })
   .strict();
 
+// Esquema para agregar una observacion a la reserva
 export const observacionSchema = z
   .object({
     detalle: texto(1000),
   })
   .strict();
 
-/** 
- * Consulta de disponibilidad: verifica qué horas quedan libres ese día. 
- */
+// Esquema para consultar los horarios disponibles de un servicio en un dia
 export const disponibilidadSchema = z
   .object({
     idServicio: uuid,
+    // Regex para que la fecha venga como AAAA-MM-DD
     fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Usa el formato AAAA-MM-DD.'),
   })
   .strict();
 
+// Esquema para actualizar un prestador, todos los campos son opcionales
 export const actualizarPrestadorSchema = z
   .object({
     nombre: texto(150).optional(),
@@ -127,10 +119,12 @@ export const actualizarPrestadorSchema = z
     activo: z.boolean().optional(),
   })
   .strict()
+  // Se usa refine para que no se pueda mandar el objeto vacio
   .refine((d) => Object.keys(d).length > 0, {
     message: 'Debes enviar al menos un campo para actualizar.',
   });
 
+// Esquema para actualizar un servicio
 export const actualizarServicioSchema = z
   .object({
     nombre: texto(120).optional(),
@@ -144,6 +138,7 @@ export const actualizarServicioSchema = z
     message: 'Debes enviar al menos un campo para actualizar.',
   });
 
+// Esquema para actualizar un miembro desde la agenda (rol, cargo, estado y prestadores)
 export const actualizarMiembroAgendaSchema = z
   .object({
     rol: z.enum(['CLIENTE', 'EMPLEADO', 'PRESTADOR', 'ADMIN_EMPRESA']).optional(),

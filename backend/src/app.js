@@ -1,17 +1,17 @@
-// Importa el framework principal para manejar peticiones web //
+// Se importa express para crear el servidor
 import express from 'express';
-// Utilidades de rutas de archivos (para servir el frontend) //
+// Se importan path y fileURLToPath para armar la ruta de la carpeta del frontend
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-// Importa la librería de seguridad que configura cabeceras HTTP defensivas //
+// Se importa helmet para poner cabeceras de seguridad
 import helmet from 'helmet';
-// Importa el middleware para gestionar el Intercambio de Recursos de Origen Cruzado (CORS) //
+// Se importa cors para decir que paginas pueden llamar la API
 import cors from 'cors';
-// Importa el analizador para poder leer las cookies entrantes (vital para tu Refresh Token) //
+// Se importa cookieParser para leer la cookie del refresh token
 import cookieParser from 'cookie-parser';
-// Importa tus variables de entorno centralizadas //
+// Se importa env con la configuracion
 import { env } from './config/env.js';
-// Importa todos los enrutadores //
+// Se importan las rutas de cada modulo
 import authRoutes from './routes/auth.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 import agendaRoutes from './routes/agenda.routes.js';
@@ -20,57 +20,37 @@ import clientesRoutes from './routes/clientes.routes.js';
 import equiposRouter, { equiposPublicoRouter } from './routes/equipos.routes.js';
 import catalogosRoutes from './routes/catalogos.routes.js';
 import configuracionRoutes from './routes/configuracion.routes.js';
-// Importa tus propios middlewares de manejo de errores //
+// Se importan los middlewares de ruta no encontrada y de errores
 import { notFound, errorHandler } from './middleware/errorHandler.js';
-// Limpia la IP que reenvía el proxy de Azure (viene con el puerto) //
+// Se importa el middleware que limpia la IP reenviada
 import { limpiarIpReenviada } from './utils/ip.js';
 
-/**
- * El frontend vive en ../../frontend respecto a este archivo
- * (backend/src/app.js). Con ES modules no existe __dirname, así que se
- * calcula a partir de la URL del módulo.
- */
+// Con ES modules no existe __dirname, por eso se saca de import.meta.url
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// Constante con la ruta de la carpeta del frontend
 const CARPETA_FRONTEND = path.join(__dirname, '..', '..', 'frontend');
 
-// Instancia la aplicación principal de Express //
+// Se crea la app de express y se exporta para usarla en server.js
 export const app = express();
 
-/**
- * Detrás del proxy de Azure, req.ip sería la IP del balanceador y el
- * rate limit bloquearía a todos a la vez. Con trust proxy se usa la IP
- * real del usuario. También hace que req.secure sea correcto en HTTPS.
- */
+// Se confia en un proxy para que req.ip tome la IP real del usuario
 app.set('trust proxy', 1);
 
-// Debe ir ANTES de todo lo que use req.ip (rutas, rate limit). //
+// Se usa limpiarIpReenviada para quitar los puertos de x-forwarded-for
 app.use(limpiarIpReenviada);
 
-/**
- * Azure App Service manda la IP del cliente CON el puerto en
- * X-Forwarded-For ("152.201.83.77:52372"). Express la usa tal cual para
- * req.ip, y PostgreSQL rechaza ese formato en las columnas inet.
- * Se limpia aquí, antes que nada, para que req.ip (y el rate limit que
- * depende de él) reciban solo la IP.
- *
- * No permite falsificar la IP: se limpia cada elemento sin cambiar el
- * orden ni la cantidad, y con trust proxy = 1 Express sigue tomando el
- * ÚLTIMO, que es el que agrega Azure (no el que escribe el cliente).
- */
+// Funcion que deja solo la IP sin el puerto, es igual a la de utils/ip.js
 function quitarPuerto(valor) {
   const ip = valor.trim();
-  // IPv6 con puerto: "[2001:db8::1]:443" -> "2001:db8::1"
   if (ip.startsWith('[')) {
     const cierre = ip.indexOf(']');
-    // Mal formada: se deja tal cual, sin intentar adivinar.
     return cierre > 0 ? ip.slice(1, cierre) : ip;
   }
-  // IPv4 con puerto: exactamente un ":" -> "152.201.83.77"
   if (ip.split(':').length === 2) return ip.split(':')[0];
-  // IPv4 o IPv6 sin puerto: se deja igual.
   return ip;
 }
 
+// Middleware que tambien limpia la cabecera x-forwarded-for usando quitarPuerto
 app.use((req, _res, next) => {
   const reenviada = req.headers['x-forwarded-for'];
   if (typeof reenviada === 'string') {
@@ -79,32 +59,27 @@ app.use((req, _res, next) => {
   next();
 });
 
-// No regalar a un atacante qué tecnología usa el backend //
+// Se quita la cabecera x-powered-by para no mostrar que se usa express
 app.disable('x-powered-by');
 
-/**
- * DEFENSA DE CABECERAS CON HELMET.
- * Ahora Express también sirve el frontend, así que la CSP cubre las
- * páginas y no solo la API. Se abre lo MÍNIMO necesario:
- * - styleSrc / fontSrc: las fuentes de Google (la hoja y los archivos).
- * - imgSrc data: y blob: para el QR en SVG y la descarga de la etiqueta.
- * - mediaSrc blob: y la cámara (escáner de QR).
- * - workerSrc y manifestSrc: el service worker y el manifest de la PWA.
- * No se permite 'unsafe-inline' en scripts: un XSS inyectado no corre.
- */
+// Se usa helmet con una politica CSP para que solo se carguen scripts y archivos del mismo sitio
+// Asi se evita que se pueda meter codigo de otro lado (XSS)
 app.use(
   helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
+        // Se permiten los estilos y las fuentes de Google Fonts
         styleSrc: ["'self'", 'https://fonts.googleapis.com'],
         fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+        // Se permiten imagenes data y blob, como el QR y las fotos
         imgSrc: ["'self'", 'data:', 'blob:'],
         mediaSrc: ["'self'", 'blob:'],
         connectSrc: ["'self'", 'https://fonts.googleapis.com', 'https://fonts.gstatic.com'],
         workerSrc: ["'self'"],
         manifestSrc: ["'self'"],
+        // No se dejan cargar plugins ni que la pagina se meta en un iframe de otro sitio
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
         formAction: ["'self'"],
@@ -115,32 +90,30 @@ app.use(
   }),
 );
 
-/**
- * CORS. Con el frontend en el mismo dominio ya casi no hace falta, pero
- * se deja con lista blanca por si en desarrollo abres el front desde
- * otro puerto (Live Server).
- */
+// Se configura cors con los origenes permitidos del .env
 app.use(
   cors({
     origin: env.corsOrigin.split(',').map((o) => o.trim()),
+    // credentials en true para que el navegador mande la cookie del refresh token
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   }),
 );
 
-// Límite de 10kb al body: un JSON gigante no tumba el servidor (DoS) //
+// Se lee el JSON del cuerpo con un limite de 10kb para que no manden peticiones muy grandes
 app.use(express.json({ limit: '10kb' }));
 
-// Cookies (refresh token) //
+// Se usa cookieParser para poder leer las cookies en req.cookies
 app.use(cookieParser());
 
-// Endpoint de salud para el monitor de Azure //
+// Ruta para revisar que la API esta funcionando
 app.get('/api/health', (_req, res) => res.json({ ok: true, entorno: env.nodeEnv }));
 
-// ---------------------- API ---------------------- //
+// Se montan las rutas de cada modulo con su prefijo
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/agenda', agendaRoutes);
+// Rutas publicas de equipos, como la hoja de servicio que se abre con el QR
 app.use('/api/public', equiposPublicoRouter);
 app.use('/api/equipos', equiposRouter);
 app.use('/api/crm', crmRoutes);
@@ -148,25 +121,19 @@ app.use('/api/clientes', clientesRoutes);
 app.use('/api/catalogos', catalogosRoutes);
 app.use('/api/configuracion', configuracionRoutes);
 
-// Una ruta /api que no existe responde 404 en JSON, no una página HTML //
+// Si una ruta de /api no existe se responde 404 en JSON
 app.use('/api', notFound);
 
-/**
- * ---------------------- FRONTEND ----------------------
- * Express sirve los HTML, CSS, JS e íconos. Al quedar todo en el mismo
- * dominio no hay problemas de CORS ni de cookies entre sitios.
- *
- * El service worker y el manifest NO se cachean en el navegador
- * (no-cache): si se cachearan, una versión nueva de la app tardaría
- * horas o días en llegar a los usuarios.
- */
+// Se sirven los archivos del frontend, extensions permite abrir las paginas sin poner .html
 app.use(
   express.static(CARPETA_FRONTEND, {
     extensions: ['html'],
     setHeaders(res, ruta) {
+      // El service worker y el manifest no se guardan en cache para que siempre se use la ultima version
       if (ruta.endsWith('service-worker.js') || ruta.endsWith('manifest.json')) {
         res.setHeader('Cache-Control', 'no-cache');
       }
+      // Se le pone el tipo correcto al manifest de la PWA
       if (ruta.endsWith('manifest.json')) {
         res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
       }
@@ -174,10 +141,7 @@ app.use(
   }),
 );
 
-/**
- * CAPTURA DE ERRORES: el orden es vital. Lo que no hizo match con nada
- * de arriba cae en notFound (404), y cualquier next(error) va directo
- * a errorHandler.
- */
+// Si no se encuentra nada se responde 404
 app.use(notFound);
+// Se pone el middleware de errores al final para que reciba todos los errores
 app.use(errorHandler);

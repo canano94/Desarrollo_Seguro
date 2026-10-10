@@ -1,7 +1,7 @@
-// Importa las funciones de comunicación con el backend //
+// Se importan las funciones de api.js para entrar, elegir empresa, recuperar la sesion y salir
 import { entrar, elegirEmpresa, restaurarSesion, salir } from './api.js';
 
-// Captura de elementos del DOM (Document Object Model) para interactuar con la vista //
+// Se toman los elementos del HTML que se usan en la pantalla de login
 const pasoCredenciales = document.getElementById('paso-credenciales');
 const pasoEmpresa = document.getElementById('paso-empresa');
 const form = document.getElementById('form-login');
@@ -10,27 +10,20 @@ const avisoEmpresa = document.getElementById('aviso-empresa');
 const boton = document.getElementById('btn-entrar');
 const listaEmpresas = document.getElementById('lista-empresas');
 
-// Función de utilidad para mostrar cajas de alerta roja en la vista //
+// Funcion para mostrar un mensaje en el aviso
 function mostrarAviso(elemento, mensaje) {
+  // Se usa textContent y no innerHTML para que no se pueda meter codigo (XSS)
   elemento.textContent = mensaje;
   elemento.hidden = false;
 }
 
-// Función de utilidad para ocultar y vaciar las alertas //
+// Funcion para ocultar y vaciar un aviso
 function limpiar(elemento) {
   elemento.hidden = true;
   elemento.textContent = '';
 }
 
-/**
- * APUNTE DE EXPERIENCIA DE USUARIO (UX): Diccionario central de errores.
- * Traduce el código técnico ('CREDENCIALES_INVALIDAS') que nos envía la 
- * clase AppError del backend a un lenguaje humano amigable.
- *
- * El `??` final (Nullish coalescing) es la red de seguridad: si el error no trae 
- * ni código ni mensaje (por ejemplo un fallo de caída total de red), igual mostramos algo. 
- * Sin eso, la caja de alerta aparecería roja pero vacía, desorientando al usuario.
- */
+// Funcion que cambia el codigo de error del servidor por un mensaje que entienda el usuario
 function traducirError(error) {
   switch (error?.codigo) {
     case 'CREDENCIALES_INVALIDAS':
@@ -52,27 +45,15 @@ function traducirError(error) {
   }
 }
 
-/**
- * APUNTE ESTRELLA DE SEGURIDAD DOM: Inyección de HTML Segura
- * Pinta el selector dinámico cuando la persona pertenece a más de una empresa.
- * 
- * Fíjate muy bien que TODO el HTML se arma utilizando `document.createElement()` 
- * y `textContent`. NUNCA se utiliza `innerHTML`. 
- * ¿Por qué? Porque la "razonSocial" de la empresa es texto que un administrador 
- * escribió en la base de datos. Si un atacante registrara una empresa llamada 
- * `<script>robarCookies()</script>`, y tú usaras `innerHTML`, el navegador 
- * ejecutaría ese código. Al usar `textContent`, el navegador lo trata estrictamente 
- * como texto inofensivo.
- */
+// Funcion para mostrar la lista de empresas cuando el usuario tiene acceso a varias
 function mostrarSelector(datos) {
-  // Saluda al usuario utilizando su nombre del payload //
   document.getElementById('saludo-empresa').textContent =
     `${datos.usuario.nombres}, tienes acceso a ${datos.empresas.length} empresas.`;
 
-  // Borra la lista previa en caso de que hubiera alguna pintada //
+  // Se vacia la lista antes de pintarla de nuevo
   listaEmpresas.replaceChildren();
 
-  // Itera sobre el array de empresas devueltas por el servidor para armar los botones //
+  // Se recorre la lista de empresas con for para crear un boton por cada una
   for (const empresa of datos.empresas) {
     const item = document.createElement('li');
     const boton = document.createElement('button');
@@ -85,31 +66,30 @@ function mostrarSelector(datos) {
 
     const detalle = document.createElement('span');
     detalle.className = 'empresa__detalle';
+    // Se muestran los roles y los modulos que tiene el usuario en esa empresa
     detalle.textContent = `${empresa.roles.join(', ')} · ${empresa.modulos.join(' + ')}`;
 
     boton.append(nombre, detalle);
-    // Agrega el evento click que disparará el endpoint de selección //
+    // Al dar clic en el boton se elige esa empresa
     boton.addEventListener('click', () => seleccionar(empresa.idEmpresa, boton));
 
     item.append(boton);
     listaEmpresas.append(item);
   }
 
-  // Oculta el formulario de correo/clave y muestra los botones generados //
+  // Se oculta el paso del correo y se muestra el paso de elegir empresa
   pasoCredenciales.hidden = true;
   pasoEmpresa.hidden = false;
 }
 
-/**
- * Lógica asíncrona que se ejecuta al elegir una empresa de la lista.
- */
+// Funcion para elegir la empresa y pasar a la pagina de inicio
 async function seleccionar(idEmpresa, botonPulsado) {
   limpiar(avisoEmpresa);
-  // Deshabilita el botón temporalmente para prevenir dobles clics accidentales //
+  // Se deshabilita el boton para que no se pulse dos veces
   botonPulsado.disabled = true;
   try {
+    // Se llama a elegirEmpresa para que el servidor de el token de esa empresa
     await elegirEmpresa(idEmpresa);
-    // Si la selección fue exitosa, redirige de forma segura reemplazando el historial //
     location.replace('inicio.html');
   } catch (error) {
     mostrarAviso(avisoEmpresa, traducirError(error));
@@ -117,66 +97,51 @@ async function seleccionar(idEmpresa, botonPulsado) {
   }
 }
 
-/**
- * AUTO-LOGIN SILENCIOSO
- * Al abrir `login.html`, lo primero que hace este script es ver si la cookie 
- * Refresh sigue viva haciendo ping a `restaurarSesion()`.
- * Si el usuario ya tenía sesión, lo redirigimos automáticamente a `inicio.html` 
- * sin obligarlo a ver ni llenar el formulario.
- */
+// Al cargar la pagina se intenta recuperar la sesion con la cookie
+// Si ya hay sesion se manda a elegir empresa, a cambiar la contraseña o al inicio
 restaurarSesion().then((datos) => {
-  if (!datos) return; // No hay sesión, no hace nada y deja el form visible
+  if (!datos) return;
   if (datos.requiereSeleccion) mostrarSelector(datos);
   else location.replace(datos.debeCambiarPassword ? 'cambiar-password.html' : 'inicio.html');
 });
 
-/**
- * Escuchador principal del evento de envío del formulario.
- */
+// Evento submit del formulario de login
 form.addEventListener('submit', async (evento) => {
-  // Evita que el navegador recargue la página automáticamente //
+  // Se usa preventDefault para que el formulario no recargue la pagina
   evento.preventDefault();
   limpiar(aviso);
 
-  // Captura y recorta los datos ingresados //
   const email = form.email.value.trim();
   const password = form.password.value;
 
+  // Si falta el correo o la contraseña se muestra el aviso y no se manda nada
   if (!email || !password) {
     mostrarAviso(aviso, 'Escribe tu correo y tu contraseña.');
     return;
   }
 
-  // Previene que el usuario mande la petición 5 veces dándole clic frenéticamente //
   boton.disabled = true;
   boton.textContent = 'Entrando…';
 
+  // Se llama a entrar con el correo y la contraseña
   try {
     const datos = await entrar(email, password);
-    
-    // Flujo de navegación condicional (Redirecciones) //
-    // Con una contraseña temporal el frontend te obliga a ir al cambio. 
-    // Ojo: El bloqueo REAL está en los middlewares del backend, esto es solo UX/Comodidad.
+
+    // Si tiene contraseña temporal se manda a cambiarla, si tiene varias empresas se muestra el selector
     if (datos.debeCambiarPassword) location.replace('cambiar-password.html');
     else if (datos.requiereSeleccion) mostrarSelector(datos);
     else location.replace('inicio.html');
   } catch (error) {
-    // La API backend responde exactamente lo mismo para correo falso o clave mala //
-    // Aquí el frontend simplemente pinta el mensaje sin adivinar. //
     mostrarAviso(aviso, traducirError(error));
+  // En el finally se vuelve a habilitar el boton
   } finally {
-    // Devuelve el botón a la normalidad sin importar si hubo éxito o error //
     boton.disabled = false;
     boton.textContent = 'Entrar';
   }
 });
 
-/**
- * Lógica para el botón "Volver" o "Cancelar" en la vista de selección de empresas.
- */
+// Boton para cancelar, cierra la sesion y recarga la pagina
 document.getElementById('btn-cancelar').addEventListener('click', async () => {
-  // Destruye el access token y le avisa al backend que revoque el refresh token //
   await salir();
-  // Recarga la página vaciando todo rastro visual //
   location.reload();
 });

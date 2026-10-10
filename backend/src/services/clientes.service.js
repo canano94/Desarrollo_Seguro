@@ -1,29 +1,16 @@
+// Se importa crypto de Node para generar la contraseña temporal al azar
 import crypto from 'node:crypto';
+// Se importa conEmpresa para consultas con RLS y query para consultas sin empresa
 import { conEmpresa, query } from '../db/pool.js';
+// Se importa AppError para lanzar errores con codigo y mensaje
 import { AppError } from '../utils/errors.js';
+// Se importa hashearPassword para no guardar la contraseña en texto plano
 import { hashearPassword } from '../utils/crypto.js';
 
-/**
- * CLIENTES
- *
- * Un cliente es una FICHA de la empresa (app.clientes). Puede existir
- * sin usuario: un empleado la crea en el mostrador con solo el nombre.
- * Si el cliente quiere entrar a la plataforma, se le "da acceso": se
- * crea (o reutiliza) su usuario, su membresía con rol CLIENTE y se
- * enlaza a la ficha. La contraseña siempre vive en app.usuarios: hay
- * UN solo sistema de login para todos.
- */
-
-// ================================================================== //
-// AYUDAS PARA OTROS SERVICES                                         //
-// ================================================================== //
-
-/**
- * El token del cliente trae su MEMBRESÍA; casos y reservas guardan su
- * FICHA. Esta función traduce una en la otra. Va DENTRO de conEmpresa:
- * el RLS ya limita la búsqueda a la empresa activa.
- */
+// Se exporta la funcion idClienteDeMembresia para usarla en otros servicios
+// Busca la ficha de cliente que tiene el usuario de esa membresia
 export async function idClienteDeMembresia(client, idMembresia) {
+  // Consulta SQL que une clientes con membresias para encontrar el id del cliente
   const { rows } = await client.query(
     `SELECT cl.id_cliente
        FROM app.clientes cl
@@ -32,6 +19,7 @@ export async function idClienteDeMembresia(client, idMembresia) {
         AND cl.activo`,
     [idMembresia],
   );
+  // Si el usuario no tiene ficha de cliente activa se lanza un error 403
   if (rows.length === 0) {
     throw new AppError(403, 'SIN_FICHA_CLIENTE',
       'Tu usuario no tiene una ficha de cliente activa en esta empresa.');
@@ -39,7 +27,8 @@ export async function idClienteDeMembresia(client, idMembresia) {
   return rows[0].id_cliente;
 }
 
-/** La misma traducción como subconsulta. La membresía debe ir en $2. */
+// Se exporta un pedazo de SQL para reusar en otras consultas
+// Busca el cliente de la membresia que llega en el parametro $2
 export const SQL_CLIENTE_DE_MEMBRESIA_P2 = `(
   SELECT cl.id_cliente
     FROM app.clientes cl
@@ -47,15 +36,13 @@ export const SQL_CLIENTE_DE_MEMBRESIA_P2 = `(
    WHERE m.id_membresia = $2::uuid
 )`;
 
-/** Une nombres y apellidos sin dejar espacios sueltos. */
+// Se exporta la funcion nombreCompleto que junta nombres y apellidos
 export function nombreCompleto(nombres, apellidos) {
+  // Se usa filter(Boolean) para quitar los vacios y que no queden espacios de mas
   return [nombres, apellidos].filter(Boolean).join(' ');
 }
 
-// ================================================================== //
-// CRUD DE FICHAS                                                     //
-// ================================================================== //
-
+// Funcion que pasa una fila de clientes al formato de ficha que usa el frontend
 function aFicha(c) {
   return {
     idCliente: c.id_cliente,
@@ -69,15 +56,18 @@ function aFicha(c) {
     direccion: c.direccion,
     ciudad: c.ciudad,
     activo: c.activo,
+    // Si tiene id_usuario quiere decir que el cliente ya puede entrar a la plataforma
     tieneAcceso: c.id_usuario !== null,
   };
 }
 
+// Constante con las columnas que se traen de la ficha del cliente
 const COLUMNAS_FICHA = `id_cliente, id_usuario, nombres, apellidos, tipo_documento,
   documento, email, telefono, direccion, ciudad, activo`;
 
-/** 23505 = violación de único: documento repetido en la empresa. */
+// Funcion que cambia el error de documento repetido por un error 409 mas claro
 function traducirDuplicado(error) {
+  // El codigo 23505 es de PostgreSQL cuando se repite un valor unico
   if (error.code === '23505') {
     throw new AppError(409, 'CLIENTE_DUPLICADO',
       'Ya existe un cliente con ese documento en tu empresa.');
@@ -85,13 +75,11 @@ function traducirDuplicado(error) {
   throw error;
 }
 
-/**
- * Crea una ficha SIN acceso a la plataforma.
- * id_empresa sale del token (lo pasa el controller), nunca del body; y
- * el WITH CHECK del RLS rechazaría cualquier otra empresa de todos modos.
- */
+// Se exporta la funcion crearCliente para usarla en el controlador
 export async function crearCliente(idEmpresa, datos) {
+  // Se llama a conEmpresa para que el cliente quede guardado en la empresa del usuario
   return conEmpresa(idEmpresa, async (client) => {
+    // Consulta SQL para insertar el cliente, con $1 a $9 para evitar inyeccion SQL
     const { rows } = await client.query(
       `INSERT INTO app.clientes
          (id_empresa, nombres, apellidos, tipo_documento, documento,
@@ -101,6 +89,7 @@ export async function crearCliente(idEmpresa, datos) {
       [
         idEmpresa,
         datos.nombres,
+        // Los campos que no vienen se guardan como null
         datos.apellidos ?? null,
         datos.tipoDocumento ?? null,
         datos.documento ?? null,
@@ -111,16 +100,19 @@ export async function crearCliente(idEmpresa, datos) {
       ],
     );
     return aFicha(rows[0]);
+  // Si falla por documento repetido se usa traducirDuplicado
   }).catch(traducirDuplicado);
 }
 
-/** Una ficha, para llenar el formulario de edición. */
+// Se exporta la funcion obtenerCliente que trae la ficha de un cliente
 export async function obtenerCliente(idEmpresa, idCliente) {
   return conEmpresa(idEmpresa, async (client) => {
+    // Consulta SQL para traer el cliente por su id
     const { rows } = await client.query(
       `SELECT ${COLUMNAS_FICHA} FROM app.clientes WHERE id_cliente = $1`,
       [idCliente],
     );
+    // Si no encuentra el cliente se lanza un error 404
     if (rows.length === 0) {
       throw new AppError(404, 'CLIENTE_NO_ENCONTRADO', 'Ese cliente no existe en tu empresa.');
     }
@@ -128,11 +120,8 @@ export async function obtenerCliente(idEmpresa, idCliente) {
   });
 }
 
-/**
- * Lista blanca de columnas editables. El nombre de columna no puede ir
- * parametrizado, así que se concatena, pero SOLO claves de este objeto
- * escrito en el código, nunca texto que venga del cliente.
- */
+// Objeto con las columnas que se pueden editar, el nombre del frontend y el de la base de datos
+// Asi solo se pueden cambiar estas columnas y no otras
 const COLUMNAS_EDITABLES = {
   nombres: 'nombres',
   apellidos: 'apellidos',
@@ -145,19 +134,24 @@ const COLUMNAS_EDITABLES = {
   activo: 'activo',
 };
 
+// Se exporta la funcion actualizarCliente para editar la ficha
 export async function actualizarCliente(idEmpresa, idCliente, datos) {
+  // Array con los campos que si llegaron en los datos
   const campos = Object.keys(COLUMNAS_EDITABLES).filter((c) => datos[c] !== undefined);
+  // Si no llego ningun campo se lanza un error 400
   if (campos.length === 0) {
     throw new AppError(400, 'SIN_CAMBIOS', 'No enviaste ningún campo para actualizar.');
   }
 
+  // Se arma el SET con map, cada columna con su $ empezando en $2 porque $1 es el id
   const asignaciones = campos
     .map((campo, i) => `${COLUMNAS_EDITABLES[campo]} = $${i + 2}`)
     .join(', ');
-  // Un texto vacío borra el dato (nombres no, porque el schema lo exige).
+  // Array con los valores, si llega texto vacio se guarda null
   const valores = campos.map((campo) => (datos[campo] === '' ? null : datos[campo]));
 
   return conEmpresa(idEmpresa, async (client) => {
+    // Consulta SQL para actualizar solo los campos que llegaron
     const { rows } = await client.query(
       `UPDATE app.clientes
           SET ${asignaciones}, updated_at = now()
@@ -165,6 +159,7 @@ export async function actualizarCliente(idEmpresa, idCliente, datos) {
         RETURNING ${COLUMNAS_FICHA}`,
       [idCliente, ...valores],
     );
+    // Si no encuentra el cliente se lanza un error 404
     if (rows.length === 0) {
       throw new AppError(404, 'CLIENTE_NO_ENCONTRADO', 'Ese cliente no existe en tu empresa.');
     }
@@ -172,43 +167,39 @@ export async function actualizarCliente(idEmpresa, idCliente, datos) {
   }).catch(traducirDuplicado);
 }
 
-// ================================================================== //
-// DAR ACCESO A LA PLATAFORMA                                         //
-// ================================================================== //
-
-/**
- * Convierte una ficha en una ficha con login:
- *   1. Exige que la ficha tenga correo (es el usuario de ingreso).
- *   2. Reutiliza el usuario si ese correo ya existe en la plataforma
- *      (por ejemplo, es cliente de otra empresa); si no, lo crea con
- *      una contraseña temporal que deberá cambiar al entrar.
- *   3. Crea su membresía con rol CLIENTE en esta empresa.
- *   4. Enlaza la ficha al usuario.
- *
- * La contraseña temporal se devuelve UNA sola vez para que el empleado
- * se la entregue al cliente; no queda guardada en claro en ningún lado.
- */
+// Se exporta la funcion darAccesoCliente para que un cliente pueda entrar a la plataforma
+// Crea el usuario si no existe, le da membresia con rol CLIENTE y lo une a la ficha
 export async function darAccesoCliente(idEmpresa, idCliente) {
+  // Se llama a obtenerCliente para traer la ficha y ver si existe
   const ficha = await obtenerCliente(idEmpresa, idCliente);
 
+  // Si el cliente ya tiene acceso se lanza un error 409
   if (ficha.tieneAcceso) {
     throw new AppError(409, 'YA_TIENE_ACCESO', 'Este cliente ya tiene acceso a la plataforma.');
   }
+  // Si la ficha no tiene correo se lanza un error 422, porque el correo es el usuario
   if (!ficha.email) {
     throw new AppError(422, 'SIN_CORREO',
       'Agrega un correo a la ficha antes de darle acceso: será su usuario de ingreso.');
   }
 
+  // Variable para la contraseña temporal, queda en null si el usuario ya existia
   let passwordTemporal = null;
+  // Consulta SQL para ver si ya hay un usuario con ese correo
+  // Se usa query y no conEmpresa porque los usuarios no son de una sola empresa
   const existente = await query(
     'SELECT id_usuario FROM app.usuarios WHERE lower(email) = lower($1)',
     [ficha.email],
   );
   let idUsuario = existente.rows[0]?.id_usuario;
 
+  // Si no existe el usuario, se crea con una contraseña temporal
   if (!idUsuario) {
+    // La contraseña se genera al azar con crypto, empieza con A1 para cumplir con mayuscula y numero
     passwordTemporal = `A1${crypto.randomBytes(12).toString('base64url')}`;
+    // Se llama a hashearPassword para guardar solo el hash de la contraseña
     const hash = await hashearPassword(passwordTemporal);
+    // Consulta SQL para crear el usuario, con debe_cambiar_password para que la cambie al entrar
     const creado = await query(
       `INSERT INTO app.usuarios
          (email, password_hash, nombres, apellidos, documento, telefono, estado, debe_cambiar_password)
@@ -219,17 +210,20 @@ export async function darAccesoCliente(idEmpresa, idCliente) {
     idUsuario = creado.rows[0].id_usuario;
   }
 
+  // Se llama a conEmpresa para hacer los siguientes pasos en una sola transaccion de la empresa
   await conEmpresa(idEmpresa, async (client) => {
-    // Ese usuario no puede tener ya OTRA ficha en esta empresa.
+    // Consulta SQL para ver si ese usuario ya esta en otra ficha de cliente
     const { rows: otra } = await client.query(
       'SELECT 1 FROM app.clientes WHERE id_usuario = $1 AND id_cliente <> $2',
       [idUsuario, idCliente],
     );
+    // Si el correo ya es de otro cliente se lanza un error 409
     if (otra.length > 0) {
       throw new AppError(409, 'CORREO_EN_OTRA_FICHA',
         'Ese correo ya pertenece a otro cliente de tu empresa.');
     }
 
+    // Consulta SQL para crear la membresia, y si ya existia se vuelve a poner ACTIVA
     const { rows: membresia } = await client.query(
       `INSERT INTO app.membresias (id_usuario, id_empresa)
        VALUES ($1, $2)
@@ -238,6 +232,7 @@ export async function darAccesoCliente(idEmpresa, idCliente) {
       [idUsuario, idEmpresa],
     );
 
+    // Consulta SQL para darle el rol CLIENTE a la membresia, si ya lo tiene no hace nada
     await client.query(
       `INSERT INTO app.membresia_roles (id_membresia, id_rol)
        SELECT $1, id_rol FROM app.roles WHERE codigo = 'CLIENTE'
@@ -245,16 +240,17 @@ export async function darAccesoCliente(idEmpresa, idCliente) {
       [membresia[0].id_membresia],
     );
 
+    // Consulta SQL para unir la ficha del cliente con el usuario
     await client.query(
       'UPDATE app.clientes SET id_usuario = $1, updated_at = now() WHERE id_cliente = $2',
       [idUsuario, idCliente],
     );
   });
 
+  // Se devuelve el correo y la contraseña temporal para entregarsela al cliente
   return {
     idCliente,
     email: ficha.email,
-    // null si el correo ya tenía cuenta: entra con su contraseña de siempre.
     passwordTemporal,
   };
 }

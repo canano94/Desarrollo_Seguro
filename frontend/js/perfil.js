@@ -1,9 +1,10 @@
+// Se importan las funciones de api.js para la sesion, el perfil y la contraseña
 import {
   restaurarSesion, sesionActual, elegirEmpresa,
   obtenerPerfil, guardarPerfil, cambiarPassword, salir,
 } from './api.js';
 
-// Captura de referencias al DOM //
+// Se toman los elementos del HTML de la pantalla de perfil
 const cargando = document.getElementById('cargando');
 const contenido = document.getElementById('contenido');
 const selectorEmpresa = document.getElementById('selector-empresa');
@@ -14,24 +15,19 @@ const avisoPassword = document.getElementById('aviso-password');
 const btnGuardar = document.getElementById('btn-guardar');
 const btnPassword = document.getElementById('btn-password');
 
-// Utilidades visuales //
+// Funcion para mostrar un mensaje en un aviso, si bien es true sale como exito
 function avisar(elemento, mensaje, bien = false) {
   elemento.textContent = mensaje;
   elemento.classList.toggle('aviso--bien', bien);
   elemento.hidden = false;
 }
 
+// Funcion para ocultar un aviso
 function ocultar(elemento) {
   elemento.hidden = true;
 }
 
-/** 
- * APUNTE DE SEGURIDAD FRENTE A XSS:
- * Todo se asigna con `textContent`, nunca con `innerHTML`.
- * Al usar textContent, el navegador trata el dato estrictamente como una 
- * cadena de texto visual y no como HTML ejecutable. Esta es la defensa real 
- * y definitiva contra inyecciones XSS del lado de quien pinta el dato. 
- */
+// Funcion para pintar una lista de etiquetas como roles o modulos
 function fichas(contenedor, valores) {
   contenedor.replaceChildren();
   for (const valor of valores) {
@@ -42,23 +38,19 @@ function fichas(contenedor, valores) {
   }
 }
 
-/** Pinta los datos personales globales del usuario en los inputs del formulario. */
+// Funcion para pintar el nombre y el correo, y llenar el formulario con los datos del usuario
 function pintarIdentidad(usuario) {
   document.getElementById('titulo-nombre').textContent = `${usuario.nombres} ${usuario.apellidos}`;
   document.getElementById('linea-correo').textContent = usuario.email;
   document.getElementById('barra-usuario').textContent = usuario.email;
 
-  // Asignación de valores con fallback a cadena vacía si vienen nulos //
   formPerfil.nombres.value = usuario.nombres ?? '';
   formPerfil.apellidos.value = usuario.apellidos ?? '';
   formPerfil.telefono.value = usuario.telefono ?? '';
   formPerfil.documento.value = usuario.documento ?? '';
 }
 
-/** 
- * Refleja en pantalla el contexto empresarial en el que está trabajando 
- * actualmente el usuario (Tenant activo, roles y permisos).
- */
+// Funcion para pintar la empresa activa con sus roles, modulos y permisos
 function pintarContexto() {
   const datos = sesionActual();
   const activa = datos.empresaActiva;
@@ -67,11 +59,7 @@ function pintarContexto() {
   fichas(document.getElementById('dato-roles'), activa?.roles ?? []);
   fichas(document.getElementById('dato-modulos'), activa?.modulos ?? []);
 
-  // APUNTE DE ARQUITECTURA (Sincronía de Permisos y Módulos):
-  // Los permisos que llegan aquí ya vienen pre-filtrados por el backend según 
-  // los módulos que la empresa contrató. Si la empresa no pagó el CRM, 
-  // aquí no aparecerá ningún permiso relacionado al CRM, aunque el rol del 
-  // usuario técnicamente los posea.
+  // Se recorre la lista de permisos con for para mostrar cada uno
   const lista = document.getElementById('lista-permisos');
   lista.replaceChildren();
   for (const permiso of datos.empresaActiva ? permisosDelToken() : []) {
@@ -80,7 +68,7 @@ function pintarContexto() {
     lista.append(item);
   }
 
-  // Desplegable para cambiar de empresa rápidamente desde el perfil //
+  // Se llena el selector con las empresas del usuario y se marca la activa
   selectorEmpresa.replaceChildren();
   for (const empresa of datos.empresas) {
     const opcion = document.createElement('option');
@@ -91,50 +79,40 @@ function pintarContexto() {
   }
   selectorEmpresa.hidden = datos.empresas.length < 2;
 
-  // El enlace a Plataforma solo se muestra si el JWT incluye el rol SUPER_ADMIN. 
-  // Es comodidad de UI: si un usuario inyecta código para hacer visible el enlace, 
-  // la API backend igualmente responderá 403 Forbidden al intentar acceder.
+  // El enlace de administracion solo se muestra al super admin
   document.getElementById('nav-admin').hidden =
     !datos.rolesPlataforma?.includes('SUPER_ADMIN');
 }
 
-/** 
- * APUNTE SOBRE GESTIÓN DE TOKENS EN EL NAVEGADOR:
- * Los permisos reales viajan firmados dentro del Access Token (JWT). 
- * Sin embargo, en lugar de importar una librería externa en el cliente para 
- * "decodificar" el base64 del JWT, simplemente leemos los permisos del objeto 
- * `perfil` que nos devuelve la API. Esto hace el frontend más ligero y robusto. 
- */
+// Array para guardar los permisos del usuario en la empresa activa
 let permisosActuales = [];
+// Funcion que devuelve los permisos guardados
 function permisosDelToken() {
   return permisosActuales;
 }
 
-/** Petición principal que carga los datos de perfil y sincroniza el estado local. */
+// Funcion que trae el perfil del servidor y pinta la pantalla
 async function cargar() {
   const { usuario } = await obtenerPerfil();
   const activa = sesionActual().empresaActiva;
-  
-  // Busca dentro de las membresías del usuario aquella que coincida con la empresa activa
+
+  // Se utiliza find para buscar la empresa activa dentro de las empresas del usuario y sacar sus permisos
   permisosActuales = usuario.empresas.find((e) => e.idEmpresa === activa?.idEmpresa)?.permisos ?? [];
   pintarIdentidad(usuario);
   pintarContexto();
 }
 
-/** Arranque de la vista */
+// Funcion que arranca la pagina, recupera la sesion y carga el perfil
 async function iniciar() {
   const datos = await restaurarSesion();
 
-  // Sin sesión, o con varias empresas y ninguna elegida, lo regresa al login.
+  // Si no hay sesion o falta elegir empresa se manda al login
   if (!datos || datos.requiereSeleccion) {
     location.replace('index.html');
     return;
   }
 
-  // APUNTE DE FLUJO:
-  // El perfil SÍ es accesible incluso con una contraseña temporal, porque precisamente 
-  // es en esta pantalla (o en cambiar-password) donde el usuario puede corregirla. 
-  // Solo se le muestra una advertencia, no se le bloquea la vista entera.
+  // Si la contraseña es temporal se muestra un aviso para que la cambie
   if (datos.debeCambiarPassword) {
     avisar(avisoPassword, 'Tu contraseña es temporal. Cámbiala para poder usar el sistema.');
   }
@@ -144,7 +122,7 @@ async function iniciar() {
   contenido.hidden = false;
 }
 
-// Selector de Tenancy (Empresa) //
+// Cuando cambia el selector se elige la otra empresa y se vuelve a cargar el perfil
 selectorEmpresa.addEventListener('change', async () => {
   selectorEmpresa.disabled = true;
   try {
@@ -157,11 +135,12 @@ selectorEmpresa.addEventListener('change', async () => {
   }
 });
 
-// Guardado de actualización de identidad //
+// Evento submit del formulario de perfil
 formPerfil.addEventListener('submit', async (evento) => {
   evento.preventDefault();
   ocultar(avisoPerfil);
 
+  // Objeto con los datos que se pueden cambiar, se usa trim para quitar los espacios
   const cambios = {
     nombres: formPerfil.nombres.value.trim(),
     apellidos: formPerfil.apellidos.value.trim(),
@@ -169,7 +148,7 @@ formPerfil.addEventListener('submit', async (evento) => {
     documento: formPerfil.documento.value.trim(),
   };
 
-  // Validación local rápida para ahorrar red
+  // Si nombres o apellidos estan vacios se muestra el aviso y no se manda nada
   if (!cambios.nombres || !cambios.apellidos) {
     avisar(avisoPerfil, 'Nombres y apellidos no pueden quedar vacíos.');
     return;
@@ -179,10 +158,12 @@ formPerfil.addEventListener('submit', async (evento) => {
   btnGuardar.textContent = 'Guardando…';
 
   try {
+    // Se llama a guardarPerfil para mandar los cambios y se pintan los datos que devuelve el servidor
     const { usuario } = await guardarPerfil(cambios);
     pintarIdentidad(usuario);
     avisar(avisoPerfil, 'Cambios guardados.', true);
   } catch (error) {
+    // Se utiliza el metodo map para mostrar el campo y el mensaje de cada error de validacion
     const detalle = error.detalles?.map((d) => `${d.campo}: ${d.mensaje}`).join(' · ');
     avisar(avisoPerfil, detalle || error.mensaje);
   } finally {
@@ -191,7 +172,7 @@ formPerfil.addEventListener('submit', async (evento) => {
   }
 });
 
-// Cambio voluntario de contraseña //
+// Evento submit del formulario para cambiar la contraseña
 formPassword.addEventListener('submit', async (evento) => {
   evento.preventDefault();
   ocultar(avisoPassword);
@@ -200,12 +181,11 @@ formPassword.addEventListener('submit', async (evento) => {
   btnPassword.textContent = 'Cambiando…';
 
   try {
+    // Se llama a cambiarPassword con la contraseña actual y la nueva
     await cambiarPassword(formPassword.passwordActual.value, formPassword.passwordNueva.value);
-    
-    // Al cambiar la clave, el servidor revoca (destruye) todas las sesiones activas, 
-    // incluida la que está usando ahora mismo. Salir y devolver al index es 
-    // lo único coherente que puede pasar después.
+
     avisar(avisoPassword, 'Contraseña cambiada. Vuelve a entrar.', true);
+    // Despues de cambiarla se manda al login para que entre otra vez
     setTimeout(() => location.replace('index.html'), 1800);
   } catch (error) {
     const detalle = error.detalles?.map((d) => d.mensaje).join(' · ');
@@ -215,18 +195,18 @@ formPassword.addEventListener('submit', async (evento) => {
   }
 });
 
+// Boton para cerrar sesion y volver al login
 document.getElementById('btn-salir').addEventListener('click', async () => {
   await salir();
   location.replace('index.html');
 });
 
+// Si falla iniciar se revisa el error, si es de sesion o de token se manda al login
 iniciar().catch((error) => {
   if (error?.codigo === 'DEBE_CAMBIAR_PASSWORD') {
     return location.replace('cambiar-password.html');
   }
-  
-  // Apunte UX: Redirigir siempre esconde la causa real y genera bucles infinitos.
-  // Solo devolvemos al login si confirmamos que el problema fue estrictamente de SESIÓN.
+
   const esSesion = ['SIN_TOKEN', 'TOKEN_INVALIDO', 'REFRESH_INVALIDO',
                     'REFRESH_EXPIRADO', 'SIN_REFRESH_TOKEN'].includes(error?.codigo);
   if (esSesion) return location.replace('index.html');

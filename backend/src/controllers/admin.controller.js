@@ -1,16 +1,10 @@
-// Importa todas las funciones de lógica de negocio relacionadas con la administración //
+// Se importan todas las funciones del servicio de administracion para usarlas aqui
 import * as adminService from '../services/admin.service.js';
 
-/**
- * ¿Qué hace esta función?
- * Responde a la petición de listar todas las empresas (exclusivo para SUPER_ADMIN).
- * 
- * ¿Por qué usa try/catch con `next(error)`?
- * Es el estándar en Express para el manejo asíncrono. Si algo falla en el servicio 
- * o en la base de datos, el error es capturado por el catch y enviado a `next()`, 
- * lo que hace que caiga directamente en nuestro middleware global `errorHandler.js`.
- */
+// Se exporta la funcion empresas para usarla en las rutas
+// Devuelve la lista de todas las empresas registradas
 export async function empresas(_req, res, next) {
+  // Se usa try/catch para capturar el error y mandarlo al middleware de errores
   try {
     res.json({ empresas: await adminService.listarEmpresas() });
   } catch (error) {
@@ -18,24 +12,18 @@ export async function empresas(_req, res, next) {
   }
 }
 
-/**
- * ¿Qué hace esta función?
- * Recibe el JSON validado del middleware (zod) en `req.body` y se lo pasa al servicio
- * para crear una nueva empresa. Responde con un código 201 (Created).
- */
+// Funcion para crear una empresa nueva con los datos que llegan en el body
 export async function crearEmpresa(req, res, next) {
   try {
     const empresa = await adminService.crearEmpresa(req.body);
+    // Se responde con 201 porque se creo un registro nuevo
     res.status(201).json({ empresa });
   } catch (error) {
     next(error);
   }
 }
 
-/** 
- * Consulta genérica de todos los usuarios de la plataforma (solo SUPER_ADMIN).
- * `req.consulta` viene del middleware `validarConsulta` que limpió la URL.
- */
+// Funcion que trae los usuarios, usando los filtros que ya vienen validados en req.consulta
 export async function usuarios(req, res, next) {
   try {
     res.json({ usuarios: await adminService.listarUsuarios(req.consulta ?? {}) });
@@ -44,10 +32,7 @@ export async function usuarios(req, res, next) {
   }
 }
 
-/** 
- * Lista miembros de cualquier empresa pasando el ID por la URL. 
- * (Solo accesible por el SUPER_ADMIN).
- */
+// Funcion que trae los miembros de una empresa segun el id que llega en la URL
 export async function miembrosDeEmpresa(req, res, next) {
   try {
     res.json({ miembros: await adminService.listarMiembros(req.params.idEmpresa) });
@@ -56,13 +41,8 @@ export async function miembrosDeEmpresa(req, res, next) {
   }
 }
 
-/**
- * ¿Por qué esta función es un ejemplo perfecto de seguridad IDOR?
- * Devuelve los miembros de la empresa a la que pertenece el usuario que hace la petición.
- * OJO de dónde sale el ID: `req.usuario.idEmpresa` viene del Token JWT firmado, 
- * NUNCA de la URL (`req.params`). Si el ID viniera de la URL, el administrador de la Empresa A 
- * podría poner el ID de la Empresa B en Postman y robar su lista de empleados.
- */
+// Funcion que trae los miembros de la empresa del usuario que inicio sesion
+// Se usa el idEmpresa del token y no uno que mande el cliente
 export async function miembrosPropios(req, res, next) {
   try {
     res.json({ miembros: await adminService.listarMiembrosPropios(req.usuario.idEmpresa) });
@@ -71,13 +51,7 @@ export async function miembrosPropios(req, res, next) {
   }
 }
 
-// --- CRUD de empresas ---------------------------------------------- //
-
-/**
- * Recibe un PATCH para actualizar datos. 
- * El ID sale de la URL, pero el middleware de rutas ya verificó que quien hace 
- * esto tiene el permiso necesario.
- */
+// Funcion para actualizar los datos de una empresa
 export async function actualizarEmpresa(req, res, next) {
   try {
     const empresa = await adminService.actualizarEmpresa(req.params.idEmpresa, req.body);
@@ -85,8 +59,10 @@ export async function actualizarEmpresa(req, res, next) {
   } catch (error) { next(error); }
 }
 
+// Funcion para activar o desactivar una empresa
 export async function cambiarEstadoEmpresa(req, res, next) {
   try {
+    // Se le pasa el id de la empresa y el estado nuevo que llega en el body
     const empresa = await adminService.cambiarEstadoEmpresa(
       req.params.idEmpresa,
       req.body.estado,
@@ -95,6 +71,7 @@ export async function cambiarEstadoEmpresa(req, res, next) {
   } catch (error) { next(error); }
 }
 
+// Funcion para cambiar los modulos que tiene habilitados una empresa
 export async function cambiarModulos(req, res, next) {
   try {
     const resultado = await adminService.cambiarModulos(req.params.idEmpresa, req.body.modulos);
@@ -102,14 +79,14 @@ export async function cambiarModulos(req, res, next) {
   } catch (error) { next(error); }
 }
 
+// Funcion que trae la lista de modulos que existen en el sistema
 export async function listarModulos(req, res, next) {
   try {
     res.json({ modulos: await adminService.listarModulos() });
   } catch (error) { next(error); }
 }
 
-// --- Miembros de una empresa --------------------------------------- //
-
+// Funcion para agregar un miembro a una empresa
 export async function agregarMiembro(req, res, next) {
   try {
     const miembro = await adminService.agregarMiembro(req.params.idEmpresa, req.body);
@@ -117,54 +94,41 @@ export async function agregarMiembro(req, res, next) {
   } catch (error) { next(error); }
 }
 
+// Funcion para actualizar un miembro de la empresa, por ejemplo su rol o estado
 export async function actualizarMiembro(req, res, next) {
   try {
     const miembro = await adminService.actualizarMiembro(
       req.params.idEmpresa,
-      req.params.idMembresia,   // La URL trae dos parámetros: /empresas/:idEmpresa/miembros/:idMembresia
+      req.params.idMembresia,
       req.body,
     );
     res.json({ miembro });
   } catch (error) { next(error); }
 }
 
-// --- Restablecer contraseña ---------------------------------------- //
-
-/** 
- * Restablecimiento por el administrador de plataforma: puede resetear 
- * a cualquier cuenta del sistema, por eso se envía `null` en el límite de empresa.
- */
+// Funcion para restablecer la contraseña de un usuario desde el panel del administrador general
 export async function restablecerPassword(req, res, next) {
   try {
+    // Se pasa null en la empresa porque el administrador general no esta limitado a una sola empresa
     const resultado = await adminService.restablecerPassword(
       req.params.idUsuario,
-      req.usuario.idUsuario,   // Registramos QUIÉN hizo el reseteo para la bitácora
-      null,                    // Sin límite de empresa
+      req.usuario.idUsuario,
+      null,
     );
     res.json(resultado);
   } catch (error) { next(error); }
 }
 
-/**
- * ¿Qué hace esta función?
- * Restablecimiento pedido desde una empresa (ADMIN_EMPRESA o PRESTADOR).
- *
- * ¿Por qué el idEmpresa sale del token y no de la URL?
- * Porque si viniera de la URL, bastaría con cambiar ese valor para
- * resetear gente de otra empresa. El token va firmado: nadie puede
- * alterarlo sin invalidar la firma.
- *
- * AMbito
- * Quien tiene 'usuarios.gestionar' (ADMIN_EMPRESA) manda lista vacía,
- * que significa "sin límite de sede". Un PRESTADOR manda sus sedes
- * asignadas, y el servicio solo le deja tocar a la gente de esas.
- */
+// Funcion para restablecer la contraseña de un usuario de la misma empresa
 export async function restablecerPasswordMiEmpresa(req, res, next) {
   try {
+    // Si tiene el permiso usuarios.gestionar el ambito queda vacio y puede con todos
+    // Si no, solo puede con los usuarios de sus propios prestadores
     const ambito = req.usuario.permisos.includes('usuarios.gestionar')
       ? []
       : (req.usuario.prestadores ?? []);
 
+    // Se le pasa la empresa del token para que no pueda tocar usuarios de otra empresa
     const resultado = await adminService.restablecerPassword(
       req.params.idUsuario,
       req.usuario.idUsuario,
@@ -175,14 +139,14 @@ export async function restablecerPasswordMiEmpresa(req, res, next) {
   } catch (error) { next(error); }
 }
 
-/* --- Editor de roles y permisos ------------------------------------ */
-
+// Funcion que trae la matriz de roles con sus permisos
 export async function matrizRoles(_req, res, next) {
   try {
     res.json(await adminService.listarMatrizRoles());
   } catch (error) { next(error); }
 }
 
+// Funcion para crear un rol nuevo
 export async function crearRol(req, res, next) {
   try {
     const rol = await adminService.crearRol(req.body);
@@ -190,11 +154,11 @@ export async function crearRol(req, res, next) {
   } catch (error) { next(error); }
 }
 
+// Funcion para cambiar los permisos que tiene un rol
 export async function actualizarPermisosDeRol(req, res, next) {
   try {
-    // Se devuelve la matriz completa para que el frontend repinte todo
-    // sin tener que pedirla otra vez.
     const matriz = await adminService.actualizarPermisosDeRol(
+      // Se usa Number porque el id del rol llega como texto en la URL
       Number(req.params.idRol),
       req.body.permisos,
     );
@@ -202,6 +166,7 @@ export async function actualizarPermisosDeRol(req, res, next) {
   } catch (error) { next(error); }
 }
 
+// Funcion para eliminar un rol segun su id
 export async function eliminarRol(req, res, next) {
   try {
     res.json(await adminService.eliminarRol(Number(req.params.idRol)));

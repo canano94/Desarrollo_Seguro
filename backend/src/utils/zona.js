@@ -1,47 +1,47 @@
-/**
- * ZONA HORARIA DE LA AGENDA
- *
- * El servidor de Azure corre en UTC. Si se arma la fecha con
- * new Date(2026, 9, 7, 7, 0) eso son las 07:00 UTC = 02:00 en Colombia.
- * Por eso toda hora "de pared" (la que ve el cliente) se convierte con
- * el desfase explícito de la empresa.
- *
- * Colombia no tiene horario de verano, así que un desfase fijo basta.
- * Se puede cambiar con la variable ZONA_HORARIA_OFFSET (ej. -05:00).
- */
 
+// Expresion regular para revisar que la zona horaria venga como +HH:MM o -HH:MM
 const PATRON = /^([+-])(\d{2}):(\d{2})$/;
+// Se lee la zona horaria del .env, si no viene se usa -05:00 que es la de Colombia
 const configurado = process.env.ZONA_HORARIA_OFFSET ?? '-05:00';
 
+// Se exporta la constante OFFSET, si la del .env no tiene el formato correcto se usa -05:00
 export const OFFSET = PATRON.test(configurado) ? configurado : '-05:00';
 
+// Se separa el signo, las horas y los minutos del offset
 const [, signo, hh, mm] = OFFSET.match(PATRON);
+// Constante con el offset pasado a minutos, negativo si es -
 const OFFSET_MIN = (signo === '-' ? -1 : 1) * (Number(hh) * 60 + Number(mm));
 
-/** "2026-10-07" + "08:30" (hora local de la empresa) -> instante real. */
+// Se exporta la funcion instanteLocal que junta una fecha y una hora locales en un Date
 export function instanteLocal(fecha, hora) {
   return new Date(`${fecha}T${hora}:00${OFFSET}`);
 }
 
-/** Día de la semana de una fecha "YYYY-MM-DD": 1 = lunes ... 7 = domingo. */
+// Se exporta la funcion diaSemana que devuelve el dia de la semana de 1 (lunes) a 7 (domingo)
 export function diaSemana(fecha) {
-  const d = new Date(`${fecha}T12:00:00Z`).getUTCDay(); // 0 = domingo
+  // Se usa el mediodia en UTC para que la zona horaria no cambie el dia
+  const d = new Date(`${fecha}T12:00:00Z`).getUTCDay();
+  // getUTCDay da 0 para el domingo, por eso se cambia a 7
   return d === 0 ? 7 : d;
 }
 
-/** Un instante -> fecha, día y minutos del día, vistos en la hora local. */
+// Se exporta la funcion partesLocales que saca la fecha, el dia y los minutos en hora local
 export function partesLocales(instante) {
+  // Se le suma el offset a la hora para pasarla a la hora local
   const local = new Date(instante.getTime() + OFFSET_MIN * 60_000);
+  // Se toman los primeros 10 caracteres para quedarse con la fecha AAAA-MM-DD
   const fecha = local.toISOString().slice(0, 10);
   return {
     fecha,
     dia: diaSemana(fecha),
+    // Minutos que van desde la medianoche
     minutos: local.getUTCHours() * 60 + local.getUTCMinutes(),
   };
 }
 
-/** "08:30" -> 510 */
+// Se exporta la funcion aMinutos que pasa una hora HH:MM a minutos
 export function aMinutos(hora) {
+  // Se separa por los dos puntos y se usa map para pasar cada parte a numero
   const [h, m] = hora.split(':').map(Number);
   return h * 60 + m;
 }

@@ -1,31 +1,21 @@
-// Importa la lógica de negocio de la agenda //
+// Se importan los servicios de agenda y de CRM para usarlos en el controlador
 import * as agenda from '../services/agenda.service.js';
 import * as crm from '../services/crm.service.js';
 
-// Función auxiliar rápida que verifica si el usuario actual tiene un permiso en su token //
+// Funcion corta para saber si el usuario tiene un permiso dentro de su lista de permisos
 const puede = (req, permiso) => req.usuario.permisos.includes(permiso);
 
-/**
- * ¿Qué hace esta función y por qué es el núcleo de la seguridad de la Agenda?
- * Determina qué información de sedes/prestadores puede ver la persona que hizo la petición.
- *
- * Explicación arquitectónica:
- * Un arreglo VACÍO `[]` significa "sin límite" (ve todas las sedes). Lo tienen los ADMIN_EMPRESA
- * y los clientes. 
- * Los EMPLEADOS y PRESTADORES traen en su token un arreglo con IDs de sedes específicas.
- * Al sacar esto de `req.usuario` (del token), un empleado tramposo jamás podrá mandarnos 
- * un arreglo vacío desde el frontend para intentar ver toda la empresa. ¡La verdad la dicta el token!
- */
+// Funcion que devuelve el ambito del usuario, o sea los prestadores que puede ver
+// Si puede ver todas las reservas se devuelve un array vacio, que significa sin limite
 function ambitoDe(req) {
-  // Si el usuario tiene permiso de ver todo (Ej. Admin), ignoramos sus restricciones de sede //
   if (puede(req, 'reservas.ver_todas')) return [];
-  // Si no, devolvemos las sedes a las que está asignado //
   return req.usuario.prestadores ?? [];
 }
 
-// --- Prestadores --------------------------------------------------- //
-
+// Se exporta la funcion prestadores para usarla en las rutas
+// Trae los prestadores de la empresa filtrados por el ambito del usuario
 export async function prestadores(req, res, next) {
+  // Se usa try/catch para capturar el error y mandarlo al middleware
   try {
     res.json({
       prestadores: await agenda.listarPrestadores(req.usuario.idEmpresa, ambitoDe(req)),
@@ -33,18 +23,18 @@ export async function prestadores(req, res, next) {
   } catch (error) { next(error); }
 }
 
+// Funcion para crear un prestador en la empresa del usuario
 export async function crearPrestador(req, res, next) {
   try {
-    // idEmpresa sale del token, no del body: nadie crea en una empresa ajena.
     const prestador = await agenda.crearPrestador(req.usuario.idEmpresa, req.body);
     res.status(201).json({ prestador });
   } catch (error) { next(error); }
 }
 
-// --- Servicios ----------------------------------------------------- //
-
+// Funcion que trae los servicios de la empresa, y si llega un prestador solo los de ese
 export async function servicios(req, res, next) {
   try {
+    // Se revisa que idPrestador sea texto para no pasar valores raros a la consulta
     const idPrestador = typeof req.query.idPrestador === 'string' ? req.query.idPrestador : null;
     res.json({
       servicios: await agenda.listarServicios(req.usuario.idEmpresa, idPrestador, ambitoDe(req)),
@@ -52,6 +42,7 @@ export async function servicios(req, res, next) {
   } catch (error) { next(error); }
 }
 
+// Funcion para crear un servicio nuevo
 export async function crearServicio(req, res, next) {
   try {
     const servicio = await agenda.crearServicio(req.usuario.idEmpresa, req.body);
@@ -59,8 +50,7 @@ export async function crearServicio(req, res, next) {
   } catch (error) { next(error); }
 }
 
-// --- Miembros ------------------------------------------------------ //
-
+// Funcion que trae los miembros de la empresa segun el ambito del usuario
 export async function miembros(req, res, next) {
   try {
     res.json({
@@ -69,25 +59,19 @@ export async function miembros(req, res, next) {
   } catch (error) { next(error); }
 }
 
-/**
- * ¿Por qué esta función tiene lógica y no solo manda datos al servicio?
- * Porque es una regla de seguridad de "Escalada de Privilegios" que debe frenarse 
- * antes de tocar la base de datos.
- * 
- * 1. Verifica que un empleado no intente invitar a alguien asignándolo a una sede 
- *    que él mismo no controla.
- * 2. Bloquea de tajo que un Prestador intente invitar a alguien dándole el rol 
- *    de 'ADMIN_EMPRESA' (solo un admin actual puede crear a otro admin).
- */
+// Funcion para invitar a una persona a la empresa como miembro
 export async function invitarMiembro(req, res, next) {
   try {
     const ambito = ambitoDe(req);
 
+    // Si el usuario tiene un ambito limitado se valida que no se salga de sus prestadores
     if (ambito.length > 0) {
+      // Array con los prestadores que mando en el body
       const pedidos = req.body.prestadores ?? [];
-      // .some() verifica si algún ID del body NO está en la lista permitida del usuario //
+      // Se usa some para saber si alguno de los prestadores no esta en su ambito
       const fueraDeAmbito = pedidos.some((id) => !ambito.includes(id));
-      
+
+      // Si se sale del ambito o no mando ningun prestador se responde con error 403
       if (fueraDeAmbito || pedidos.length === 0) {
         return next(
           Object.assign(new Error('Solo puedes asignar personas a tus propios prestadores.'), {
@@ -96,7 +80,9 @@ export async function invitarMiembro(req, res, next) {
           }),
         );
       }
-      
+
+      // Un usuario con ambito limitado no puede dar el rol de administrador de empresa
+      // Asi se evita que alguien se suba los permisos
       if (req.body.rol === 'ADMIN_EMPRESA') {
         return next(
           Object.assign(new Error('No puedes asignar el rol de administrador de empresa.'), {
@@ -107,26 +93,22 @@ export async function invitarMiembro(req, res, next) {
       }
     }
 
+    // Si paso las validaciones se llama al servicio para crear el miembro
     const miembro = await agenda.invitarMiembro(req.usuario.idEmpresa, req.body);
     return res.status(201).json({ miembro });
   } catch (error) { return next(error); }
 }
 
-// --- Reservas ------------------------------------------------------ //
-
-/**
- * Lista las reservas de forma dinámica.
- * El "alcance" determina qué consulta se hace en base de datos. Si lo mandara 
- * el frontend, sería una vulnerabilidad inmensa. Al deducirlo internamente leyendo 
- * los permisos del token (`puede()`), garantizamos que el cliente solo vea 
- * lo que realmente le corresponde.
- */
+// Funcion que trae las reservas segun lo que el usuario puede ver
 export async function reservas(req, res, next) {
   try {
+    // Variable para el alcance, por defecto solo ve sus propias reservas
+    // Si tiene permisos mas altos se cambia a todas o a ambito
     let alcance = 'propias';
     if (puede(req, 'reservas.ver_todas')) alcance = 'todas';
     else if (puede(req, 'reservas.ver_ambito')) alcance = 'ambito';
 
+    // Se devuelven las reservas y tambien el alcance para que el frontend sepa que se esta mostrando
     res.json({
       reservas: await agenda.listarReservas(
         req.usuario.idEmpresa,
@@ -139,12 +121,10 @@ export async function reservas(req, res, next) {
   } catch (error) { next(error); }
 }
 
-/**
- * Devuelve un array cerrado de horas disponibles.
- * `req.consulta` viene del validador de Zod que limpió la Query String de la URL.
- */
+// Funcion que trae las franjas libres de un servicio en una fecha
 export async function disponibilidad(req, res, next) {
   try {
+    // Se usan los datos de req.consulta que ya vienen validados por zod
     const resultado = await agenda.franjasLibres(
       req.usuario.idEmpresa,
       req.consulta.idServicio,
@@ -154,14 +134,14 @@ export async function disponibilidad(req, res, next) {
   } catch (error) { next(error); }
 }
 
+// Funcion para crear una reserva (turno)
 export async function crearReserva(req, res, next) {
   try {
-    // Si la persona tiene permiso para gestionar la agenda, se le permite mandar 
-    // un ID de cliente distinto al suyo. Si no, obligatoriamente reserva para sí mismo.
+    // Solo quien tiene el permiso reservas.aprobar puede agendar a nombre de otra persona
     const puedeAgendarAOtros = puede(req, 'reservas.aprobar');
     const reserva = await agenda.crearReserva(
       req.usuario.idEmpresa,
-      req.usuario.idMembresia, // Quien está haciendo la acción (el Solicitante)
+      req.usuario.idMembresia,
       req.body,
       puedeAgendarAOtros,
       ambitoDe(req),
@@ -170,6 +150,7 @@ export async function crearReserva(req, res, next) {
   } catch (error) { next(error); }
 }
 
+// Funcion para cambiar el estado de una reserva, por ejemplo confirmarla o cancelarla
 export async function cambiarEstadoReserva(req, res, next) {
   try {
     const reserva = await agenda.cambiarEstadoReserva(
@@ -183,6 +164,7 @@ export async function cambiarEstadoReserva(req, res, next) {
   } catch (error) { next(error); }
 }
 
+// Funcion para mover una reserva a otra fecha u hora
 export async function reprogramarReserva(req, res, next) {
   try {
     const reserva = await agenda.reprogramarReserva(
@@ -196,8 +178,7 @@ export async function reprogramarReserva(req, res, next) {
   } catch (error) { next(error); }
 }
 
-// --- Observaciones ------------------------------------------------- //
-
+// Funcion que trae las observaciones de una reserva
 export async function observaciones(req, res, next) {
   try {
     res.json({
@@ -210,11 +191,12 @@ export async function observaciones(req, res, next) {
   } catch (error) { next(error); }
 }
 
+// Funcion para agregar una observacion a una reserva
 export async function agregarObservacion(req, res, next) {
   try {
     const observacion = await agenda.agregarObservacion(
       req.usuario.idEmpresa,
-      req.usuario.idMembresia, // Quien escribe la nota
+      req.usuario.idMembresia,
       req.params.idReserva,
       req.body.detalle,
       ambitoDe(req),
@@ -223,6 +205,7 @@ export async function agregarObservacion(req, res, next) {
   } catch (error) { next(error); }
 }
 
+// Funcion para actualizar un prestador, respetando el ambito del usuario
 export async function actualizarPrestador(req, res, next) {
   try {
     const prestador = await agenda.actualizarPrestador(
@@ -232,6 +215,7 @@ export async function actualizarPrestador(req, res, next) {
   } catch (error) { next(error); }
 }
 
+// Funcion para actualizar un servicio, respetando el ambito del usuario
 export async function actualizarServicio(req, res, next) {
   try {
     const servicio = await agenda.actualizarServicio(
@@ -241,6 +225,7 @@ export async function actualizarServicio(req, res, next) {
   } catch (error) { next(error); }
 }
 
+// Funcion para actualizar un miembro de la empresa
 export async function actualizarMiembro(req, res, next) {
   try {
     const miembro = await agenda.actualizarMiembro(
@@ -250,27 +235,23 @@ export async function actualizarMiembro(req, res, next) {
   } catch (error) { next(error); }
 }
 
-/* --- Clientes ------------------------------------------------------ */
-
-/**
- * Estos tres controladores usan el servicio de CRM aunque vivan aquí.
- * No es una mezcla descuidada: el servicio no sabe nada de rutas ni de
- * módulos, así que puede llamarse desde donde haga falta. Los clientes
- * atraviesan agenda y CRM, por eso su router es independiente.
- */
+// Funcion para buscar clientes por un texto
 export async function clientes(req, res, next) {
   try {
+    // Se limpia el texto con trim y se corta a 80 caracteres para que no manden busquedas muy largas
     const termino = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 80) : null;
     res.json({ clientes: await crm.buscarClientes(req.usuario.idEmpresa, termino) });
   } catch (error) { next(error); }
 }
 
+// Funcion que trae el historial de un cliente
 export async function historialCliente(req, res, next) {
   try {
     res.json(await crm.historialCliente(req.usuario.idEmpresa, req.params.idCliente));
   } catch (error) { next(error); }
 }
 
+// Funcion que trae los turnos de un cliente, filtrados por el ambito del usuario
 export async function turnosDeCliente(req, res, next) {
   try {
     res.json({

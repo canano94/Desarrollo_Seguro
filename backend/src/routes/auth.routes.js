@@ -1,10 +1,10 @@
-// Importa el enrutador de Express //
+// Se importa Router de express para crear las rutas
 import { Router } from 'express';
-// Importa la librería para limitar la cantidad de peticiones (Rate Limiting) //
+// Se importa express-rate-limit para limitar los intentos por IP
 import rateLimit from 'express-rate-limit';
-// Importa el controlador de autenticación //
+// Se importa el controlador de autenticacion
 import * as ctrl from '../controllers/auth.controller.js';
-// Importa los middlewares de barrera //
+// Se importan los middlewares que revisan el token, el rol, el modulo y la empresa
 import {
   autenticar,
   exigirRoles,
@@ -12,7 +12,7 @@ import {
   exigirEmpresaActiva,
   exigirPlataforma,
 } from '../middleware/auth.js';
-// Importa los validadores de Zod para limpiar la entrada del usuario //
+// Se importa validar y los esquemas de zod para los datos de login, registro y perfil
 import {
   validar,
   registroSchema,
@@ -22,32 +22,24 @@ import {
   actualizarPerfilSchema,
 } from '../validators/auth.schemas.js';
 
-// Instancia el enrutador //
+// Se crea el router de autenticacion
 const router = Router();
 
-/**
- * DEFENSA DE INFRAESTRUCTURA (Estudio de Ciberseguridad):
- * Límite por IP + correo.
- * 
- * ¿Por qué necesitamos esto si la base de datos ya bloquea cuentas?
- * El bloqueo de la BD (intentos_fallidos) protege la CUENTA del usuario.
- * Este rate limit en la ruta protege al SERVIDOR (CPU).
- * 
- * El algoritmo bcrypt es pesado por diseño (toma ms calcular un hash). 
- * Si un atacante hace un ataque DDoS enviando 10,000 peticiones por segundo al /login, 
- * la CPU del servidor llegaría al 100% calculando hashes y tumbaría toda la aplicación. 
- * Con este middleware, a la petición 11, Express la rechaza instantáneamente sin calcular nada.
- */
+// Limite para el login: maximo 10 intentos cada 15 minutos
+// Sirve para frenar ataques de fuerza bruta a las contraseñas
 const limiteLogin = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 10,
+  // Se mandan los encabezados estandar con la informacion del limite
   standardHeaders: 'draft-7',
   legacyHeaders: false,
+  // El limite se cuenta por IP y correo juntos
   keyGenerator: (req) => `${req.ip}:${(req.body?.email ?? '').toLowerCase()}`,
+  // Mensaje que se devuelve cuando se pasa del limite
   message: { error: { codigo: 'DEMASIADOS_INTENTOS', mensaje: 'Demasiados intentos. Espera unos minutos.' } },
 });
 
-// Limita la creación de cuentas masivas automatizadas (Bots) //
+// Limite para el registro: maximo 5 registros por hora desde la misma IP
 const limiteRegistro = rateLimit({
   windowMs: 60 * 60 * 1000,
   limit: 5,
@@ -56,51 +48,42 @@ const limiteRegistro = rateLimit({
   message: { error: { codigo: 'DEMASIADOS_REGISTROS', mensaje: 'Demasiados registros desde esta IP.' } },
 });
 
-// --- Públicas (No requieren Token) ---------------------------------- //
-
+// Ruta para registrarse, primero pasa por el limite y luego valida los datos
 router.post('/registro', limiteRegistro, validar(registroSchema), ctrl.registrar);
+// Ruta para iniciar sesion, con limite de intentos y validacion
 router.post('/login', limiteLogin, validar(loginSchema), ctrl.login);
+// Ruta para renovar el access token, usa el refresh token de la cookie
 router.post('/refresh', ctrl.refrescar);
+// Ruta para cerrar la sesion
 router.post('/logout', ctrl.logout);
 
-// --- Elegir o cambiar de empresa ------------------------------------ //
-
-/**
- * Esta ruta identifica a la persona usando su Cookie HttpOnly,
- * por eso no pasa por la verificación estándar de "autenticar" que 
- * busca el Access Token en los Headers.
- */
+// Ruta para escoger la empresa con la que se va a trabajar
 router.post('/empresa', validar(seleccionEmpresaSchema), ctrl.seleccionarEmpresa);
 
-// --- Protegidas (Exigen Token Access) ------------------------------- //
-
+// Rutas del perfil, todas piden estar autenticado
 router.get('/perfil', autenticar, ctrl.perfil);
 router.patch('/perfil', autenticar, validar(actualizarPerfilSchema), ctrl.actualizarPerfil);
+// Ruta para cambiar la contraseña, valida la actual y la nueva
 router.post('/password', autenticar, validar(cambioPasswordSchema), ctrl.cambiarPassword);
+// Ruta para cerrar la sesion en todos los dispositivos
 router.post('/logout-todos', autenticar, ctrl.logoutTodos);
 
-// --- Ejemplos para comprobar roles, módulos y plataforma ------------- //
-
-/**
- * Apunte rápido de pruebas:
- * Estos tres endpoints finales son maravillosos para que pruebes tu capa 
- * de seguridad. Puedes usarlos en Postman para confirmar que tu JWT fue 
- * firmado correctamente y que tus middlewares `exigirModulo` o `exigirRoles` 
- * están inyectando y rebotando peticiones como deben.
- */
+// Ruta de prueba que solo deja pasar al rol ADMIN_EMPRESA
 router.get('/solo-admin', autenticar, exigirEmpresaActiva,
   exigirRoles('ADMIN_EMPRESA'), (req, res) => {
     res.json({ mensaje: `Acceso administrativo en ${req.usuario.empresaSlug}.` });
   });
 
+// Ruta de prueba que solo deja pasar si la empresa tiene el modulo CRM
 router.get('/solo-crm', autenticar, exigirEmpresaActiva,
   exigirModulo('CRM'), (req, res) => {
     res.json({ mensaje: `El módulo CRM está activo en ${req.usuario.empresaSlug}.` });
   });
 
+// Ruta de prueba que solo deja pasar al administrador de plataforma
 router.get('/solo-plataforma', autenticar, exigirPlataforma, (_req, res) => {
   res.json({ mensaje: 'Acceso de administrador de plataforma.' });
 });
 
-// Exporta el enrutador configurado //
+// Se exporta el router para montarlo en la app
 export default router;
