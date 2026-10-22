@@ -1,9 +1,11 @@
 // Se importa query para consultas normales y conEmpresa para abrir la conexion con la empresa
-import { query, conEmpresa } from '../db/pool.js';
+import { query, conEmpresa, pool } from '../db/pool.js';
 // Se importan los errores propios para responder con el codigo y mensaje correcto
 import { AppError, credencialesInvalidas } from '../utils/errors.js';
 // Se importa net de Node para poder revisar si una IP es valida
 import net from 'node:net';
+// Se importa crypto de Node para crear la contraseña al azar de una cuenta eliminada
+import crypto from 'node:crypto';
 // Se importa la funcion que crea la ficha del cliente en la agenda
 import { asegurarFichaCliente } from './agenda.service.js';
 // Se importan las funciones de cifrado para las contraseñas y los refresh token
@@ -18,6 +20,8 @@ import {
 import { firmarAccessToken } from '../utils/jwt.js';
 // Se importan las variables de entorno con la configuracion
 import { env } from '../config/env.js';
+// Se importa la version vigente de los terminos para registrar la aceptacion
+import { VERSION_LEGAL, requiereAceptar } from '../config/legal.js';
 
 // Funcion para guardar la IP solo si es valida, si no se guarda null
 const ipSegura = (ip) => (net.isIP(ip ?? '') ? ip : null);
@@ -112,6 +116,7 @@ function armarSesion({ usuario, contexto, rolesPlataforma, membresias }) {
     // Se firma el JWT de acceso con el usuario, la empresa activa y los roles
     accessToken: firmarAccessToken({ usuario, contexto, rolesPlataforma }),
     debeCambiarPassword: usuario.debe_cambiar_password === true,
+    requiereAceptar: requiereAceptar(usuario),
     usuario: identidadPublica(usuario),
     empresaActiva: contexto ? empresaPublica(contexto) : null,
     // Se utiliza el metodo map para convertir cada membresia al formato de empresa
@@ -163,6 +168,9 @@ export async function registrar(datos, ctx) {
     ],
   );
   const usuario = rows[0];
+
+  // Se guarda que acepto los terminos y la politica al registrarse (el esquema exige aceptaTerminos)
+  await registrarAceptacion(usuario.id_usuario, 'REGISTRO');
 
   // Si hay empresa se crea la membresia del usuario en esa empresa
   if (empresa) {
@@ -297,6 +305,7 @@ export async function login({ email, password }, ctx) {
     return {
       requiereSeleccion: true,
       accessToken: null,
+      requiereAceptar: requiereAceptar(usuario),
       usuario: identidadPublica(usuario),
       empresaActiva: null,
       empresas: membresias.map(empresaPublica),
@@ -417,6 +426,7 @@ export async function refrescarSesion(refreshTokenPlano, idEmpresaDeseada, ctx) 
       requiereSeleccion: true,
       accessToken: null,
       debeCambiarPassword: usuario.debe_cambiar_password,
+      requiereAceptar: requiereAceptar(usuario),
       usuario: identidadPublica(usuario),
       empresaActiva: null,
       empresas: membresias.map(empresaPublica),
@@ -535,4 +545,127 @@ export async function cambiarPassword({ idUsuario, passwordActual, passwordNueva
     'UPDATE app.refresh_tokens SET revocado_en = now() WHERE id_usuario = $1 AND revocado_en IS NULL',
     [idUsuario],
   );
+}
+
+// Se exporta la funcion registrarAceptacion que guarda que el usuario acepto los terminos y la politica
+// origen es INGRESO (pantalla de aceptar) o REGISTRO (al crear la cuenta)
+// Se hace en una sola consulta con WITH para que se guarde todo o nada
+export async function registrarAceptacion(idUsuario, origen = 'INGRESO') {
+  const { rowCount } = await query(
+    `WITH u AS (
+       UPDATE app.usuarios
+          SET terminos_version = $2, terminos_aceptados_en = now()
+        WHERE id_usuario = $1
+        RETURNING id_usuario)
+     INSERT INTO app.consentimientos (id_usuario, documento, version, origen)
+     SELECT u.id_usuario, d.documento, $2, $3
+       FROM u CROSS JOIN unnest(ARRAY['TERMINOS', 'PRIVACIDAD']) AS d(documento)`,
+    [idUsuario, VERSION_LEGAL, origen],
+  );
+  // Si no se inserto nada es porque el usuario no existe
+  if (rowCount === 0) throw new AppError(404, 'USUARIO_NO_ENCONTRADO', 'Usuario no encontrado.');
+  return { version: VERSION_LEGAL };
+}
+
+// Se exporta la funcion eliminarCuenta para que el usuario borre su propia cuenta (derecho de supresion)
+// No se borra la fila: se anonimiza, asi los turnos y casos donde participo no quedan rotos
+// Es inmediato y no se puede deshacer
+export async function eliminarCuenta(idUsuario, password, ctx) {
+  const usuario = await buscarUsuarioPorId(idUsuario);
+  if (!usuario || usuario.eliminado_en) {
+    throw new AppError(404, 'USUARIO_NO_ENCONTRADO', 'Usuario no encontrado.');
+  }
+  // Se pide la contraseña para que nadie borre la cuenta desde un celular desbloqueado ajeno
+  if (!(await verificarPassword(password, usuario.password_hash))) {
+    await registrarIntento({ email: usuario.email, idUsuario, exito: false, motivo: 'ELIMINAR_CUENTA', ctx });
+    throw new AppError(400, 'PASSWORD_INCORRECTA', 'La contraseña no coincide.');
+  }
+
+  const [membresias, rolesPlataforma] = await Promise.all([
+    membresiasDe(idUsuario),
+    rolesPlataformaDe(idUsuario),
+  ]);
+  // Las cuentas que administran la plataforma no se borran desde aqui
+  if (rolesPlataforma.length > 0) {
+    throw new AppError(409, 'CUENTA_DE_PLATAFORMA',
+      'Las cuentas de administración de la plataforma no se pueden eliminar desde el perfil.');
+  }
+
+  // Se usa una sola transaccion para todo: o se elimina completa o no cambia nada
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Se recorre cada empresa del usuario con for
+    for (const m of membresias) {
+      // Se cambia la empresa de la sesion para que la RLS deje tocar los datos de esa empresa
+      await client.query('SELECT set_config($1, $2, true)', ['app.id_empresa', m.id_empresa]);
+
+      // Si es administrador, la empresa no se puede quedar sin otro administrador activo
+      if ((m.roles ?? []).includes('ADMIN_EMPRESA')) {
+        const { rows } = await client.query(
+          `SELECT count(*)::int AS otros
+             FROM app.membresias mb
+             JOIN app.membresia_roles mr ON mr.id_membresia = mb.id_membresia
+             JOIN app.roles r ON r.id_rol = mr.id_rol AND r.codigo = 'ADMIN_EMPRESA'
+             JOIN app.usuarios u ON u.id_usuario = mb.id_usuario AND u.estado = 'ACTIVO'
+            WHERE mb.id_empresa = $1 AND mb.estado = 'ACTIVA' AND mb.id_usuario <> $2`,
+          [m.id_empresa, idUsuario],
+        );
+        if (rows[0].otros === 0) {
+          throw new AppError(409, 'UNICO_ADMINISTRADOR',
+            `Eres el único administrador de ${m.razon_social}. Nombra a otra persona como administradora antes de eliminar tu cuenta.`);
+        }
+      }
+
+      // Se retira la membresia y se desvincula la ficha de cliente, si tenia
+      // La ficha es de la empresa (ella es la responsable de esos datos), por eso no se borra aqui
+      await client.query(
+        `UPDATE app.membresias SET estado = 'RETIRADA', updated_at = now()
+          WHERE id_usuario = $1 AND id_empresa = $2`,
+        [idUsuario, m.id_empresa],
+      );
+      await client.query(
+        'UPDATE app.clientes SET id_usuario = NULL, updated_at = now() WHERE id_usuario = $1',
+        [idUsuario],
+      );
+    }
+
+    // Se anonimiza el usuario: correo unico inventado, sin documento ni telefono
+    // y una contraseña al azar que nadie conoce, asi la cuenta no se puede volver a usar
+    const hashInservible = await hashearPassword(crypto.randomBytes(32).toString('base64url'));
+    await client.query(
+      `UPDATE app.usuarios
+          SET email = $2, nombres = 'Usuario', apellidos = 'eliminado',
+              documento = NULL, telefono = NULL, password_hash = $3,
+              estado = 'INACTIVO', token_version = token_version + 1,
+              debe_cambiar_password = false, intentos_fallidos = 0, bloqueado_hasta = NULL,
+              ultimo_login = NULL, eliminado_en = now()
+        WHERE id_usuario = $1`,
+      [idUsuario, `eliminado-${idUsuario}@anonimo.invalid`, hashInservible],
+    );
+
+    // Se borran las sesiones, los avisos push y el historial de inicios de sesion (tienen IP y navegador)
+    await client.query('DELETE FROM app.refresh_tokens WHERE id_usuario = $1', [idUsuario]);
+    await client.query('DELETE FROM app.push_suscripciones WHERE id_usuario = $1', [idUsuario]);
+    await client.query(
+      'DELETE FROM app.intentos_login WHERE id_usuario = $1 OR email = $2',
+      [idUsuario, usuario.email],
+    );
+
+    // Queda en la auditoria que la cuenta se elimino, sin empresa y sin datos de la persona
+    await client.query("SELECT set_config('app.id_empresa', '', true)");
+    await client.query(
+      `INSERT INTO app.auditoria_privacidad (id_empresa, accion, referencia, hecho_por)
+       VALUES (NULL, 'CUENTA_ELIMINADA', $1, NULL)`,
+      [idUsuario],
+    );
+
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }

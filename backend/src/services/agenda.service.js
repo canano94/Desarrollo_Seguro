@@ -12,6 +12,10 @@ import { idClienteDeMembresia, SQL_CLIENTE_DE_MEMBRESIA_P2 } from './clientes.se
 import { franjasDelDia, validarDentroDeHorario } from './configuracion.service.js';
 // Se importa instanteLocal para armar las fechas con la zona horaria de la empresa
 import { instanteLocal } from '../utils/zona.js';
+// Se importan las funciones de los recordatorios para volver a hacer un servicio
+import { crearRepeticion, cerrarRepeticiones, reabrirRepeticiones } from './repetir.service.js';
+// Se importan las funciones de los correos para dejarlos en cola en la misma transaccion del turno
+import { encolarCorreoTurno, conSavepoint, EVENTO_POR_ESTADO } from './notificaciones.service.js';
 
 // Se exporta la funcion listarPrestadores, trae los prestadores (sedes) de la empresa con cuantos servicios activos tienen
 // El ambito es la lista de prestadores que puede ver el usuario, si viene vacio ve todos
@@ -300,6 +304,7 @@ export async function listarReservas(idEmpresa, idMembresia, alcance, prestadore
               r.id_prestador, r.id_servicio, r.id_cliente, r.id_empleado,
               s.nombre AS servicio, p.nombre AS prestador,
               CONCAT_WS(' ', cl.nombres, cl.apellidos) AS cliente,
+              cl.telefono AS cliente_telefono,
               CONCAT_WS(' ', ue.nombres, ue.apellidos) AS empleado,
               (SELECT count(*) FROM app.reserva_observaciones o
                 WHERE o.id_reserva = r.id_reserva) AS observaciones
@@ -330,6 +335,9 @@ export async function listarReservas(idEmpresa, idMembresia, alcance, prestadore
       servicio: r.servicio,
       prestador: r.prestador,
       cliente: r.cliente,
+      // El telefono solo se manda si quien pide puede ver los turnos de otros
+      // Un cliente solo ve sus propios turnos, asi que solo veria su propio numero
+      clienteTelefono: alcance === 'propias' ? undefined : r.cliente_telefono,
       empleado: r.empleado,
       observaciones: Number(r.observaciones),
     }));
@@ -470,6 +478,12 @@ export async function crearReserva(
           datos.notas || null,
         ],
       );
+      // Si el cliente tenia pendiente repetir este servicio, ese recordatorio queda como agendado
+      await cerrarRepeticiones(client, idCliente, servicio.id_servicio, rows[0].id_reserva);
+      // Se deja en cola el correo para el cliente: solicitado si quedo pendiente, confirmado si no
+      // Va con conSavepoint para que si el correo falla el turno igual se guarde
+      await conSavepoint(client, () => encolarCorreoTurno(client, idEmpresa, rows[0].id_reserva,
+        rows[0].estado === 'CONFIRMADA' ? 'TURNO_CONFIRMADO' : 'TURNO_SOLICITADO'));
       return {
         idReserva: rows[0].id_reserva,
         fechaInicio: rows[0].fecha_inicio,
@@ -511,7 +525,23 @@ export async function cambiarEstadoReserva(idEmpresa, idMembresia, idReserva, da
     if (rows.length === 0) {
       throw new AppError(404, 'RESERVA_NO_ENCONTRADA', 'Esa reserva no existe.');
     }
-    return { idReserva: rows[0].id_reserva, estado: rows[0].estado };
+    // Si el turno quedo atendido y el servicio se repite, se crea el recordatorio para la proxima vez
+    const repetir = rows[0].estado === 'COMPLETADA'
+      ? await crearRepeticion(client, rows[0].id_reserva)
+      : null;
+    // Si el turno se rechazo o se cancelo, el recordatorio que habia cerrado se vuelve a abrir
+    if (['RECHAZADA', 'CANCELADA'].includes(rows[0].estado)) {
+      await reabrirRepeticiones(client, rows[0].id_reserva);
+    }
+    // Si el estado nuevo tiene aviso (confirmado, rechazado o cancelado) se deja en cola el correo
+    const evento = EVENTO_POR_ESTADO[rows[0].estado];
+    if (evento) await conSavepoint(client, () => encolarCorreoTurno(client, idEmpresa, rows[0].id_reserva, evento));
+    return {
+      idReserva: rows[0].id_reserva,
+      estado: rows[0].estado,
+      // Fecha en que se va a avisar que toca repetir, null si el servicio no se repite
+      repetirEl: repetir?.fechaAviso ?? null,
+    };
   });
 }
 
@@ -553,6 +583,12 @@ export async function reprogramarReserva(idEmpresa, idMembresia, idReserva, dato
           RETURNING id_reserva, fecha_inicio, fecha_fin, estado`,
         [idReserva, inicio, fin, idMembresia],
       );
+      // Al cambiar la fecha se borra la marca del recordatorio por correo, asi sale otra vez con la fecha nueva
+      // y se deja en cola el correo de turno reprogramado
+      await conSavepoint(client, async () => {
+        await client.query('UPDATE app.reservas SET recordatorio_en = NULL WHERE id_reserva = $1', [idReserva]);
+        return encolarCorreoTurno(client, idEmpresa, idReserva, 'TURNO_REPROGRAMADO');
+      });
       return {
         idReserva: rows[0].id_reserva,
         fechaInicio: rows[0].fecha_inicio,

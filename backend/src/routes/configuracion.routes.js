@@ -6,6 +6,10 @@ import * as ctrl from '../controllers/configuracion.controller.js';
 import { validar } from '../validators/auth.schemas.js';
 import { validarParamUuid } from '../validators/admin.schemas.js';
 import { validarParamEntero } from '../validators/equipos.schemas.js';
+// Se importa express-rate-limit para limitar los correos de prueba
+import rateLimit from 'express-rate-limit';
+// Se importa EVENTOS para validar que el aviso de la URL exista
+import { EVENTOS } from '../services/notificaciones.service.js';
 // Se importan los esquemas de zod de configuracion
 import {
   horarioEmpresaSchema,
@@ -14,6 +18,11 @@ import {
   actualizarInsumoSchema,
   precioServicioSchema,
   insumosServicioSchema,
+  repetirServicioSchema,
+  eventoNotificacionSchema,
+  pruebaNotificacionSchema,
+  remitenteSchema,
+  validarEvento,
   generalSchema,
   validarParamId,
 } from '../validators/configuracion.schemas.js';
@@ -27,6 +36,16 @@ import {
 
 // Se crea el router de configuracion
 const router = Router();
+
+// Limite para el correo de prueba: maximo 5 cada 10 minutos por usuario
+const limitePrueba = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req) => req.usuario.idUsuario,
+  message: { error: { codigo: 'DEMASIADAS_PRUEBAS', mensaje: 'Ya enviaste varias pruebas. Espera unos minutos.' } },
+});
 
 // Todas las rutas piden token, contraseña definitiva y empresa activa
 router.use(autenticar, exigirPasswordDefinitiva, exigirEmpresaActiva);
@@ -65,11 +84,30 @@ router.patch('/servicios/:idServicio/precio',
   validarParamId('idServicio'),
   validar(precioServicioSchema),
   ctrl.actualizarPrecio);
+// Ruta para decir cada cuanto se repite un servicio
+router.patch('/servicios/:idServicio/repetir',
+  validarParamId('idServicio'),
+  validar(repetirServicioSchema),
+  ctrl.actualizarRepetir);
 // Ruta para guardar los insumos de un servicio
 router.put('/servicios/:idServicio/insumos',
   validarParamId('idServicio'),
   validar(insumosServicioSchema),
   ctrl.guardarInsumosServicio);
+
+// Rutas de las notificaciones por correo
+router.get('/notificaciones', ctrl.listarNotificaciones);
+router.get('/notificaciones/historial', ctrl.historialCorreos);
+// Rutas del remitente de la empresa (nombre y correo para respuestas), van antes de /:evento
+router.get('/notificaciones/remitente', ctrl.obtenerRemitente);
+router.put('/notificaciones/remitente', validar(remitenteSchema), ctrl.guardarRemitente);
+// Limite para no mandar muchos correos de prueba y gastar el cupo gratis de Brevo
+router.post('/notificaciones/prueba', limitePrueba, validar(pruebaNotificacionSchema), ctrl.correoDePrueba);
+// Ruta para guardar un aviso, primero se revisa que el aviso de la URL exista
+router.put('/notificaciones/:evento',
+  validarEvento(EVENTOS),
+  validar(eventoNotificacionSchema),
+  ctrl.guardarNotificacion);
 
 // Se exporta el router para montarlo en la app
 export default router;

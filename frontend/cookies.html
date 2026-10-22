@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#101c26">
+  <meta name="description" content="Qué cookies y almacenamiento del navegador usa OmniGest.">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <title>Política de cookies · OmniGest</title>
+  <link rel="stylesheet" href="css/fuentes.css">
+  <link rel="stylesheet" href="css/estilos.css">
+  <link rel="stylesheet" href="css/movil.css">
+</head>
+<body>
+  <a class="saltar" href="#principal">Saltar al contenido</a>
+  <header class="legal-barra">
+    <a href="index.html">OmniGest</a>
+  </header>
+
+  <main class="legal" id="principal">
+
+    <h1>Política de cookies</h1>
+    <p class="legal__vigencia">Versión 1.0 · vigente desde el 21 de octubre de 2026</p>
+
+    <div class="legal__resumen">
+      <p><strong>En pocas palabras:</strong> solo usamos lo necesario para que inicies sesión de forma segura y la app funcione. No usamos cookies de publicidad, de analítica ni de redes sociales.</p>
+    </div>
+
+    <h2>Qué son las cookies</h2>
+    <p>Son pequeños archivos que un sitio guarda en tu navegador. Además de las cookies, los navegadores tienen otros espacios de almacenamiento (como <em>sessionStorage</em> y <em>localStorage</em>). Aquí te contamos todo lo que usamos.</p>
+
+    <h2>Lo que usamos</h2>
+    <div class="legal__tabla">
+      <table>
+        <thead><tr><th scope="col">Nombre</th><th scope="col">Tipo</th><th scope="col">Para qué</th><th scope="col">Duración</th></tr></thead>
+        <tbody>
+          <tr><td data-label="Nombre"><code>rt</code> (cookie)</td><td data-label="Tipo">Necesaria</td><td data-label="Para qué">Mantener tu sesión iniciada de forma segura. El código de la página no puede leerla, solo viaja cifrada y solo se envía al iniciar o renovar la sesión.</td><td data-label="Duración">7 días, o hasta que cierres sesión</td></tr>
+          <tr><td data-label="Nombre"><code>empresaActiva</code> (sessionStorage)</td><td data-label="Tipo">Necesaria</td><td data-label="Para qué">Recordar con qué empresa estás trabajando.</td><td data-label="Duración">Hasta que cierres la pestaña</td></tr>
+          <tr><td data-label="Nombre"><code>agendaVista</code> y <code>configPestana</code> (sessionStorage)</td><td data-label="Tipo">Preferencia</td><td data-label="Para qué">Recordar la vista de la agenda y la última pestaña abierta en configuración.</td><td data-label="Duración">Hasta que cierres la pestaña</td></tr>
+          <tr><td data-label="Nombre"><code>avisoCookiesVisto</code> (localStorage)</td><td data-label="Tipo">Necesaria</td><td data-label="Para qué">Recordar que ya cerraste el aviso de cookies.</td><td data-label="Duración">Hasta que borres los datos del navegador</td></tr>
+          <tr><td data-label="Nombre">Caché de la app (service worker)</td><td data-label="Tipo">Necesaria</td><td data-label="Para qué">Abrir la app más rápido y poder verla sin conexión. Solo guarda los archivos de la app y las fichas públicas de equipos que hayas abierto; no guarda tus datos privados.</td><td data-label="Duración">Hasta la siguiente actualización de la app</td></tr>
+          <tr><td data-label="Nombre">Suscripción a avisos (push)</td><td data-label="Tipo">Opcional</td><td data-label="Para qué">Enviarte recordatorios de tus turnos. Solo existe si tú activas los avisos.</td><td data-label="Duración">Hasta que los desactives o cierres sesión</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Lo que no usamos</h2>
+    <ul>
+      <li>Cookies de publicidad o de seguimiento.</li>
+      <li>Herramientas de analítica de terceros.</li>
+      <li>Botones o píxeles de redes sociales.</li>
+      <li>Fuentes de Google: las servimos desde nuestro propio servidor para no enviar tu información a terceros.</li>
+    </ul>
+
+    <h2>Servicios de terceros</h2>
+    <p>Cuando abres una pantalla con mapa, tu navegador descarga las imágenes del mapa desde los servidores de OpenStreetMap, que reciben tu dirección IP como en cualquier visita a un sitio web. Puedes consultar la política de privacidad de la Fundación OpenStreetMap en su sitio.</p>
+
+    <h2>Por qué no te pedimos «Aceptar»</h2>
+    <p>La ley no exige pedir consentimiento para lo estrictamente necesario, y no usamos nada más. Un botón de «Aceptar» o «Rechazar» no cambiaría nada, así que solo te informamos. Si algún día usamos cookies opcionales, te pediremos permiso antes y podrás rechazarlas igual de fácil que aceptarlas.</p>
+
+    <h2>Cómo controlarlas</h2>
+    <p>Puedes borrar o bloquear las cookies desde la configuración de tu navegador. Si bloqueas la cookie <code>rt</code> no podrás iniciar sesión.</p>
+    <p>Más información sobre cómo tratamos tus datos en la <a href="privacidad.html">política de privacidad</a>. Dudas: <a href="mailto:privacidad@omnigest.com.co">privacidad@omnigest.com.co</a>.</p>
+
+  </main>
+
+  <script type="module" src="js/pie.js"></script>
+</body>
+</html>

@@ -20,6 +20,8 @@ import clientesRoutes from './routes/clientes.routes.js';
 import equiposRouter, { equiposPublicoRouter } from './routes/equipos.routes.js';
 import catalogosRoutes from './routes/catalogos.routes.js';
 import configuracionRoutes from './routes/configuracion.routes.js';
+import pushRoutes from './routes/push.routes.js';
+import bajaRoutes from './routes/baja.routes.js';
 // Se importan los middlewares de ruta no encontrada y de errores
 import { notFound, errorHandler } from './middleware/errorHandler.js';
 // Se importa el middleware que limpia la IP reenviada
@@ -70,13 +72,14 @@ app.use(
       directives: {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
-        // Se permiten los estilos y las fuentes de Google Fonts
-        styleSrc: ["'self'", 'https://fonts.googleapis.com'],
-        fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+        // Los estilos y las fuentes salen del mismo sitio (ya no se usa Google Fonts)
+        styleSrc: ["'self'"],
+        fontSrc: ["'self'"],
         // Se permiten imagenes data y blob, como el QR y las fotos
-        imgSrc: ["'self'", 'data:', 'blob:'],
+        // Tambien los cuadros del mapa de OpenStreetMap, que son imagenes png
+        imgSrc: ["'self'", 'data:', 'blob:', 'https://tile.openstreetmap.org'],
         mediaSrc: ["'self'", 'blob:'],
-        connectSrc: ["'self'", 'https://fonts.googleapis.com', 'https://fonts.gstatic.com'],
+        connectSrc: ["'self'"],
         workerSrc: ["'self'"],
         manifestSrc: ["'self'"],
         // No se dejan cargar plugins ni que la pagina se meta en un iframe de otro sitio
@@ -120,6 +123,10 @@ app.use('/api/crm', crmRoutes);
 app.use('/api/clientes', clientesRoutes);
 app.use('/api/catalogos', catalogosRoutes);
 app.use('/api/configuracion', configuracionRoutes);
+// Rutas de los recordatorios push de los turnos
+app.use('/api/push', pushRoutes);
+// Rutas publicas para dejar de recibir los correos no esenciales (enlace del correo)
+app.use('/api/baja', bajaRoutes);
 
 // Si una ruta de /api no existe se responde 404 en JSON
 app.use('/api', notFound);

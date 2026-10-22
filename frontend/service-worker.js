@@ -1,5 +1,5 @@
 // Constante con la version del cache, se cambia cada vez que se actualizan los archivos
-const VERSION = 'v11';
+const VERSION = 'v20';
 // Constantes con los nombres de los caches: la app, las fuentes y las fichas de equipos
 const CACHE_APP = `agenda-app-${VERSION}`;
 const CACHE_FUENTES = 'agenda-fuentes';
@@ -22,10 +22,10 @@ const APP_SHELL = [
   './escanear.html',
   './perfil.html',
   './cambiar-password.html',
+  './aceptar.html',
   './ficha.html',
   './offline.html',
   './manifest.json',
-  './env.js',
   './css/estilos.css',
   './css/equipos.css',
   './css/movil.css',
@@ -35,6 +35,7 @@ const APP_SHELL = [
   './js/pwa.js',
   './js/login.js',
   './js/cambiar-password.js',
+  './js/aceptar.js',
   './js/inicio.js',
   './js/agenda.js',
   './js/crm.js',
@@ -42,18 +43,44 @@ const APP_SHELL = [
   './js/servicios.js',
   './js/usuarios.js',
   './js/admin.js',
-  './js/offline.js',
   './js/ficha.js',
   './js/equipos.js',
   './js/clientes.js',
   './js/configuracion.js',
   './js/escanear.js',
-  './js/vendor/jsQR.js',
+  './js/vendor/jsqr.js',
   './js/vendor/qrcode.js',
+  './js/vendor/leaflet/leaflet.js',
+  './js/vendor/leaflet/leaflet.css',
+  './js/vendor/leaflet/images/marker-icon.png',
+  './js/vendor/leaflet/images/marker-icon-2x.png',
+  './js/vendor/leaflet/images/marker-shadow.png',
+  './js/mapa-cliente.js',
+  './js/recordatorios.js',
+  './js/telefono.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/favicon-32.png',
   './icons/apple-touch-icon.png',
+  './privacidad.html',
+  './terminos.html',
+  './cookies.html',
+  './licencias.html',
+  './css/fuentes.css',
+  './js/pie.js',
+  './js/accesibilidad.js',
+  './fonts/bricolage-grotesque-latin-ext-opsz-normal.woff2',
+  './fonts/bricolage-grotesque-latin-opsz-normal.woff2',
+  './fonts/ibm-plex-mono-latin-400-normal.woff2',
+  './fonts/ibm-plex-mono-latin-500-normal.woff2',
+  './fonts/ibm-plex-mono-latin-ext-400-normal.woff2',
+  './fonts/ibm-plex-mono-latin-ext-500-normal.woff2',
+  './fonts/ibm-plex-sans-latin-400-normal.woff2',
+  './fonts/ibm-plex-sans-latin-500-normal.woff2',
+  './fonts/ibm-plex-sans-latin-600-normal.woff2',
+  './fonts/ibm-plex-sans-latin-ext-400-normal.woff2',
+  './fonts/ibm-plex-sans-latin-ext-500-normal.woff2',
+  './fonts/ibm-plex-sans-latin-ext-600-normal.woff2',
 ];
 
 // Evento install, se guardan todos los archivos de la app en el cache
@@ -88,8 +115,8 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(peticion.url);
 
-  // Las fuentes de Google se buscan primero en el cache
-  if (url.origin === 'https://fonts.googleapis.com' || url.origin === 'https://fonts.gstatic.com') {
+  // Las fuentes propias se buscan primero en el cache porque casi nunca cambian
+  if (url.origin === self.location.origin && url.pathname.includes('/fonts/')) {
     event.respondWith(primeroCache(peticion, CACHE_FUENTES));
     return;
   }
@@ -196,3 +223,48 @@ async function recortar(cache) {
   // Se recorre con for y se borran las primeras, que son las mas viejas
   for (let i = 0; i < sobran; i += 1) await cache.delete(llaves[i]);
 }
+
+// Evento push, llega cuando el servidor manda un recordatorio de turno
+// Se dispara aunque la app este cerrada, porque el service worker lo despierta el navegador
+self.addEventListener('push', (event) => {
+  // Se usa try/catch por si el mensaje no viene en JSON
+  let datos = {};
+  try {
+    datos = event.data ? event.data.json() : {};
+  } catch {
+    datos = { cuerpo: event.data ? event.data.text() : '' };
+  }
+
+  const titulo = datos.titulo || 'Recordatorio de turno';
+  // Se llama a showNotification para mostrar el aviso del sistema operativo
+  // tag hace que si llegan dos avisos del mismo turno se reemplace el anterior y no se amontonen
+  event.waitUntil(self.registration.showNotification(titulo, {
+    body: datos.cuerpo || '',
+    icon: './icons/icon-192.png',
+    badge: './icons/favicon-32.png',
+    tag: datos.etiqueta || 'turno',
+    renotify: true,
+    data: { url: datos.url || 'agenda.html' },
+  }));
+});
+
+// Evento notificationclick, cuando la persona toca el aviso se abre la app en la agenda
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  // Se arma la URL dentro de la misma app, asi el aviso nunca puede abrir otro sitio
+  const destino = new URL(event.notification.data?.url || 'agenda.html', self.registration.scope);
+  if (destino.origin !== self.location.origin) return;
+
+  event.waitUntil((async () => {
+    // Si la app ya esta abierta se usa esa ventana, si no se abre una nueva
+    const ventanas = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const ventana of ventanas) {
+      if (new URL(ventana.url).origin === destino.origin && 'focus' in ventana) {
+        await ventana.focus();
+        if ('navigate' in ventana) await ventana.navigate(destino.href);
+        return;
+      }
+    }
+    await self.clients.openWindow(destino.href);
+  })());
+});

@@ -68,7 +68,8 @@ export async function listarCasos(idEmpresa, idMembresia, alcance, ambito = []) 
 
 // Se exporta la funcion detalleCaso para usarla en el controlador
 // Trae un caso con sus interacciones y el turno relacionado si tiene
-export async function detalleCaso(idEmpresa, idCaso) {
+// El alcance es el mismo de la lista: un usuario solo abre los casos que podria ver en ella
+export async function detalleCaso(idEmpresa, idCaso, { alcance = 'propios', ambito = [], idMembresia = null } = {}) {
   return conEmpresa(idEmpresa, async (client) => {
     // Consulta SQL para traer los datos del caso con el nombre del cliente y del asignado
     const { rows } = await client.query(
@@ -76,13 +77,22 @@ export async function detalleCaso(idEmpresa, idCaso) {
               c.asunto, c.descripcion, c.created_at, c.fecha_cierre,
               c.id_cliente, c.id_asignado, c.id_reserva,
               CONCAT_WS(' ', cl.nombres, cl.apellidos) AS cliente,
+              cl.telefono AS cliente_telefono,
               CONCAT_WS(' ', ua.nombres, ua.apellidos) AS asignado
          FROM app.casos_servicio c
          JOIN app.clientes cl ON cl.id_cliente = c.id_cliente
          LEFT JOIN app.membresias ma ON ma.id_membresia = c.id_asignado
          LEFT JOIN app.usuarios   ua ON ua.id_usuario   = ma.id_usuario
-        WHERE c.id_caso = $1`,
-      [idCaso],
+        WHERE c.id_caso = $1
+          -- Mismo filtro que la lista de casos, segun el alcance del usuario
+          AND CASE $3::text
+                WHEN 'propios'   THEN c.id_cliente  = ${SQL_CLIENTE_DE_MEMBRESIA_P2}
+                WHEN 'asignados' THEN c.id_asignado = $2::uuid
+                WHEN 'ambito'    THEN c.id_prestador = ANY($4::uuid[])
+                                   OR c.id_asignado = $2::uuid
+                ELSE true
+              END`,
+      [idCaso, idMembresia, alcance, ambito],
     );
     // Si no encuentra el caso se lanza un error 404
     if (rows.length === 0) {
@@ -164,6 +174,8 @@ export async function detalleCaso(idEmpresa, idCaso) {
       descripcion: c.descripcion,
       cliente: c.cliente,
       idCliente: c.id_cliente,
+      // El telefono solo se manda al personal, un cliente que ve su propio caso no lo necesita
+      clienteTelefono: alcance === 'propios' ? undefined : c.cliente_telefono,
       asignado: c.asignado,
       idAsignado: c.id_asignado,
       creadoEn: c.created_at,
@@ -345,7 +357,8 @@ export async function historialCliente(idEmpresa, idCliente) {
     const { rows: perfil } = await client.query(
       `SELECT cl.id_cliente, cl.id_usuario, cl.nombres, cl.apellidos, cl.email,
               cl.telefono, cl.tipo_documento, cl.documento, cl.direccion, cl.ciudad,
-              cl.activo, cl.created_at,
+              cl.latitud, cl.longitud, cl.activo, cl.created_at,
+              cl.autorizado_en, cl.baja_avisos_en, cl.anonimizado_en,
               u.estado, u.ultimo_login,
               (SELECT count(*) FROM app.reservas r WHERE r.id_cliente = cl.id_cliente) AS total_turnos,
               (SELECT count(*) FROM app.reservas r WHERE r.id_cliente = cl.id_cliente
@@ -362,8 +375,11 @@ export async function historialCliente(idEmpresa, idCliente) {
       throw new AppError(404, 'CLIENTE_NO_ENCONTRADO', 'Ese cliente no existe en tu empresa.');
     }
 
-    // Se usa Promise.all para hacer las tres consultas al mismo tiempo
-    const [turnos, casos, interacciones] = await Promise.all([
+    // Las tres consultas se hacen una detras de otra con await
+    // No se usa Promise.all porque es la misma conexion (client) de la transaccion:
+    // una conexion de PostgreSQL solo atiende una consulta a la vez, y pg avisa que mandarlas
+    // juntas va a dejar de funcionar en la version 9
+    const turnos = await
       // Consulta SQL para traer los ultimos 50 turnos del cliente
       client.query(
         `SELECT r.id_reserva, r.fecha_inicio, r.estado, s.nombre AS servicio,
@@ -374,7 +390,8 @@ export async function historialCliente(idEmpresa, idCliente) {
           WHERE r.id_cliente = $1
           ORDER BY r.fecha_inicio DESC LIMIT 50`,
         [idCliente],
-      ),
+      );
+    const casos = await
       // Consulta SQL para traer los ultimos 50 casos del cliente
       client.query(
         `SELECT id_caso, numero_caso, tipo, estado, prioridad, asunto, created_at
@@ -382,7 +399,8 @@ export async function historialCliente(idEmpresa, idCliente) {
           WHERE id_cliente = $1
           ORDER BY created_at DESC LIMIT 50`,
         [idCliente],
-      ),
+      );
+    const interacciones = await
       // Consulta SQL para traer las ultimas 50 interacciones con su autor
       client.query(
         `SELECT i.id_interaccion, i.canal, i.asunto, i.detalle, i.fecha_interaccion,
@@ -393,8 +411,7 @@ export async function historialCliente(idEmpresa, idCliente) {
           WHERE i.id_cliente = $1
           ORDER BY i.fecha_interaccion DESC LIMIT 50`,
         [idCliente],
-      ),
-    ]);
+      );
 
     const p = perfil[0];
     // Se devuelve todo el historial en un solo objeto
@@ -412,6 +429,13 @@ export async function historialCliente(idEmpresa, idCliente) {
         documento: p.documento,
         direccion: p.direccion,
         ciudad: p.ciudad,
+        // Ubicacion del pin en el mapa, null si no tiene
+        latitud: p.latitud === null ? null : Number(p.latitud),
+        longitud: p.longitud === null ? null : Number(p.longitud),
+        // Fechas de proteccion de datos: autorizacion, baja de avisos y anonimizacion (null si no aplica)
+        autorizadoEn: p.autorizado_en,
+        bajaAvisosEn: p.baja_avisos_en,
+        anonimizadoEn: p.anonimizado_en,
         estado: p.estado,
         estadoMembresia: p.activo ? 'ACTIVA' : 'INACTIVA',
         cargo: null,

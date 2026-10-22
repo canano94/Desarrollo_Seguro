@@ -244,8 +244,12 @@ function resumenSemana(franjas) {
 
 // Funcion que pinta la pestaña de Agenda con el horario de la empresa y de las sedes
 async function pintarAgenda(panel) {
-  // Se llama a pedir y se le pasa la ruta para que devuelva los horarios del servidor
-  const horarios = await pedir('/configuracion/horarios');
+  // Se usa Promise.all para pedir los horarios y el tiempo de los recordatorios al mismo tiempo
+  const [horarios, recordatorio] = await Promise.all([
+    pedir('/configuracion/horarios'),
+    // Si falla (por ejemplo, falta el script 21) se usan 30 minutos para no dañar el resto de la pestaña
+    pedir('/push/empresa').catch(() => ({ minutos: 30 })),
+  ]);
 
   panel.replaceChildren(
     el('h2', { textContent: 'Agenda' }),
@@ -254,7 +258,38 @@ async function pintarAgenda(panel) {
       textContent: 'Define qué días y en qué horas se pueden agendar turnos. Para una pausa (por ejemplo el almuerzo) usa dos franjas el mismo día: el hueco entre ellas no se ofrece a los clientes.',
     }),
     tarjetaHorarioEmpresa(panel, horarios.empresa),
-    tarjetaHorarioSedes(panel, horarios));
+    tarjetaHorarioSedes(panel, horarios),
+    tarjetaRecordatorios(panel, recordatorio.minutos));
+}
+
+// Funcion que arma la tarjeta del tiempo por defecto de los recordatorios push
+// Cada persona lo puede cambiar en su perfil, esto es lo que se usa si no lo cambia
+function tarjetaRecordatorios(panel, minutosActuales) {
+  const selector = el('select', { className: 'entrada', id: 'cfg-recordatorio' });
+  // Se recorre con for para crear las tres opciones
+  for (const [valor, texto] of [[15, '15 minutos antes'], [30, '30 minutos antes'], [60, '1 hora antes']]) {
+    selector.append(el('option', { value: String(valor), textContent: texto, selected: valor === minutosActuales }));
+  }
+  const guardar = el('button', { type: 'button', className: 'boton boton--mini', textContent: 'Guardar', hidden: true });
+  // El boton de guardar solo aparece si se cambio el tiempo
+  selector.addEventListener('change', () => { guardar.hidden = Number(selector.value) === minutosActuales; });
+
+  // Se llama a pedir con PUT para guardar el tiempo de la empresa
+  guardar.addEventListener('click', () => conBoton(guardar, async () => {
+    const { minutos } = await pedir('/push/empresa', { metodo: 'PUT', cuerpo: { minutos: Number(selector.value) } });
+    avisar(`Listo: los recordatorios saldrán ${minutos === 60 ? '1 hora' : `${minutos} minutos`} antes, salvo para quien elija otro tiempo en su perfil.`, true);
+    await pintarAgenda(panel);
+  }));
+
+  return el('div', { className: 'tarjeta' },
+    cabeceraTarjeta(
+      'Recordatorios de turnos',
+      'Aviso en el celular o el computador antes de cada turno confirmado, para el cliente y para quien lo atiende. Cada persona lo activa en su perfil y puede cambiar el tiempo.',
+      minutosActuales === 60 ? '1 hora antes' : `${minutosActuales} min antes`),
+    el('div', { className: 'config-servicio__precio' },
+      el('label', { htmlFor: 'cfg-recordatorio' }, 'Avisar'),
+      selector,
+      guardar));
 }
 
 // Funcion que arma la tarjeta para editar el horario general de la empresa
@@ -416,7 +451,9 @@ function etiquetaPrecio(precio) {
 function tarjetaServicios(panel, servicios, insumos) {
   const tarjeta = el('div', { className: 'tarjeta' },
     cabeceraTarjeta('Servicios',
-      usaPrecios ? 'Abre un servicio para ajustar su precio y sus insumos.' : 'Abre un servicio para ajustar sus insumos.',
+      usaPrecios
+        ? 'Abre un servicio para ajustar su precio, cada cuánto se repite y sus insumos.'
+        : 'Abre un servicio para ajustar cada cuánto se repite y sus insumos.',
       `${servicios.length} servicio(s)`));
 
   // Si no hay servicios se muestra un mensaje y se sale
@@ -451,12 +488,81 @@ function detalleServicio(panel, servicio, insumos) {
       usaPrecios
         ? el('span', { className: servicio.precio === null ? 'ficha' : 'ficha ficha--bien', textContent: etiquetaPrecio(servicio.precio) })
         : null,
-      el('span', { className: 'ficha', textContent: resumenInsumos }))));
+      el('span', { className: 'ficha', textContent: resumenInsumos }),
+      servicio.repetirCada
+        ? el('span', { className: 'ficha ficha--bien', textContent: textoRepetir(servicio.repetirCada, servicio.repetirUnidad) })
+        : null)));
 
   // El bloque del precio solo se muestra si la empresa usa precios
   if (usaPrecios) caja.append(bloquePrecio(panel, servicio));
+  caja.append(bloqueRepetir(panel, servicio));
   caja.append(bloqueInsumos(panel, servicio, insumos));
   return caja;
+}
+
+// Objeto con el nombre de cada unidad en singular y plural
+const UNIDADES = {
+  DIAS: ['día', 'días'],
+  SEMANAS: ['semana', 'semanas'],
+  MESES: ['mes', 'meses'],
+};
+
+// Funcion que arma el texto, por ejemplo "Cada 3 semanas" o "Cada mes"
+function textoRepetir(cada, unidad) {
+  const [uno, varios] = UNIDADES[unidad] ?? ['', ''];
+  return cada === 1 ? `Cada ${uno}` : `Cada ${cada} ${varios}`;
+}
+
+// Funcion que arma el bloque para decir cada cuanto se repite un servicio
+// Cuando se marca la asistencia de un turno de este servicio, se crea un recordatorio para esa fecha
+function bloqueRepetir(panel, servicio) {
+  const activo = el('input', { type: 'checkbox', checked: Boolean(servicio.repetirCada) });
+  const cada = el('input', {
+    type: 'number', min: 1, max: 365, step: 1, inputMode: 'numeric',
+    value: servicio.repetirCada ?? '', placeholder: 'Ej. 6',
+  });
+  cada.setAttribute('aria-label', `Cada cuánto se repite ${servicio.nombre}`);
+  const unidad = el('select', { className: 'entrada' });
+  unidad.setAttribute('aria-label', 'Unidad de tiempo');
+  // Se recorren las unidades para crear las opciones del select
+  for (const [valor, [, varios]] of Object.entries(UNIDADES)) {
+    unidad.append(el('option', { value: valor, textContent: varios, selected: valor === (servicio.repetirUnidad ?? 'MESES') }));
+  }
+  // Si se desmarca la casilla los campos quedan bloqueados
+  const sincronizar = () => { cada.disabled = !activo.checked; unidad.disabled = !activo.checked; };
+  activo.addEventListener('change', sincronizar);
+  sincronizar();
+
+  const guardar = el('button', { type: 'button', className: 'boton boton--mini', textContent: 'Guardar' });
+  guardar.addEventListener('click', () => conBoton(guardar, async () => {
+    let cuerpo = { cada: null, unidad: null };
+    // Si esta activo se valida que sea un numero entero entre 1 y 365
+    if (activo.checked) {
+      const n = Number(cada.value);
+      if (!Number.isInteger(n) || n < 1 || n > 365) {
+        avisar('Escribe cada cuánto se repite: un número entre 1 y 365.');
+        return;
+      }
+      cuerpo = { cada: n, unidad: unidad.value };
+    }
+    // Se llama a pedir con PATCH para guardar la repeticion del servicio
+    await pedir(`/configuracion/servicios/${encodeURIComponent(servicio.idServicio)}/repetir`, {
+      metodo: 'PATCH', cuerpo,
+    });
+    avisar(cuerpo.cada
+      ? `${servicio.nombre}: se recordará repetirlo ${textoRepetir(cuerpo.cada, cuerpo.unidad).toLowerCase()} después de cada turno atendido.`
+      : `${servicio.nombre}: ya no se recordará repetirlo.`, true);
+    await pintarServicios(panel);
+  }));
+
+  return el('div', { className: 'config-servicio__bloque' },
+    el('h4', { className: 'subtitulo-menor', textContent: 'Recordar que se repite' }),
+    el('p', { className: 'pista', textContent: 'Al marcar la asistencia de un turno, se avisa al cliente y a tu equipo cuando toque volver a hacerlo.' }),
+    el('div', { className: 'config-servicio__precio' },
+      el('label', { className: 'casilla' }, activo, ' Repetir cada'),
+      cada,
+      unidad,
+      guardar));
 }
 
 // Funcion que arma el bloque para editar el precio de un servicio
@@ -674,6 +780,228 @@ function filaInsumo(panel, insumo) {
     guardar, alternar);
 }
 
+// Objeto con el texto y el color de cada estado de un correo en el historial
+const ESTADOS_CORREO = {
+  PENDIENTE: { texto: 'En cola', clase: 'ficha' },
+  ENVIANDO: { texto: 'Enviando', clase: 'ficha' },
+  ENVIADO: { texto: 'Enviado', clase: 'ficha ficha--bien' },
+  SIMULADO: { texto: 'Simulado', clase: 'ficha' },
+  ERROR: { texto: 'Error', clase: 'ficha ficha--alerta' },
+};
+
+// Set para recordar que avisos estaban abiertos al volver a pintar la pestaña
+const avisosAbiertos = new Set();
+
+// Funcion que pinta la pestaña de Notificaciones con el estado, los avisos y el historial
+async function pintarNotificaciones(panel) {
+  // Se usa Promise.all para pedir la configuracion y el historial al mismo tiempo
+  const [config, { correos }, remitente] = await Promise.all([
+    pedir('/configuracion/notificaciones'),
+    pedir('/configuracion/notificaciones/historial'),
+    // Si falla (por ejemplo, falta el script 24) la tarjeta del remitente no se muestra
+    pedir('/configuracion/notificaciones/remitente').catch(() => null),
+  ]);
+
+  // Se usa filter(Boolean) para no meter un null si la tarjeta del remitente no se muestra
+  panel.replaceChildren(...[
+    el('h2', { textContent: 'Notificaciones' }),
+    el('p', {
+      className: 'apoyo',
+      textContent: 'Correos automáticos que reciben tus clientes cuando pasa algo con sus turnos. Activa los que quieras y ajusta el texto a tu manera de hablar.',
+    }),
+    tarjetaEstadoCorreo(panel, config),
+    remitente ? tarjetaRemitente(panel, remitente) : null,
+    tarjetaAvisos(panel, config),
+    tarjetaHistorial(panel, correos),
+  ].filter(Boolean));
+}
+
+// Funcion que arma la tarjeta que dice si los correos salen de verdad o en modo prueba, con el boton de prueba
+function tarjetaEstadoCorreo(panel, config) {
+  const selector = el('select', { className: 'entrada', id: 'cfg-prueba-evento' });
+  for (const e of config.eventos) selector.append(el('option', { value: e.evento, textContent: e.nombre }));
+
+  const boton = el('button', { type: 'button', className: 'boton boton--mini', textContent: 'Enviarme una prueba' });
+  // Se llama a pedir con POST para dejar en cola un correo de prueba para el mismo administrador
+  boton.addEventListener('click', () => conBoton(boton, async () => {
+    const { destinatario } = await pedir('/configuracion/notificaciones/prueba', {
+      metodo: 'POST', cuerpo: { evento: selector.value },
+    });
+    avisar(`Correo de prueba en cola para ${destinatario}. Sale en menos de un minuto; revisa el historial.`, true);
+    await pintarNotificaciones(panel);
+  }));
+
+  return el('div', { className: 'tarjeta' },
+    cabeceraTarjeta('Envío de correos',
+      config.correoActivo
+        ? 'Los correos salen por Brevo desde el remitente configurado en el servidor.'
+        : 'Modo prueba: el servidor no tiene configurado Brevo, así que los correos no salen. Quedan en el historial como "Simulado".',
+      config.correoActivo ? 'Activo' : 'Modo prueba'),
+    el('div', { className: 'config-servicio__precio' },
+      el('label', { htmlFor: 'cfg-prueba-evento', className: 'visualmente-oculto', textContent: 'Aviso para la prueba' }),
+      selector,
+      boton));
+}
+
+// Funcion que arma la tarjeta del remitente: el nombre que ve el cliente y el correo para respuestas
+function tarjetaRemitente(panel, remitente) {
+  const nombre = el('input', {
+    type: 'text', maxLength: 70, className: 'entrada', id: 'cfg-remitente-nombre',
+    value: remitente.nombreRemitente ?? '', placeholder: remitente.nombrePorDefecto ?? 'Nombre de tu empresa',
+  });
+  const correo = el('input', {
+    type: 'email', maxLength: 254, className: 'entrada', id: 'cfg-remitente-correo',
+    value: remitente.correoRespuesta ?? '', placeholder: 'citas@tuempresa.com',
+  });
+
+  const guardar = el('button', { type: 'button', className: 'boton boton--mini', textContent: 'Guardar' });
+  // Se llama a pedir con PUT para guardar el remitente, si se deja vacio se usa lo de por defecto
+  guardar.addEventListener('click', () => conBoton(guardar, async () => {
+    await pedir('/configuracion/notificaciones/remitente', {
+      metodo: 'PUT',
+      cuerpo: { nombreRemitente: nombre.value.trim(), correoRespuesta: correo.value.trim() },
+    });
+    avisar('Se guardó el remitente de los correos.', true);
+    await pintarNotificaciones(panel);
+  }));
+
+  // Texto de ejemplo de como le aparece el correo al cliente
+  const comoSeVe = `${remitente.nombreRemitente || remitente.nombrePorDefecto || 'Tu empresa'}`
+    + (remitente.correoPlataforma ? ` <${remitente.correoPlataforma}>` : '');
+
+  return el('div', { className: 'tarjeta' },
+    cabeceraTarjeta('Remitente',
+      'Los correos salen desde el correo de la plataforma con el nombre de tu empresa. Si tus clientes responden, la respuesta te llega al correo que pongas aquí.',
+      remitente.correoRespuesta ? 'Con respuestas' : 'Sin respuestas'),
+    el('div', { className: 'rejilla' },
+      el('div', { className: 'campo' },
+        el('label', { htmlFor: 'cfg-remitente-nombre', textContent: 'Nombre que ve el cliente' }), nombre),
+      el('div', { className: 'campo' },
+        el('label', { htmlFor: 'cfg-remitente-correo', textContent: 'Correo para respuestas' }), correo,
+        el('p', { className: 'pista', textContent: 'Déjalo vacío si no quieres recibir respuestas.' }))),
+    el('p', { className: 'pista mono', textContent: `Así lo ve tu cliente: ${comoSeVe}` }),
+    el('div', { className: 'fila-botones' }, guardar));
+}
+
+// Funcion que arma la tarjeta con la lista de avisos
+function tarjetaAvisos(panel, config) {
+  const activos = config.eventos.filter((e) => e.activo).length;
+  const tarjeta = el('div', { className: 'tarjeta' },
+    cabeceraTarjeta('Avisos por correo',
+      'Variables que puedes usar en el asunto y el mensaje: '
+        + config.variables.map((v) => `{{${v.nombre}}}`).join(', ') + '.',
+      `${activos} de ${config.eventos.length} activos`));
+
+  // Se recorre la lista de avisos para agregar el detalle de cada uno
+  for (const e of config.eventos) tarjeta.append(detalleAviso(panel, e, config.variables));
+  return tarjeta;
+}
+
+// Funcion que arma el detalle desplegable de un aviso para activarlo y cambiar su texto
+function detalleAviso(panel, aviso, variables) {
+  const caja = el('details', { className: 'config-servicio', open: avisosAbiertos.has(aviso.evento) });
+  // Al abrir o cerrar se guarda en el Set para que quede igual al volver a pintar
+  caja.addEventListener('toggle', () => {
+    if (caja.open) avisosAbiertos.add(aviso.evento); else avisosAbiertos.delete(aviso.evento);
+  });
+
+  caja.append(el('summary', {},
+    el('span', { className: 'config-servicio__nombre', textContent: aviso.nombre }),
+    el('span', { className: 'tenue', textContent: ` · ${aviso.descripcion}` }),
+    el('span', { className: 'config-servicio__datos' },
+      aviso.personalizado ? el('span', { className: 'ficha', textContent: 'Texto propio' }) : null,
+      el('span', { className: aviso.activo ? 'ficha ficha--bien' : 'ficha', textContent: aviso.activo ? 'Activo' : 'Apagado' }))));
+
+  const id = `aviso-${aviso.evento.toLowerCase()}`;
+  const activo = el('input', { type: 'checkbox', checked: aviso.activo, id: `${id}-activo` });
+  const asunto = el('input', { type: 'text', maxLength: 200, value: aviso.asunto, id: `${id}-asunto`, className: 'entrada' });
+  const mensaje = el('textarea', { rows: 6, maxLength: 3000, value: aviso.mensaje, id: `${id}-mensaje`, className: 'entrada' });
+
+  // Botones para meter una variable donde esta el cursor del mensaje
+  const atajos = el('div', { className: 'config-variables' },
+    ...variables.map((v) => el('button', {
+      type: 'button',
+      className: 'boton boton--texto boton--mini',
+      textContent: `{{${v.nombre}}}`,
+      title: v.descripcion,
+      onclick: () => {
+        const texto = `{{${v.nombre}}}`;
+        const ini = mensaje.selectionStart ?? mensaje.value.length;
+        const fin = mensaje.selectionEnd ?? ini;
+        // Se usa setRangeText para poner la variable donde esta el cursor
+        mensaje.setRangeText(texto, ini, fin, 'end');
+        mensaje.focus();
+      },
+    })));
+
+  const guardar = el('button', { type: 'button', className: 'boton boton--mini', textContent: 'Guardar' });
+  // Se llama a pedir con PUT para guardar el aviso
+  guardar.addEventListener('click', () => conBoton(guardar, async () => {
+    await pedir(`/configuracion/notificaciones/${aviso.evento}`, {
+      metodo: 'PUT',
+      cuerpo: { activo: activo.checked, asunto: asunto.value.trim(), mensaje: mensaje.value.trim() },
+    });
+    avisar(`Se guardó el aviso "${aviso.nombre}".`, true);
+    await pintarNotificaciones(panel);
+  }));
+
+  // Boton para volver al texto por defecto, el servidor guarda vacio y usa el suyo
+  const restaurar = el('button', {
+    type: 'button',
+    className: 'boton boton--texto boton--mini',
+    textContent: 'Volver al texto original',
+    hidden: !aviso.personalizado,
+  });
+  restaurar.addEventListener('click', () => conBoton(restaurar, async () => {
+    if (!confirm(`¿Volver al texto original de "${aviso.nombre}"?`)) return;
+    await pedir(`/configuracion/notificaciones/${aviso.evento}`, {
+      metodo: 'PUT', cuerpo: { activo: activo.checked, restaurar: true },
+    });
+    await pintarNotificaciones(panel);
+  }));
+
+  caja.append(el('div', { className: 'config-servicio__bloque' },
+    el('label', { className: 'casilla', htmlFor: `${id}-activo` }, activo, ' Enviar este aviso'),
+    el('div', { className: 'campo' }, el('label', { htmlFor: `${id}-asunto`, textContent: 'Asunto' }), asunto),
+    el('div', { className: 'campo' }, el('label', { htmlFor: `${id}-mensaje`, textContent: 'Mensaje' }), mensaje, atajos),
+    el('p', { className: 'pista', textContent: 'Debajo del mensaje se agregan solos el servicio, la fecha, la hora y la sede.' }),
+    el('div', { className: 'fila-botones' }, guardar, restaurar)));
+  return caja;
+}
+
+// Funcion que arma la tabla con los ultimos correos de la empresa
+function tarjetaHistorial(panel, correos) {
+  const fecha = (v) => (v ? new Date(v).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' }) : '—');
+  const cuerpo = el('tbody');
+
+  // Se recorre la lista con for para pintar una fila por cada correo
+  for (const c of correos) {
+    const estado = ESTADOS_CORREO[c.estado] ?? { texto: c.estado, clase: 'ficha' };
+    cuerpo.append(el('tr', {},
+      el('td', { className: 'mono', textContent: fecha(c.creado) }),
+      el('td', { textContent: c.nombreEvento }),
+      el('td', { className: 'mono', textContent: c.destinatario }),
+      el('td', {}, el('span', { className: estado.clase, textContent: estado.texto })),
+      el('td', { className: 'tenue', textContent: c.error ? `${c.error} (intento ${c.intentos})` : '' })));
+  }
+  if (correos.length === 0) {
+    cuerpo.append(el('tr', {}, el('td', { colSpan: 5, className: 'apoyo', textContent: 'Todavía no se ha enviado ningún correo.' })));
+  }
+
+  const recargar = el('button', { type: 'button', className: 'boton boton--texto boton--mini', textContent: 'Actualizar' });
+  recargar.addEventListener('click', () => conBoton(recargar, () => pintarNotificaciones(panel)));
+
+  return el('div', { className: 'tarjeta' },
+    cabeceraTarjeta('Historial', 'Los últimos 50 correos de tu empresa. Los que fallan se reintentan solos hasta 5 veces.'),
+    el('div', { className: 'tabla-envoltura' },
+      el('table', { className: 'tabla' },
+        el('thead', {}, el('tr', {},
+          el('th', { textContent: 'Fecha' }), el('th', { textContent: 'Aviso' }),
+          el('th', { textContent: 'Para' }), el('th', { textContent: 'Estado' }), el('th', { textContent: 'Detalle' }))),
+        cuerpo)),
+    el('div', { className: 'fila-botones' }, recargar));
+}
+
 // Funcion que devuelve la funcion que pinta las listas (catalogos) de un modulo
 function pintadorListas(modulo) {
   const pintar = async (panel) => {
@@ -817,6 +1145,8 @@ async function cargar() {
   if (modulos.includes('AGENDA')) {
     areas.push({ id: 'cfg-agenda', titulo: 'Agenda', pintar: pintarAgenda });
     areas.push({ id: 'cfg-servicios', titulo: 'Servicios e insumos', pintar: pintarServicios });
+    // Pestaña de los correos automaticos de los turnos
+    areas.push({ id: 'cfg-notificaciones', titulo: 'Notificaciones', pintar: pintarNotificaciones });
   }
 
   // Se piden los catalogos y se sacan los modulos que tienen listas, sin repetir gracias al Set

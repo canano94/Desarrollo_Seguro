@@ -671,7 +671,8 @@ select[multiple] { padding: 0.25rem; }
 
 .fila-clicable { cursor: pointer; }
 .fila-clicable:hover td { background: var(--papel); }
-.fila-tenue { opacity: 0.55; }
+/* Fila de algo inactivo: se ve mas suave pero con contraste suficiente (WCAG AA 4.5:1) */
+.fila-tenue td { color: var(--texto-tenue); background: var(--papel); }
 
 .fila-activa td {
   background: var(--agenda-clara);
@@ -853,7 +854,7 @@ select[multiple] { padding: 0.25rem; }
 
 .dia__numero { font-family: var(--display); font-weight: 700; font-size: 1rem; }
 .dia--hoy .dia__numero { color: var(--agenda); }
-.dia__vacio { color: var(--linea); font-size: 0.875rem; text-align: center; margin-top: 1rem; }
+.dia__vacio { color: var(--texto-tenue); font-size: 0.875rem; text-align: center; margin-top: 1rem; }
 
 .turno {
   display: flex;
@@ -1023,9 +1024,422 @@ select[multiple] { padding: 0.25rem; }
 }
 
 /* =====================================================================
+   MAPA DEL CLIENTE (Leaflet + OpenStreetMap)
+   ===================================================================== */
+
+.ubicacion { margin-top: 1rem; display: grid; gap: 0.5rem; }
+.ubicacion a.boton { text-decoration: none; }
+
+.mapa {
+  height: 260px;
+  border: 1px solid var(--linea);
+  border-radius: var(--radio);
+  /* El mapa crea capas con z-index alto; esto las deja debajo de la barra */
+  position: relative;
+  z-index: 0;
+}
+
+.ubicacion-editar .mapa { height: 320px; margin-top: 0.75rem; }
+.ubicacion-editar .pista { margin: 0.25rem 0 0.5rem; }
+
+.lista-lugares {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.lista-lugares button {
+  width: 100%;
+  text-align: left;
+  background: var(--superficie);
+  border: 1px solid var(--linea);
+  border-radius: var(--radio);
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--texto);
+  cursor: pointer;
+}
+
+.lista-lugares button:hover,
+.lista-lugares button:focus-visible { border-color: var(--agenda); background: var(--agenda-clara); }
+
+/* =====================================================================
+   LLAMAR AL CLIENTE (link tel:)
+   ===================================================================== */
+
+.llamar {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.875rem;
+  border: 1px solid var(--agenda);
+  border-radius: var(--radio);
+  background: var(--agenda-clara);
+  color: var(--agenda);
+  font-weight: 600;
+  font-size: 0.9375rem;
+  text-decoration: none;
+  /* Tamaño minimo para tocarlo facil con el dedo */
+  min-height: 2.5rem;
+}
+
+.llamar:hover, .llamar:focus-visible { background: var(--agenda); color: var(--superficie); }
+.llamar--mini { padding: 0.25rem 0.625rem; min-height: 2rem; font-size: 0.8125rem; }
+
+.contacto-acciones { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.5rem 0 0; }
+
+/* Boton redondo solo con el icono del telefono */
+.llamar--icono {
+  width: 2.75rem;
+  height: 2.75rem;
+  min-height: 0;
+  padding: 0;
+  justify-content: center;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.llamar--icono svg { width: 20px; height: 20px; }
+
+/* Fila "Cliente: nombre" en el detalle del turno y del caso */
+.fila-cliente {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+  padding: 0.5rem 0.5rem 0.5rem 0.875rem;
+  border: 1px solid var(--linea);
+  border-radius: var(--radio);
+  background: var(--superficie);
+}
+.fila-cliente__datos { display: grid; gap: 0.125rem; min-width: 0; }
+.fila-cliente__etiqueta {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--texto-tenue);
+}
+.fila-cliente__nombre { font-weight: 600; color: var(--texto); overflow-wrap: anywhere; }
+a.fila-cliente__nombre { color: var(--agenda); text-decoration: none; }
+a.fila-cliente__nombre:hover, a.fila-cliente__nombre:focus-visible { text-decoration: underline; }
+
+/* =====================================================================
+   SERVICIOS POR REPETIR (agenda)
+   ===================================================================== */
+
+/* Turnos y casos del perfil del cliente que llevan a su detalle */
+.observaciones li.observaciones__item--enlace { padding: 0; }
+.observaciones__enlace {
+  display: grid;
+  gap: 0.125rem;
+  padding: 0.625rem 2rem 0.625rem 0.875rem;
+  color: inherit;
+  text-decoration: none;
+  position: relative;
+}
+.observaciones__enlace::after {
+  content: '›';
+  position: absolute;
+  right: 0.875rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.25rem;
+  color: var(--texto-tenue);
+}
+.observaciones__enlace:hover, .observaciones__enlace:focus-visible { background: var(--agenda-clara); }
+
+.lista-repetir { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+
+.repetir-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.75rem;
+  border: 1px solid var(--linea);
+  border-radius: var(--radio);
+  background: var(--superficie);
+}
+
+.repetir-item__datos { flex: 1 1 14rem; display: grid; gap: 0.125rem; }
+.repetir-item__titulo { font-weight: 600; }
+.repetir-item__meta { font-size: 0.8125rem; color: var(--texto-tenue); }
+.repetir-item--vencido { border-color: var(--ambar); background: var(--ambar-claro); }
+
+/* Configuracion > Notificaciones: botones para meter variables en el mensaje */
+.config-variables { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.4rem; }
+.config-variables .boton { font-family: var(--mono); font-size: 0.8rem; }
+
+/* Configuracion: el select de dias, semanas o meses no ocupa todo el ancho */
+.config-servicio__precio select.entrada { width: auto; min-width: 8rem; }
+
+/* =====================================================================
+   RECORDATORIOS PUSH (perfil y configuracion)
+   ===================================================================== */
+
+.recordatorio-estado { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0.5rem 0 1rem; }
+.recordatorio-tiempo { max-width: 22rem; }
+
+/* =====================================================================
    UTILIDAD FINAL
    Va de últimas a propósito: el atributo hidden debe ganarle a
    cualquier regla de display definida más arriba en el archivo.
    ===================================================================== */
 
 [hidden] { display: none !important; }
+
+/* =====================================================================
+   PAGINAS LEGALES, PIE Y AVISO DE COOKIES
+   ===================================================================== */
+
+/* Pagina legal: texto largo, con ancho de lectura comodo */
+.legal-barra {
+  background: var(--tinta);
+  color: var(--papel);
+  padding: 1rem 1.25rem;
+}
+.legal-barra a {
+  color: var(--papel);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 1.125rem;
+  text-decoration: none;
+}
+.legal {
+  max-width: 72ch;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 3rem;
+}
+.legal h1 { font-size: 1.875rem; line-height: 1.2; }
+.legal h2 { margin-top: 2.25rem; font-size: 1.1875rem; }
+.legal h3 { margin: 1.5rem 0 0; font-size: 1rem; }
+.legal p, .legal li { color: var(--tinta-suave); }
+.legal li { margin: 0.25rem 0; }
+.legal a { color: var(--agenda); }
+.legal__vigencia {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  color: var(--texto-tenue);
+  margin-top: 0.5rem;
+}
+.legal__indice {
+  margin: 1.5rem 0 0;
+  padding: 1rem 1.25rem;
+  background: var(--superficie);
+  border: 1px solid var(--linea);
+  border-radius: var(--radio);
+}
+.legal__indice ol { margin: 0.5rem 0 0; padding-left: 1.25rem; }
+.legal__resumen {
+  margin-top: 1.5rem;
+  padding: 1rem 1.25rem;
+  background: var(--agenda-clara);
+  border-left: 3px solid var(--agenda);
+  border-radius: var(--radio);
+}
+.legal__resumen p { color: var(--texto); margin: 0.25rem 0; }
+.legal table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.75rem;
+  font-size: 0.9375rem;
+}
+.legal th, .legal td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.5rem 0.625rem;
+  border-bottom: 1px solid var(--linea);
+}
+.legal th { font-weight: 600; color: var(--texto); background: var(--superficie); }
+.legal td { color: var(--tinta-suave); }
+/* En celular la tabla se puede deslizar de lado sin romper la pagina */
+.legal__tabla { overflow-x: auto; }
+.legal__datos { margin: 0.5rem 0 0; }
+.legal__datos div { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.legal__datos dt { font-weight: 600; color: var(--texto); }
+.legal__datos dd { margin: 0; color: var(--tinta-suave); }
+
+/* Pie de pagina con los enlaces legales, va en todas las pantallas */
+.pie-legal {
+  border-top: 1px solid var(--linea);
+  padding: 1.25rem 1.25rem calc(1.25rem + env(safe-area-inset-bottom));
+  font-size: 0.8125rem;
+  color: var(--texto-tenue);
+}
+.pie-legal__fila {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.25rem;
+  align-items: center;
+}
+.pie-legal nav { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; }
+.pie-legal a { color: var(--texto-tenue); }
+.pie-legal a:hover { color: var(--texto); }
+
+/* Aviso de cookies: solo informa, no bloquea la pantalla */
+.aviso-cookies {
+  position: fixed;
+  left: 1rem;
+  right: 1rem;
+  bottom: calc(1rem + env(safe-area-inset-bottom));
+  z-index: 1000;
+  max-width: 34rem;
+  margin: 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  padding: 0.875rem 1rem;
+  background: var(--tinta);
+  color: var(--papel);
+  border-radius: var(--radio);
+  box-shadow: 0 6px 24px rgba(16, 28, 38, 0.25);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.aviso-cookies p { margin: 0; flex: 1 1 16rem; }
+.aviso-cookies a { color: #cfe3dc; }
+.aviso-cookies .boton { flex: 0 0 auto; }
+.aviso-cookies .boton { background: var(--papel); color: var(--tinta); border-color: var(--papel); }
+.aviso-cookies .boton:hover { background: #ffffff; border-color: #ffffff; }
+.aviso-cookies .boton:focus-visible { outline-color: #cfe3dc; }
+
+/* Enlace para saltar al contenido, solo se ve cuando se llega con el teclado */
+.saltar {
+  position: absolute;
+  left: 1rem;
+  top: -3rem;
+  z-index: 1100;
+  padding: 0.5rem 0.875rem;
+  background: var(--superficie);
+  color: var(--tinta);
+  border: 2px solid var(--agenda);
+  border-radius: var(--radio);
+  font-weight: 600;
+}
+.saltar:focus { top: 0.75rem; }
+
+/* En celular cada fila de la tabla legal se muestra como una tarjeta, asi no hay que deslizar de lado */
+@media (max-width: 640px) {
+  .legal table, .legal tbody, .legal tr, .legal td { display: block; width: 100%; }
+  .legal thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .legal tr {
+    margin-top: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--superficie);
+    border: 1px solid var(--linea);
+    border-radius: var(--radio);
+  }
+  .legal td { border: 0; padding: 0.25rem 0; }
+  .legal td::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--texto-tenue);
+  }
+}
+
+/* Mientras el aviso de cookies esta abierto se deja espacio abajo para que no tape el final de la pagina */
+body.con-aviso-cookies { padding-bottom: 8rem; }
+
+/* =====================================================================
+   PROTECCION DE DATOS: aceptar terminos y autorizacion del cliente
+   ===================================================================== */
+
+/* Lista con los documentos que hay que leer en la pantalla de aceptar */
+.lista-legal {
+  list-style: none;
+  margin: 0 0 1.25rem;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+.lista-legal li {
+  display: grid;
+  gap: 0.125rem;
+  padding: 0.75rem 0.875rem;
+  background: var(--superficie);
+  border: 1px solid var(--linea);
+  border-radius: var(--radio);
+}
+.lista-legal a { font-weight: 600; }
+
+/* Casilla con texto largo: la casilla arriba a la izquierda y el texto al lado */
+.casilla--bloque {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  margin: 0 0 1rem;
+  line-height: 1.45;
+}
+.casilla--bloque input {
+  flex-shrink: 0;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin-top: 0.15rem;
+}
+
+/* Fila de la ficha con el estado de la autorizacion y su boton */
+.autorizacion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Pagina publica para dejar de recibir recordatorios */
+.baja section { margin-top: 1rem; }
+.baja .fila-botones { margin-top: 1.25rem; }
+.baja__nota { margin-top: 2rem; }
+
+/* Tarjeta de eliminar la cuenta: borde rojo suave para que se note que es una accion fuerte */
+.tarjeta--peligro { border-left: 3px solid var(--alerta); }
+.lista-simple { margin: 0 0 1rem; padding-left: 1.25rem; line-height: 1.5; }
+.lista-simple li + li { margin-top: 0.25rem; }
+.boton--peligro { background: var(--alerta); border-color: var(--alerta); color: #ffffff; }
+.boton--peligro:hover { background: #862f1e; border-color: #862f1e; }
+.boton--texto-peligro { color: var(--alerta); }
+
+/* =====================================================================
+   ACCESIBILIDAD
+   ===================================================================== */
+
+/* Foco visible para todo lo que se puede alcanzar con el teclado y no tiene su propio estilo */
+a:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible,
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible {
+  outline: 2px solid var(--agenda);
+  outline-offset: 2px;
+}
+
+/* Filas de tabla que se abren con clic o con Enter */
+tr[data-clic] { cursor: pointer; }
+tr[data-clic]:focus-visible { outline-offset: -2px; }
+
+/* El campo de archivo del escaner esta oculto: cuando recibe el foco se marca su etiqueta */
+.escaner__acciones:has(#foto:focus-visible) .escaner__foto {
+  outline: 2px solid var(--agenda);
+  outline-offset: 2px;
+}
+.escaner__alternativa { margin-top: 1rem; }
+
+/* Si la persona pidio menos movimiento en su sistema, se quitan las animaciones */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

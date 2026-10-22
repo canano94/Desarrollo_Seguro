@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#101c26">
+  <!-- El enlace lleva un codigo, con no-referrer no se manda a otros sitios si se pulsa un link -->
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+  <title>Recordatorios por correo · OmniGest</title>
+  <link rel="stylesheet" href="css/fuentes.css">
+  <link rel="stylesheet" href="css/estilos.css">
+  <link rel="stylesheet" href="css/movil.css">
+</head>
+<body>
+  <a class="saltar" href="#principal">Saltar al contenido</a>
+  <header class="legal-barra">
+    <span>OmniGest</span>
+  </header>
+
+  <main class="legal baja" id="principal">
+    <h1 id="baja-titulo">Recordatorios por correo</h1>
+
+    <p id="baja-cargando" class="apoyo">Revisando el enlace…</p>
+
+    <!-- Estado: todavia recibe los recordatorios -->
+    <section id="baja-activo" hidden>
+      <p>¿Quieres dejar de recibir los <strong>recordatorios</strong> de <strong data-empresa></strong>?</p>
+      <ul>
+        <li>Dejarás de recibir: el recordatorio un día antes de tu turno y el aviso de que es momento de repetir un servicio.</li>
+        <li>Seguirás recibiendo: los avisos de los turnos que pidas (recibido, confirmado, cambio de fecha o cancelación).</li>
+      </ul>
+      <div class="fila-botones">
+        <button type="button" class="boton" id="btn-baja">Sí, dejar de recibirlos</button>
+      </div>
+    </section>
+
+    <!-- Estado: ya se dio de baja -->
+    <section id="baja-hecha" hidden>
+      <p role="status">Listo. Ya no recibirás recordatorios de <strong data-empresa></strong>.</p>
+      <p class="apoyo">Si fue un error, puedes volver a recibirlos.</p>
+      <div class="fila-botones">
+        <button type="button" class="boton boton--borde" id="btn-reactivar">Volver a recibir recordatorios</button>
+      </div>
+    </section>
+
+    <p id="aviso" class="aviso" role="alert" hidden></p>
+
+    <p class="apoyo baja__nota">
+      Si tienes dudas sobre tus datos, escríbele a la empresa o consulta nuestra
+      <a href="privacidad.html">política de privacidad</a>.
+    </p>
+  </main>
+
+  <script type="module" src="js/baja.js"></script>
+  <script type="module" src="js/pie.js"></script>
+</body>
+</html>

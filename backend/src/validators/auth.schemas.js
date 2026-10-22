@@ -64,6 +64,19 @@ export const registroSchema = z
     documento: z.string().trim().max(30).optional(),
     // El slug es opcional, sirve para registrarse directo en una empresa
     empresaSlug: slugEmpresa.optional(),
+    // Tiene que aceptar los terminos y la politica para crear la cuenta, no puede venir en false
+    aceptaTerminos: z.literal(true, {
+      errorMap: () => ({ message: 'Debes aceptar los términos y la política de privacidad.' }),
+    }),
+  })
+  .strict();
+
+// Esquema para aceptar los terminos desde la pantalla de aceptar
+export const aceptarTerminosSchema = z
+  .object({
+    acepto: z.literal(true, {
+      errorMap: () => ({ message: 'Debes marcar la casilla para aceptar.' }),
+    }),
   })
   .strict();
 
@@ -115,3 +128,10 @@ export function validar(schema) {
     return next();
   };
 }
+
+// Esquema para eliminar la propia cuenta, se pide la contraseña actual
+export const eliminarCuentaSchema = z
+  .object({
+    password: z.string().min(1, 'Escribe tu contraseña.').max(200),
+  })
+  .strict();

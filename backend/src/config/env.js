@@ -53,4 +53,21 @@ export const env = {
     // Costo de bcrypt para el hash de las contraseñas
     bcryptCost: 12,
   },
+
+  // Objeto con la configuracion del buscador de direcciones (Nominatim de OpenStreetMap)
+  // Nominatim pide que cada app se identifique con un User-Agent y un correo de contacto
+  mapa: {
+    contacto: process.env.MAPA_CONTACTO ?? '',
+    // Paises donde se buscan las direcciones, separados por coma (co = Colombia)
+    paises: process.env.MAPA_PAISES ?? 'co',
+  },
+
+  // Objeto con las llaves VAPID para las notificaciones push
+  // Si faltan, los recordatorios quedan apagados pero el resto de la app funciona normal
+  push: {
+    clavePublica: process.env.VAPID_PUBLIC_KEY ?? '',
+    clavePrivada: process.env.VAPID_PRIVATE_KEY ?? '',
+    // Correo de contacto que se le manda al servicio de push (Google, Apple, Mozilla)
+    contacto: process.env.VAPID_SUBJECT ?? '',
+  },
 };

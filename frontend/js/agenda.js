@@ -1,5 +1,7 @@
 // Se importan las funciones de api.js para la sesion, elegir empresa, llamar la API y salir
 import { restaurarSesion, sesionActual, elegirEmpresa, pedir, salir } from './api.js';
+// Se importa enlaceLlamar para el boton de llamar al cliente
+import { enlaceLlamar, filaCliente } from './telefono.js';
 
 // Se toman los elementos de la pagina que se usan en la agenda
 const cargando = document.getElementById('cargando');
@@ -111,6 +113,10 @@ function opcion(valor, texto) {
   o.textContent = texto;
   return o;
 }
+
+// Funcion para saber si puede abrir la ficha de clientes, son los mismos permisos que pide el backend
+const puedeVerClientes = () => ['clientes.gestionar', 'reservas.aprobar', 'casos.gestionar',
+  'equipos.crear', 'equipos.gestionar'].some(puede);
 
 // Funcion que devuelve el nombre del cliente, o une nombres y apellidos
 const nombreDe = (c) => c.nombre || [c.nombres, c.apellidos].filter(Boolean).join(' ');
@@ -337,9 +343,23 @@ async function mostrarDetalleTurno(reserva) {
 
   document.getElementById('dt-servicio').textContent = reserva.servicio;
   document.getElementById('dt-info').textContent =
-    ` · ${hora(reserva.fechaInicio)} · ${reserva.prestador} · ${reserva.cliente} · ${reserva.estado}`;
+    ` · ${hora(reserva.fechaInicio)} · ${reserva.prestador} · ${reserva.estado}`;
 
   dtAcciones.replaceChildren();
+
+  // Fila del cliente: el nombre lleva a su ficha y el boton redondo lo llama
+  // Solo la ve el personal, un cliente no necesita verse a si mismo
+  // El servidor solo manda el telefono a quien puede ver turnos de otros clientes
+  const cajaCliente = document.getElementById('dt-cliente');
+  if (puedeVerClientes()) {
+    filaCliente(cajaCliente, {
+      idCliente: reserva.idCliente,
+      nombre: reserva.cliente,
+      telefono: reserva.clienteTelefono,
+    });
+  } else {
+    cajaCliente.hidden = true;
+  }
 
   // Si puede aprobar y el turno esta pendiente se muestran confirmar y rechazar
   if (puede('reservas.aprobar') && reserva.estado === 'PENDIENTE') {
@@ -472,10 +492,14 @@ function botonEstado(idReserva, estado, texto) {
     boton.disabled = true;
     try {
       // Se llama a pedir con PATCH para cambiar el estado del turno
-      await pedir(`/agenda/reservas/${idReserva}/estado`, { metodo: 'PATCH', cuerpo: { estado } });
+      const { reserva } = await pedir(`/agenda/reservas/${idReserva}/estado`, { metodo: 'PATCH', cuerpo: { estado } });
       detalleTurno.hidden = true;
       await cargarReservas();
-      avisar('Turno actualizado.', true);
+      await cargarRepetir();
+      // Si el servicio se repite, el servidor devuelve la fecha en que se va a recordar
+      avisar(reserva?.repetirEl
+        ? `Turno actualizado. Se recordará repetir este servicio el ${fechaCorta(reserva.repetirEl)}.`
+        : 'Turno actualizado.', true);
     } catch (error) {
       avisar(mensajeError(error));
       boton.disabled = false;
@@ -575,11 +599,28 @@ document.getElementById('r-cliente-cambiar').addEventListener('click', () => {
 // Funcion que deja elegido el cliente si viene en la URL, por ejemplo desde la pantalla de clientes
 async function preseleccionarDesdeUrl() {
   const params = new URLSearchParams(location.search);
+
+  // Si llega un turno (por ejemplo desde la ficha del cliente) se abre ese turno en su dia
+  const idTurno = params.get('turno');
+  if (idTurno) {
+    history.replaceState({}, '', 'agenda.html');
+    if (UUID.test(idTurno)) await abrirTurnoPorId(idTurno);
+    return;
+  }
+
   const idCliente = params.get('cliente');
-  if (!idCliente) return;
+  const idServicio = params.get('servicio');
+  if (!idCliente && !idServicio) return;
 
   // Se limpia la URL para que no se vuelva a usar si se recarga la pagina
   history.replaceState({}, '', 'agenda.html');
+
+  // Si llega un servicio (por ejemplo desde el aviso de repetir) se deja elegido
+  if (idServicio && UUID.test(idServicio)) elegirServicio(idServicio);
+  if (!idCliente) {
+    await irAReservar('Elige el día y la hora para tu próximo turno.');
+    return;
+  }
 
   // Si el id no es un UUID o no puede agendar a otros no se hace nada
   if (!UUID.test(idCliente) || document.getElementById('campo-cliente').hidden) return;
@@ -588,10 +629,143 @@ async function preseleccionarDesdeUrl() {
     // Se llama a pedir para traer los datos del cliente
     const { cliente } = await pedir(`/clientes/${idCliente}`);
     elegirCliente(cliente);
-    document.getElementById('reservar').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    avisar(`Agendando un turno para ${nombreDe(cliente)}. Elige el servicio, el día y la hora.`, true);
+    // Si tambien llego el servicio solo falta elegir el dia y la hora
+    await irAReservar(idServicio
+      ? `Agendando un turno para ${nombreDe(cliente)}. Elige el día y la hora.`
+      : `Agendando un turno para ${nombreDe(cliente)}. Elige el servicio, el día y la hora.`);
   } catch (error) {
     avisar(mensajeError(error));
+  }
+}
+
+// Funcion que busca un turno en la lista, pone el calendario en ese dia y abre su detalle
+async function abrirTurnoPorId(idReserva) {
+  const reserva = reservas.find((r) => r.idReserva === idReserva);
+  // La agenda trae los ultimos 200 turnos que el usuario puede ver, si no esta se avisa
+  if (!reserva) {
+    avisar('Ese turno no aparece en tu agenda. Puede ser muy antiguo o de una sede que no tienes asignada.');
+    return;
+  }
+  // Se pasa a la vista de dia en la fecha del turno y se abre el detalle
+  cambiarVista('dia', new Date(reserva.fechaInicio));
+  await mostrarDetalleTurno(reserva);
+}
+
+// Funcion que deja elegido un servicio en el select si existe en la lista
+// Devuelve false si el servicio ya no esta (por ejemplo si se desactivo)
+function elegirServicio(idServicio) {
+  const select = document.getElementById('r-servicio');
+  const existe = [...select.options].some((o) => o.value === String(idServicio));
+  if (existe) select.value = String(idServicio);
+  return existe;
+}
+
+// Funcion que baja hasta el formulario de reservar, recarga las horas y muestra un mensaje
+async function irAReservar(mensaje) {
+  if (document.getElementById('reservar').hidden) return;
+  await cargarHorasLibres();
+  document.getElementById('reservar').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (mensaje) avisar(mensaje, true);
+}
+
+// Funcion para mostrar una fecha corta, por ejemplo 14 nov 2026
+function fechaCorta(iso) {
+  return new Date(iso).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+// Funcion que arma un item de la lista de servicios por repetir
+function itemRepetir(item, modo) {
+  const vencido = new Date(item.fechaAviso) <= new Date();
+  const li = document.createElement('li');
+  li.className = vencido ? 'repetir-item repetir-item--vencido' : 'repetir-item';
+
+  const datos = document.createElement('div');
+  datos.className = 'repetir-item__datos';
+  const titulo = document.createElement('span');
+  titulo.className = 'repetir-item__titulo';
+  // Se usa textContent y no innerHTML para que no se pueda meter codigo (XSS)
+  titulo.textContent = modo === 'personal' ? `${item.cliente} · ${item.servicio}` : item.servicio;
+  const meta = document.createElement('span');
+  meta.className = 'repetir-item__meta';
+  meta.textContent = [
+    `${vencido ? 'Toca desde' : 'Toca el'} ${fechaCorta(item.fechaAviso)}`,
+    `última vez ${fechaCorta(item.ultimaVez)}`,
+    item.prestador,
+  ].join(' · ');
+  datos.append(titulo, meta);
+  li.append(datos);
+
+  const acciones = document.createElement('div');
+  acciones.className = 'fila-botones';
+
+  // El personal ve el boton de llamar con el telefono del cliente
+  if (modo === 'personal') {
+    const llamar = enlaceLlamar(item.telefono, { texto: 'Llamar' });
+    if (llamar) acciones.append(llamar);
+  }
+
+  // Boton para agendar de una vez: deja elegido el servicio (y el cliente) y baja al formulario
+  const agendar = document.createElement('button');
+  agendar.type = 'button';
+  agendar.className = 'boton boton--mini';
+  agendar.textContent = 'Agendar';
+  agendar.addEventListener('click', async () => {
+    if (!elegirServicio(item.idServicio)) {
+      avisar('Ese servicio ya no está disponible. Elige otro en el formulario.');
+    }
+    if (modo === 'personal') elegirCliente({ idCliente: item.idCliente, nombre: item.cliente });
+    await irAReservar(modo === 'personal'
+      ? `Agendando ${item.servicio} para ${item.cliente}. Elige el día y la hora.`
+      : `Agendando ${item.servicio}. Elige el día y la hora.`);
+  });
+  acciones.append(agendar);
+
+  // El personal puede descartarlo si el cliente no lo va a repetir
+  if (modo === 'personal') {
+    const descartar = document.createElement('button');
+    descartar.type = 'button';
+    descartar.className = 'boton boton--texto boton--mini';
+    descartar.textContent = 'Descartar';
+    descartar.addEventListener('click', async () => {
+      if (!confirm(`¿Quitar el recordatorio de ${item.servicio} para ${item.cliente}?`)) return;
+      descartar.disabled = true;
+      try {
+        // Se llama a pedir con PATCH para cerrar el recordatorio
+        await pedir(`/agenda/repetir/${item.idRepetir}/descartar`, { metodo: 'PATCH' });
+        await cargarRepetir();
+      } catch (error) {
+        avisar(mensajeError(error));
+        descartar.disabled = false;
+      }
+    });
+    acciones.append(descartar);
+  }
+
+  li.append(acciones);
+  return li;
+}
+
+// Funcion que trae los servicios que toca repetir y los pinta arriba del calendario
+// Si no hay ninguno la seccion se oculta
+async function cargarRepetir() {
+  const seccion = document.getElementById('repetir');
+  try {
+    const { modo, items } = await pedir('/agenda/repetir');
+    const lista = document.getElementById('lista-repetir');
+    lista.replaceChildren();
+    // Se recorre la lista con for para agregar cada servicio por repetir
+    for (const item of items) lista.append(itemRepetir(item, modo));
+
+    document.getElementById('repetir-titulo').textContent = modo === 'personal'
+      ? `Servicios por repetir (${items.length})`
+      : 'Te toca repetir';
+    document.getElementById('repetir-apoyo').textContent = modo === 'personal'
+      ? 'Clientes que deben volver en los próximos 30 días o que ya se pasaron. Llámalos o agenda de una vez.'
+      : 'Agenda tu próximo turno con un toque.';
+    seccion.hidden = items.length === 0;
+  } catch {
+    // Si falla (por ejemplo, falta el script 22) solo se oculta la seccion
+    seccion.hidden = true;
   }
 }
 
@@ -704,6 +878,8 @@ async function reservar(fechaInicio, boton) {
     await pedir('/agenda/reservas', { metodo: 'POST', cuerpo });
     await cargarReservas();
     await cargarHorasLibres();
+    // Si ese servicio estaba por repetir, el servidor lo cierra y se quita de la lista
+    await cargarRepetir();
     avisar(clienteElegido
       ? `Turno reservado para ${nombreDe(clienteElegido)}.`
       : 'Turno reservado.', true);
@@ -771,6 +947,7 @@ async function cargarTodo() {
 
   await cargarServicios();
   await cargarReservas();
+  await cargarRepetir();
 
   if (!document.getElementById('reservar').hidden) await cargarHorasLibres();
 }

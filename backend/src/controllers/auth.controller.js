@@ -37,6 +37,8 @@ function responderSesion(res, resultado, status = 200) {
   res.status(status).json({
     // requiereSeleccion indica si el usuario tiene varias empresas y debe escoger una
     requiereSeleccion: resultado.requiereSeleccion ?? false,
+    // requiereAceptar indica si le falta aceptar los terminos y la politica vigentes
+    requiereAceptar: resultado.requiereAceptar ?? false,
     accessToken: resultado.accessToken,
     tokenType: 'Bearer',
     usuario: resultado.usuario,
@@ -153,6 +155,28 @@ export async function cambiarPassword(req, res, next) {
       passwordNueva: req.body.passwordNueva,
     });
     // Despues de cambiarla se borra la cookie para que vuelva a iniciar sesion
+    res.clearCookie(env.refresh.cookieName, { path: env.refresh.cookiePath });
+    res.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Funcion para guardar que el usuario acepto los terminos y la politica vigentes
+// Despues el frontend renueva el token para que ya no traiga la marca de pendiente
+export async function aceptarTerminos(req, res, next) {
+  try {
+    const resultado = await authService.registrarAceptacion(req.usuario.idUsuario, 'INGRESO');
+    res.json(resultado);
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Funcion para eliminar la propia cuenta, despues se borra la cookie de la sesion
+export async function eliminarCuenta(req, res, next) {
+  try {
+    await authService.eliminarCuenta(req.usuario.idUsuario, req.body.password, contexto(req));
     res.clearCookie(env.refresh.cookieName, { path: env.refresh.cookiePath });
     res.status(204).end();
   } catch (error) {

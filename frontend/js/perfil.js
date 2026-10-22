@@ -1,7 +1,7 @@
 // Se importan las funciones de api.js para la sesion, el perfil y la contraseña
 import {
   restaurarSesion, sesionActual, elegirEmpresa,
-  obtenerPerfil, guardarPerfil, cambiarPassword, salir,
+  obtenerPerfil, guardarPerfil, cambiarPassword, salir, eliminarCuenta,
 } from './api.js';
 
 // Se toman los elementos del HTML de la pantalla de perfil
@@ -192,6 +192,36 @@ formPassword.addEventListener('submit', async (evento) => {
     avisar(avisoPassword, detalle || error.mensaje);
     btnPassword.disabled = false;
     btnPassword.textContent = 'Cambiar contraseña';
+  }
+});
+
+// Formulario para eliminar la cuenta
+const formEliminar = document.getElementById('form-eliminar');
+const avisoEliminar = document.getElementById('aviso-eliminar');
+const btnEliminar = document.getElementById('btn-eliminar');
+
+formEliminar.addEventListener('submit', async (evento) => {
+  evento.preventDefault();
+  ocultar(avisoEliminar);
+
+  const password = formEliminar.passwordEliminar.value;
+  if (!password) {
+    avisar(avisoEliminar, 'Escribe tu contraseña para confirmar.');
+    return;
+  }
+  // Se pide una ultima confirmacion porque no se puede deshacer
+  if (!confirm('¿Eliminar tu cuenta? Es inmediato y no se puede deshacer.')) return;
+
+  btnEliminar.disabled = true;
+  btnEliminar.textContent = 'Eliminando…';
+  try {
+    await eliminarCuenta(password);
+    // Se manda al inicio de sesion con un aviso de que la cuenta se elimino
+    location.replace('index.html?cuenta=eliminada');
+  } catch (error) {
+    avisar(avisoEliminar, error.message);
+    btnEliminar.disabled = false;
+    btnEliminar.textContent = 'Eliminar mi cuenta';
   }
 });
 

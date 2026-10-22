@@ -1,6 +1,8 @@
 // Se importan los servicios de agenda y de CRM para usarlos en el controlador
 import * as agenda from '../services/agenda.service.js';
 import * as crm from '../services/crm.service.js';
+// Se importa el servicio de los recordatorios para volver a hacer un servicio
+import * as repetir from '../services/repetir.service.js';
 
 // Funcion corta para saber si el usuario tiene un permiso dentro de su lista de permisos
 const puede = (req, permiso) => req.usuario.permisos.includes(permiso);
@@ -259,5 +261,32 @@ export async function turnosDeCliente(req, res, next) {
         req.usuario.idEmpresa, req.params.idCliente, ambitoDe(req),
       ),
     });
+  } catch (error) { next(error); }
+}
+
+// Funcion que trae los servicios que toca repetir
+// Quien aprueba turnos ve los de sus sedes con el telefono del cliente para llamarlo
+// Un cliente solo ve los suyos, para poder agendarlos de una vez
+export async function porRepetir(req, res, next) {
+  try {
+    if (puede(req, 'reservas.aprobar')) {
+      res.json({ modo: 'personal', items: await repetir.listarPorRepetir(req.usuario.idEmpresa, ambitoDe(req)) });
+      return;
+    }
+    if (puede(req, 'reservas.crear')) {
+      res.json({ modo: 'cliente', items: await repetir.listarMisRepeticiones(req.usuario.idEmpresa, req.usuario.idMembresia) });
+      return;
+    }
+    // Si no tiene ninguno de los dos permisos no hay nada que mostrar
+    res.json({ modo: 'ninguno', items: [] });
+  } catch (error) { next(error); }
+}
+
+// Funcion para descartar un recordatorio de repetir
+export async function descartarRepetir(req, res, next) {
+  try {
+    res.json(await repetir.descartarRepeticion(
+      req.usuario.idEmpresa, req.usuario.idMembresia, req.params.idRepetir, ambitoDe(req),
+    ));
   } catch (error) { next(error); }
 }

@@ -97,6 +97,13 @@ async function seleccionar(idEmpresa, botonPulsado) {
   }
 }
 
+// Si se viene de eliminar la cuenta se muestra la confirmacion y se limpia la URL
+if (new URLSearchParams(location.search).get('cuenta') === 'eliminada') {
+  mostrarAviso(aviso, 'Tu cuenta fue eliminada. Gracias por haber usado OmniGest.');
+  aviso.classList.add('aviso--bien');
+  history.replaceState({}, '', 'index.html');
+}
+
 // Al cargar la pagina se intenta recuperar la sesion con la cookie
 // Si ya hay sesion se manda a elegir empresa, a cambiar la contraseña o al inicio
 restaurarSesion().then((datos) => {

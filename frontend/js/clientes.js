@@ -1,5 +1,9 @@
 // Se importan de api.js las funciones de la sesion y pedir para llamar la API
 import { restaurarSesion, sesionActual, elegirEmpresa, pedir, salir } from './api.js';
+// Se importan las funciones del mapa para mostrar y marcar la ubicacion del cliente
+import { hayMapa, crearMapa, enlaceComoLlegar } from './mapa-cliente.js';
+// Se importa enlaceLlamar para crear el boton de llamar con el numero del cliente
+import { enlaceLlamar } from './telefono.js';
 
 // Funcion corta para buscar un elemento por su id
 const $ = (id) => document.getElementById(id);
@@ -16,6 +20,8 @@ const resultados = $('resultados');
 let permisos = [];
 // Variable para guardar el cliente que se esta viendo en el perfil
 let clienteActual = null;
+// Variable para el mapa que se ve en el perfil (los de los formularios estan en bloqueUbicacion)
+let mapaPerfil = null;
 
 // Funcion para saber si el usuario tiene un permiso
 // Esto solo oculta botones, el backend vuelve a validar el permiso en cada ruta
@@ -156,12 +162,15 @@ $('btn-nuevo-cliente').addEventListener('click', () => {
   aviso.hidden = true;
   $('form-nuevo-cliente').reset();
   $('panel-nuevo-cliente').hidden = false;
+  // El mapa se arma despues de mostrar el formulario, empieza sin pin
+  ubicacionNuevo.abrir(null);
   $('nc-nombres').focus();
 });
 
 // Boton para cerrar el formulario de nuevo cliente
 $('nc-cancelar').addEventListener('click', () => {
   $('panel-nuevo-cliente').hidden = true;
+  ubicacionNuevo.cerrar();
 });
 
 // Evento del formulario para crear un cliente nuevo
@@ -192,12 +201,21 @@ $('form-nuevo-cliente').addEventListener('submit', async (e) => {
         telefono: $('nc-telefono').value,
         direccion: $('nc-direccion').value,
         ciudad: $('nc-ciudad').value,
+        // Si se marco un pin se mandan las coordenadas, si no se dejan sin enviar
+        ...(ubicacionNuevo.punto() ?? {}),
+        // Solo se manda si se marco la casilla, si no queda sin autorizacion registrada
+        autorizado: $('nc-autorizado').checked || undefined,
       }),
     });
     // Se cierra el formulario y se abre el perfil del cliente creado
     $('panel-nuevo-cliente').hidden = true;
+    ubicacionNuevo.cerrar();
     await abrirPerfil(cliente.idCliente);
-    avisar(`${nombreDe(cliente)} quedó registrado.`, true);
+    // Si no se marco la autorizacion se avisa para que se pida y se registre despues
+    avisar(cliente.autorizadoEn
+      ? `${nombreDe(cliente)} quedó registrado.`
+      : `${nombreDe(cliente)} quedó registrado, pero sin autorización de datos. Pídesela y márcala en su ficha.`,
+    true);
   } catch (error) {
     avisar(mensajeError(error));
   // Se usa finally para volver a activar el boton aunque falle
@@ -215,10 +233,16 @@ async function abrirPerfil(idCliente) {
     const datos = await pedir(`/clientes/${idCliente}/historial`);
     const c = datos.cliente;
     clienteActual = { ...c, idCliente };
+    // Se deja el id en la URL, asi al volver desde un turno o un caso se regresa a esta ficha
+    history.replaceState({}, '', `clientes.html?${new URLSearchParams({ cliente: idCliente })}`);
 
     // Se llenan los datos del cliente, si no hay se pone una raya
     $('p-nombre').textContent = nombreDe(c);
     $('p-contacto').textContent = [c.email, c.telefono].filter(Boolean).join(' · ') || 'Sin datos de contacto';
+    // Si tiene telefono se pone el boton de llamar, que abre la app de telefono del celular
+    const llamar = enlaceLlamar(c.telefono, { texto: 'Llamar', mini: false });
+    $('p-llamar').replaceChildren(...(llamar ? [llamar] : []));
+    $('p-llamar').hidden = !llamar;
     $('p-documento').textContent = c.documento
       ? [c.tipoDocumento, c.documento].filter(Boolean).join(' ')
       : '—';
@@ -236,6 +260,14 @@ async function abrirPerfil(idCliente) {
     fichaAcceso.textContent = c.tieneAcceso ? 'Con acceso a la plataforma' : 'Sin acceso a la plataforma';
     cajaEstado.append(fichaEstado, fichaAcceso);
 
+    // Estado de la autorizacion de datos, con el boton para registrarla o quitarla
+    pintarAutorizacion(c);
+    // Si el cliente se dio de baja de los recordatorios desde el enlace del correo se muestra aqui
+    // Solo el cliente puede volver a activarlos, desde el mismo enlace
+    $('p-recordatorios').textContent = c.bajaAvisosEn
+      ? `Desactivados por el cliente el ${new Date(c.bajaAvisosEn).toLocaleDateString('es-CO', { dateStyle: 'medium' })}`
+      : 'Activos';
+
     // Numeros del resumen del cliente
     $('p-turnos').textContent = c.totalTurnos;
     $('p-inasistencias').textContent = c.inasistencias;
@@ -246,19 +278,28 @@ async function abrirPerfil(idCliente) {
     const verAcceso = puede('clientes.gestionar') && !c.tieneAcceso;
     // Cambiar la clave solo sale si ya tiene cuenta y el permiso clientes.password
     const verClave = puede('clientes.password') && c.tieneAcceso;
-    $('btn-editar-cliente').hidden = !verEditar;
-    $('btn-acceso-cliente').hidden = !verAcceso;
+    // Anonimizar es borrar los datos personales del cliente, solo con clientes.gestionar
+    const anonimizado = Boolean(c.anonimizadoEn);
+    const verAnonimizar = puede('clientes.gestionar') && !anonimizado;
+    $('btn-editar-cliente').hidden = !verEditar || anonimizado;
+    $('btn-acceso-cliente').hidden = !verAcceso || anonimizado;
     $('btn-clave-cliente').hidden = !verClave;
+    $('btn-anonimizar-cliente').hidden = !verAnonimizar;
     // Si no puede hacer ninguna accion se oculta la barra completa
-    $('acciones-cliente').hidden = !verEditar && !verAcceso && !verClave;
+    $('acciones-cliente').hidden = $('btn-editar-cliente').hidden && $('btn-acceso-cliente').hidden
+      && !verClave && !verAnonimizar;
 
     // Se pintan las listas del historial, con funciones que dicen que texto mostrar
+    // Los turnos llevan a la agenda con ese turno abierto y los casos al CRM con ese caso abierto
+    // Se usa URLSearchParams para que el id vaya bien escrito en la URL
     pintarLista('lista-turnos', datos.turnos,
       (t) => `${fecha(t.fecha)} · ${t.servicio} · ${t.prestador}`,
-      (t) => t.estado);
+      (t) => t.estado,
+      (t) => `agenda.html?${new URLSearchParams({ turno: t.idReserva })}`);
     pintarLista('lista-casos', datos.casos,
       (x) => `${x.numero} · ${x.tipo} · ${x.asunto}`,
-      (x) => `${x.estado} · ${x.prioridad}`);
+      (x) => `${x.estado} · ${x.prioridad}`,
+      (x) => `crm.html?${new URLSearchParams({ caso: x.idCaso })}`);
     pintarLista('lista-interacciones', datos.interacciones,
       (i) => `[${i.canal}] ${i.asunto} — ${i.detalle}`,
       (i) => `${i.autor} · ${fecha(i.fecha)}`);
@@ -296,14 +337,63 @@ async function abrirPerfil(idCliente) {
     // Se cambia de la vista de busqueda a la del perfil
     vistaBusqueda.hidden = true;
     vistaPerfil.hidden = false;
+    // El mapa se pinta despues de mostrar la vista, porque Leaflet necesita saber el tamaño del contenedor
+    pintarUbicacion(c);
     window.scrollTo({ top: 0 });
   } catch (error) {
     avisar(mensajeError(error));
   }
 }
 
+// Funcion que pinta si el cliente autorizo el tratamiento de sus datos
+// Si el usuario puede editar fichas sale el boton para registrarla o quitarla
+function pintarAutorizacion(c) {
+  const caja = $('p-autorizacion');
+  // Si el cliente fue anonimizado solo se muestra eso, ya no hay datos que autorizar
+  if (c.anonimizadoEn) {
+    const ficha = document.createElement('span');
+    ficha.className = 'ficha';
+    ficha.textContent = `Datos anonimizados el ${new Date(c.anonimizadoEn).toLocaleDateString('es-CO', { dateStyle: 'medium' })}`;
+    caja.replaceChildren(ficha);
+    return;
+  }
+  const estado = document.createElement('span');
+  estado.className = c.autorizadoEn ? 'ficha' : 'ficha ficha--alerta';
+  estado.textContent = c.autorizadoEn
+    ? `Registrada el ${new Date(c.autorizadoEn).toLocaleDateString('es-CO', { dateStyle: 'medium' })}`
+    : 'Sin autorización registrada';
+  const partes = [estado];
+
+  if (puedeEditarFichas()) {
+    const boton = document.createElement('button');
+    boton.type = 'button';
+    boton.className = c.autorizadoEn ? 'boton boton--texto boton--mini' : 'boton boton--borde boton--mini';
+    boton.textContent = c.autorizadoEn ? 'Quitar' : 'Registrar autorización';
+    boton.addEventListener('click', () => cambiarAutorizacion(!c.autorizadoEn));
+    partes.push(boton);
+  }
+  caja.replaceChildren(...partes);
+}
+
+// Funcion que registra o quita la autorizacion de datos del cliente que se esta viendo
+async function cambiarAutorizacion(autorizado) {
+  const nombre = nombreDe(clienteActual);
+  // Se pide confirmacion porque queda en la auditoria
+  const seguro = confirm(autorizado
+    ? `¿Confirmas que ${nombre} autorizó el tratamiento de sus datos personales?`
+    : `¿Quitar la autorización de datos de ${nombre}? Úsalo si el cliente la revocó.`);
+  if (!seguro) return;
+  try {
+    // Se llama a pedir con PATCH solo con el campo autorizado
+    await pedir(`/clientes/${clienteActual.idCliente}`, { metodo: 'PATCH', cuerpo: { autorizado } });
+    await abrirPerfil(clienteActual.idCliente);
+    avisar(autorizado ? 'Autorización registrada.' : 'Autorización quitada.', true);
+  } catch (error) { avisar(mensajeError(error)); }
+}
+
 // Funcion que pinta una lista del historial en el ul que se le pase
-function pintarLista(id, lista, linea, meta) {
+// destino es opcional: si se pasa, cada item queda como link a esa direccion (turno o caso)
+function pintarLista(id, lista, linea, meta, destino) {
   const ul = $(id);
   ul.replaceChildren();
 
@@ -315,7 +405,17 @@ function pintarLista(id, lista, linea, meta) {
     const m = document.createElement('span');
     m.className = 'observaciones__meta';
     m.textContent = meta(item);
-    li.append(t, m);
+    // Si hay destino se envuelve en un link, si no queda como texto normal
+    if (destino) {
+      const enlace = document.createElement('a');
+      enlace.href = destino(item);
+      enlace.className = 'observaciones__enlace';
+      enlace.append(t, m);
+      li.append(enlace);
+      li.classList.add('observaciones__item--enlace');
+    } else {
+      li.append(t, m);
+    }
     ul.append(li);
   }
 
@@ -328,9 +428,172 @@ function pintarLista(id, lista, linea, meta) {
   }
 }
 
+// Funcion que muestra el mapa del perfil con el pin del cliente, o el texto de que no tiene
+function pintarUbicacion(c) {
+  // Si ya habia un mapa de otro cliente se borra para crear uno nuevo
+  if (mapaPerfil) { mapaPerfil.destruir(); mapaPerfil = null; }
+  const tiene = c.latitud !== null && c.latitud !== undefined && c.longitud !== null && c.longitud !== undefined;
+
+  $('p-ubicacion').hidden = !tiene || !hayMapa();
+  $('p-sin-ubicacion').hidden = tiene;
+  if (!tiene) return;
+
+  // El link de como llegar se arma con la latitud y longitud y abre Google Maps
+  $('p-como-llegar').href = enlaceComoLlegar(c.latitud, c.longitud);
+  if (hayMapa()) {
+    mapaPerfil = crearMapa($('p-mapa'), { latitud: c.latitud, longitud: c.longitud });
+  }
+}
+
+// Funcion que arma el bloque de ubicacion de un formulario: mapa, buscar direccion, mi ubicacion y quitar pin
+// Se usa en los dos formularios (nuevo y editar), prefijo es 'nc' o 'ec' segun los ids del HTML
+function bloqueUbicacion(prefijo) {
+  const el = (id) => $(`${prefijo}-${id}`);
+  // Variables con el mapa del formulario y el punto marcado, null si no hay pin
+  let mapa = null;
+  let punto = null;
+
+  // Funcion que muestra las coordenadas del pin debajo del mapa
+  function pintarCoordenadas(p) {
+    punto = p;
+    el('coordenadas').textContent = p
+      ? `Pin en ${p.latitud}, ${p.longitud}`
+      : 'Sin pin. Toca el mapa para marcar la ubicación.';
+    el('quitar-pin').hidden = !p;
+  }
+
+  // Funcion que borra el mapa cuando se cierra el formulario
+  function cerrar() {
+    if (mapa) { mapa.destruir(); mapa = null; }
+    punto = null;
+    el('lugares').hidden = true;
+    el('lugares').replaceChildren();
+  }
+
+  // Funcion que arma el mapa, se llama despues de mostrar el formulario
+  // porque Leaflet necesita saber el tamaño del contenedor
+  function abrir(inicial) {
+    cerrar();
+    pintarCoordenadas(inicial);
+    if (hayMapa()) {
+      el('mapa').hidden = false;
+      mapa = crearMapa(el('mapa'), {
+        latitud: inicial ? inicial.latitud : null,
+        longitud: inicial ? inicial.longitud : null,
+        editable: true,
+        // Cada vez que se mueve el pin se actualiza el texto con las coordenadas
+        alCambiar: pintarCoordenadas,
+      });
+    } else {
+      // Si la libreria del mapa no cargo se oculta el mapa
+      el('mapa').hidden = true;
+      el('coordenadas').textContent = 'No se pudo cargar el mapa.';
+    }
+  }
+
+  // Boton para buscar en el mapa la direccion que esta escrita en el formulario
+  el('buscar-mapa').addEventListener('click', async () => {
+    // Se juntan la direccion y la ciudad, y se cambia el # por espacio porque el buscador no lo entiende
+    const texto = [el('direccion').value, el('ciudad').value]
+      .map((v) => v.trim().replace(/#/g, ' '))
+      .filter(Boolean)
+      .join(', ');
+    if (texto.length < 3) { avisar('Escribe la dirección y la ciudad para buscarla en el mapa.'); return; }
+
+    const boton = el('buscar-mapa');
+    boton.disabled = true;
+    const lista = el('lugares');
+    try {
+      // Se llama a pedir con la direccion en la URL, se usa encodeURIComponent para que no rompa la URL
+      const { disponible, lugares } = await pedir(`/clientes/buscar-direccion?q=${encodeURIComponent(texto)}`);
+      lista.replaceChildren();
+
+      // Si el buscador de OpenStreetMap no respondio se pide marcar el punto a mano
+      if (!disponible) {
+        avisar('El buscador de direcciones no respondió. Toca el mapa para marcar el punto o intenta en un momento.');
+        lista.hidden = true;
+        return;
+      }
+
+      // Si no encontro nada se avisa para que marque el punto a mano
+      if (lugares.length === 0) {
+        avisar('No se encontró esa dirección. Toca el mapa para marcar el punto a mano.');
+        lista.hidden = true;
+        return;
+      }
+
+      // Se recorre la lista con for para pintar un boton por cada lugar encontrado
+      for (const lugar of lugares) {
+        const li = document.createElement('li');
+        const opcionLugar = document.createElement('button');
+        opcionLugar.type = 'button';
+        // Se usa textContent y no innerHTML para que no se pueda meter codigo (XSS)
+        opcionLugar.textContent = lugar.nombre;
+        opcionLugar.addEventListener('click', () => {
+          mapa?.poner(lugar.latitud, lugar.longitud);
+          lista.hidden = true;
+        });
+        li.append(opcionLugar);
+        lista.append(li);
+      }
+      lista.hidden = false;
+      // Se pone el pin en el primer resultado, si no es el correcto puede elegir otro de la lista
+      mapa?.poner(lugares[0].latitud, lugares[0].longitud);
+    } catch (error) {
+      avisar(mensajeError(error));
+    } finally {
+      boton.disabled = false;
+    }
+  });
+
+  // Boton para poner el pin donde esta el celular, sirve cuando se esta en la casa del cliente
+  el('mi-ubicacion').addEventListener('click', () => {
+    // Si el navegador no tiene GPS o ubicacion se avisa
+    if (!('geolocation' in navigator)) { avisar('Este navegador no permite usar la ubicación.'); return; }
+    const boton = el('mi-ubicacion');
+    boton.disabled = true;
+    // Se llama a getCurrentPosition, el navegador le pide permiso a la persona
+    navigator.geolocation.getCurrentPosition(
+      (posicion) => {
+        boton.disabled = false;
+        mapa?.poner(posicion.coords.latitude, posicion.coords.longitude);
+      },
+      (error) => {
+        boton.disabled = false;
+        // El codigo 1 es cuando la persona no dio el permiso
+        avisar(error.code === 1
+          ? 'No diste permiso para usar la ubicación. Puedes activarlo en los ajustes del navegador.'
+          : 'No se pudo obtener la ubicación. Intenta de nuevo o toca el mapa.');
+      },
+      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 60_000 },
+    );
+  });
+
+  // Boton para quitar el pin del mapa
+  el('quitar-pin').addEventListener('click', () => {
+    mapa?.quitar();
+  });
+
+  // Se devuelve lo que necesitan los formularios
+  return {
+    abrir,
+    cerrar,
+    // activo dice si el mapa cargo, si no cargo no se tocan las coordenadas al guardar
+    activo: () => mapa !== null,
+    punto: () => punto,
+  };
+}
+
+// Se arma un bloque de ubicacion para cada formulario
+const ubicacionNuevo = bloqueUbicacion('nc');
+const ubicacionEditar = bloqueUbicacion('ec');
+
 // Boton para volver del perfil a la busqueda
 $('btn-volver').addEventListener('click', async () => {
+  ubicacionEditar.cerrar();
   clienteActual = null;
+  // Se quita el cliente de la URL porque ya se volvio a la busqueda
+  history.replaceState({}, '', 'clientes.html');
   vistaPerfil.hidden = true;
   vistaBusqueda.hidden = false;
   await buscar($('buscar').value.trim());
@@ -471,12 +734,17 @@ $('btn-editar-cliente').addEventListener('click', () => {
   // Si tiene acceso se muestra una nota porque el correo tambien es su usuario
   $('ec-email-nota').hidden = !c.tieneAcceso;
   $('form-editar-cliente').hidden = false;
+
+  // Se arma el mapa de edicion despues de mostrar el formulario, con el pin actual si tiene
+  const tienePunto = c.latitud !== null && c.latitud !== undefined;
+  ubicacionEditar.abrir(tienePunto ? { latitud: c.latitud, longitud: c.longitud } : null);
   $('ec-nombres').focus();
 });
 
 // Boton para cerrar el formulario de edicion
 $('ec-cancelar').addEventListener('click', () => {
   $('form-editar-cliente').hidden = true;
+  ubicacionEditar.cerrar();
 });
 
 // Evento del formulario para guardar los cambios del cliente
@@ -499,14 +767,50 @@ $('form-editar-cliente').addEventListener('submit', async (e) => {
         telefono: $('ec-telefono').value.trim(),
         direccion: $('ec-direccion').value.trim(),
         ciudad: $('ec-ciudad').value.trim(),
+        // Si hay pin se mandan las coordenadas, si se quito se manda null para borrarlas
+        // Si el mapa no cargo se dejan como estaban
+        ...(ubicacionEditar.activo()
+          ? { latitud: ubicacionEditar.punto()?.latitud ?? null, longitud: ubicacionEditar.punto()?.longitud ?? null }
+          : {}),
       },
     });
     // Se cierra el formulario y se recarga el perfil con los datos nuevos
     $('form-editar-cliente').hidden = true;
+    ubicacionEditar.cerrar();
     await abrirPerfil(clienteActual.idCliente);
     avisar('Datos actualizados.', true);
   } catch (error) { avisar(mensajeError(error)); }
   return undefined;
+});
+
+// Boton para anonimizar los datos del cliente (cuando pide que se borren sus datos)
+// Para confirmar se pide escribir el nombre, asi no se hace por un clic equivocado
+$('btn-anonimizar-cliente').addEventListener('click', async () => {
+  const nombre = nombreDe(clienteActual);
+  const escrito = prompt(
+    `Se borrarán el nombre, documento, correo, teléfono, dirección y ubicación de ${nombre}, `
+    + 'y las notas de sus turnos, casos e interacciones. Los turnos y casos se conservan sin datos personales. '
+    + 'No se puede deshacer.\n\n'
+    + `Para confirmar escribe el nombre del cliente: ${nombre}`,
+  );
+  // Si cancelo o no escribio el nombre igual no se hace nada
+  if (escrito === null) return;
+  if (escrito.trim().toLowerCase() !== nombre.trim().toLowerCase()) {
+    avisar('El nombre no coincide. No se anonimizó nada.');
+    return;
+  }
+
+  try {
+    const { pendientes } = await pedir(`/clientes/${clienteActual.idCliente}/anonimizar`, {
+      metodo: 'POST',
+      cuerpo: { confirmar: true },
+    });
+    await abrirPerfil(clienteActual.idCliente);
+    // Si algun paso no se pudo hacer se avisa para revisarlo
+    avisar(pendientes?.length
+      ? `Datos anonimizados. Revisa a mano: ${pendientes.join(', ')}.`
+      : 'Datos del cliente anonimizados.', !pendientes?.length);
+  } catch (error) { avisar(mensajeError(error)); }
 });
 
 // Boton para darle al cliente un usuario para entrar a la plataforma
@@ -602,10 +906,14 @@ selectorEmpresa.addEventListener('change', async () => {
   try {
     await elegirEmpresa(selectorEmpresa.value);
     // Se limpia la pantalla para no mostrar datos de la otra empresa
+    ubicacionEditar.cerrar();
+    if (mapaPerfil) { mapaPerfil.destruir(); mapaPerfil = null; }
     clienteActual = null;
+    history.replaceState({}, '', 'clientes.html');
     vistaPerfil.hidden = true;
     vistaBusqueda.hidden = false;
     $('panel-nuevo-cliente').hidden = true;
+    ubicacionNuevo.cerrar();
     $('buscar').value = '';
     await cargarTodo();
   // Se usa finally para volver a activar el selector aunque falle
@@ -634,6 +942,17 @@ async function iniciar() {
   await cargarTodo();
   cargando.hidden = true;
   contenido.hidden = false;
+
+  // Si se llego desde un turno o un caso (clientes.html?cliente=...) se abre de una vez su ficha
+  const idCliente = new URLSearchParams(location.search).get('cliente');
+  if (idCliente) {
+    // Regex para revisar que sea un UUID antes de mandarlo al servidor
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idCliente)) {
+      await abrirPerfil(idCliente);
+    } else {
+      history.replaceState({}, '', 'clientes.html');
+    }
+  }
   return undefined;
 }
 

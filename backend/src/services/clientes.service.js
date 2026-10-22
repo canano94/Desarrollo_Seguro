@@ -56,14 +56,19 @@ function aFicha(c) {
     direccion: c.direccion,
     ciudad: c.ciudad,
     activo: c.activo,
+    // Las coordenadas llegan como texto desde PostgreSQL (numeric), se pasan a numero
+    latitud: c.latitud === null ? null : Number(c.latitud),
+    longitud: c.longitud === null ? null : Number(c.longitud),
     // Si tiene id_usuario quiere decir que el cliente ya puede entrar a la plataforma
     tieneAcceso: c.id_usuario !== null,
+    // Fecha en que se registro la autorizacion de datos, null si no la tiene
+    autorizadoEn: c.autorizado_en,
   };
 }
 
 // Constante con las columnas que se traen de la ficha del cliente
 const COLUMNAS_FICHA = `id_cliente, id_usuario, nombres, apellidos, tipo_documento,
-  documento, email, telefono, direccion, ciudad, activo`;
+  documento, email, telefono, direccion, ciudad, activo, latitud, longitud, autorizado_en`;
 
 // Funcion que cambia el error de documento repetido por un error 409 mas claro
 function traducirDuplicado(error) {
@@ -75,16 +80,28 @@ function traducirDuplicado(error) {
   throw error;
 }
 
+// Se exporta la funcion auditar que deja en la auditoria de privacidad una accion sobre un cliente
+// Solo guarda que se hizo, a quien (id) y quien lo hizo, nunca los datos personales
+export async function auditar(client, idEmpresa, accion, referencia, idUsuario) {
+  await client.query(
+    `INSERT INTO app.auditoria_privacidad (id_empresa, accion, referencia, hecho_por)
+     VALUES ($1, $2, $3, $4)`,
+    [idEmpresa, accion, String(referencia), idUsuario ?? null],
+  );
+}
+
 // Se exporta la funcion crearCliente para usarla en el controlador
-export async function crearCliente(idEmpresa, datos) {
+export async function crearCliente(idEmpresa, datos, idUsuario = null) {
   // Se llama a conEmpresa para que el cliente quede guardado en la empresa del usuario
   return conEmpresa(idEmpresa, async (client) => {
     // Consulta SQL para insertar el cliente, con $1 a $9 para evitar inyeccion SQL
     const { rows } = await client.query(
       `INSERT INTO app.clientes
          (id_empresa, nombres, apellidos, tipo_documento, documento,
-          email, telefono, direccion, ciudad)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          email, telefono, direccion, ciudad, latitud, longitud,
+          autorizado_en, autorizado_por)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+               CASE WHEN $12 THEN now() END, CASE WHEN $12 THEN $13::uuid END)
        RETURNING ${COLUMNAS_FICHA}`,
       [
         idEmpresa,
@@ -97,8 +114,17 @@ export async function crearCliente(idEmpresa, datos) {
         datos.telefono ?? null,
         datos.direccion ?? null,
         datos.ciudad ?? null,
+        datos.latitud ?? null,
+        datos.longitud ?? null,
+        // Si marco que el cliente autorizo, se guarda la fecha y quien lo registro
+        datos.autorizado === true,
+        idUsuario,
       ],
     );
+    // Si se registro la autorizacion queda en la auditoria
+    if (datos.autorizado === true) {
+      await auditar(client, idEmpresa, 'AUTORIZACION_REGISTRADA', rows[0].id_cliente, idUsuario);
+    }
     return aFicha(rows[0]);
   // Si falla por documento repetido se usa traducirDuplicado
   }).catch(traducirDuplicado);
@@ -132,14 +158,18 @@ const COLUMNAS_EDITABLES = {
   direccion: 'direccion',
   ciudad: 'ciudad',
   activo: 'activo',
+  latitud: 'latitud',
+  longitud: 'longitud',
 };
 
 // Se exporta la funcion actualizarCliente para editar la ficha
-export async function actualizarCliente(idEmpresa, idCliente, datos) {
+export async function actualizarCliente(idEmpresa, idCliente, datos, idUsuario = null) {
   // Array con los campos que si llegaron en los datos
   const campos = Object.keys(COLUMNAS_EDITABLES).filter((c) => datos[c] !== undefined);
+  // Variable para saber si cambia la autorizacion de datos
+  const cambiaAutorizacion = typeof datos.autorizado === 'boolean';
   // Si no llego ningun campo se lanza un error 400
-  if (campos.length === 0) {
+  if (campos.length === 0 && !cambiaAutorizacion) {
     throw new AppError(400, 'SIN_CAMBIOS', 'No enviaste ningún campo para actualizar.');
   }
 
@@ -150,18 +180,35 @@ export async function actualizarCliente(idEmpresa, idCliente, datos) {
   // Array con los valores, si llega texto vacio se guarda null
   const valores = campos.map((campo) => (datos[campo] === '' ? null : datos[campo]));
 
+  // Si cambia la autorizacion se agregan sus dos columnas al SET
+  // Al marcarla se deja la fecha que ya tenia (COALESCE), al quitarla queda en null
+  let setAutorizacion = '';
+  if (cambiaAutorizacion) {
+    const n = valores.length + 2;
+    setAutorizacion = `${asignaciones ? ', ' : ''}
+      autorizado_en  = CASE WHEN $${n} THEN COALESCE(autorizado_en, now()) END,
+      autorizado_por = CASE WHEN $${n} THEN COALESCE(autorizado_por, $${n + 1}::uuid) END`;
+    valores.push(datos.autorizado, idUsuario);
+  }
+
   return conEmpresa(idEmpresa, async (client) => {
     // Consulta SQL para actualizar solo los campos que llegaron
     const { rows } = await client.query(
       `UPDATE app.clientes
-          SET ${asignaciones}, updated_at = now()
-        WHERE id_cliente = $1
+          SET ${asignaciones}${setAutorizacion}, updated_at = now()
+        WHERE id_cliente = $1 AND anonimizado_en IS NULL
         RETURNING ${COLUMNAS_FICHA}`,
       [idCliente, ...valores],
     );
-    // Si no encuentra el cliente se lanza un error 404
+    // Si no encuentra el cliente se lanza un error 404 (tampoco se editan los anonimizados)
     if (rows.length === 0) {
-      throw new AppError(404, 'CLIENTE_NO_ENCONTRADO', 'Ese cliente no existe en tu empresa.');
+      throw new AppError(404, 'CLIENTE_NO_ENCONTRADO',
+        'Ese cliente no existe en tu empresa o sus datos fueron anonimizados.');
+    }
+    // El cambio de autorizacion queda en la auditoria
+    if (cambiaAutorizacion) {
+      await auditar(client, idEmpresa,
+        datos.autorizado ? 'AUTORIZACION_REGISTRADA' : 'AUTORIZACION_QUITADA', idCliente, idUsuario);
     }
     return aFicha(rows[0]);
   }).catch(traducirDuplicado);
@@ -253,4 +300,116 @@ export async function darAccesoCliente(idEmpresa, idCliente) {
     email: ficha.email,
     passwordTemporal,
   };
+}
+
+// Constante con el texto que queda en las notas y comentarios que se borran al anonimizar
+const TEXTO_ANONIMIZADO = '[Contenido eliminado al anonimizar el cliente]';
+
+// Funcion que corre un paso de la anonimizacion dentro de un SAVEPOINT
+// Si una tabla no existe o cambio, ese paso se deshace solo y se anota, pero los demas siguen
+async function pasoAnonimizar(client, nombre, sql, params, pendientes) {
+  await client.query('SAVEPOINT anonimizar');
+  try {
+    await client.query(sql, params);
+    await client.query('RELEASE SAVEPOINT anonimizar');
+  } catch (error) {
+    await client.query('ROLLBACK TO SAVEPOINT anonimizar');
+    console.warn(`[privacidad] no se pudo anonimizar ${nombre}:`, error.message);
+    pendientes.push(nombre);
+  }
+}
+
+// Se exporta la funcion anonimizarCliente que borra los datos personales de un cliente
+// Los turnos y casos se conservan para las estadisticas, pero sin nada que identifique a la persona
+// No se puede deshacer
+export async function anonimizarCliente(idEmpresa, idCliente, idUsuario) {
+  return conEmpresa(idEmpresa, async (client) => {
+    // Se bloquea la fila con FOR UPDATE para que nadie la edite mientras se anonimiza
+    const { rows } = await client.query(
+      'SELECT id_usuario, email, anonimizado_en FROM app.clientes WHERE id_cliente = $1 FOR UPDATE',
+      [idCliente],
+    );
+    const c = rows[0];
+    if (!c) throw new AppError(404, 'CLIENTE_NO_ENCONTRADO', 'Ese cliente no existe en tu empresa.');
+    if (c.anonimizado_en) throw new AppError(409, 'YA_ANONIMIZADO', 'Este cliente ya fue anonimizado.');
+
+    // Array con los pasos que no se pudieron hacer, se le avisan al administrador
+    const pendientes = [];
+
+    // 1) Si el cliente tenia acceso a la plataforma se le quita el rol CLIENTE en esta empresa
+    // Su cuenta global no se toca: puede ser cliente o empleado de otras empresas
+    if (c.id_usuario) {
+      await pasoAnonimizar(client, 'acceso a la plataforma',
+        `WITH m AS (
+           SELECT id_membresia FROM app.membresias WHERE id_usuario = $1 AND id_empresa = $2)
+         DELETE FROM app.membresia_roles mr
+          USING m
+          WHERE mr.id_membresia = m.id_membresia
+            AND mr.id_rol = (SELECT id_rol FROM app.roles WHERE codigo = 'CLIENTE')`,
+        [c.id_usuario, idEmpresa], pendientes);
+      // Si la membresia quedo sin roles se retira
+      await pasoAnonimizar(client, 'membresía',
+        `UPDATE app.membresias m SET estado = 'RETIRADA', updated_at = now()
+          WHERE m.id_usuario = $1 AND m.id_empresa = $2
+            AND NOT EXISTS (SELECT 1 FROM app.membresia_roles mr WHERE mr.id_membresia = m.id_membresia)`,
+        [c.id_usuario, idEmpresa], pendientes);
+    }
+
+    // 2) La ficha: se reemplazan los datos que identifican a la persona
+    await client.query(
+      `UPDATE app.clientes
+          SET nombres = 'Cliente anonimizado', apellidos = NULL,
+              tipo_documento = NULL, documento = NULL, email = NULL, telefono = NULL,
+              direccion = NULL, ciudad = NULL, latitud = NULL, longitud = NULL,
+              id_usuario = NULL, activo = false,
+              autorizado_en = NULL, autorizado_por = NULL, baja_avisos_en = NULL,
+              anonimizado_en = now(), updated_at = now()
+        WHERE id_cliente = $1`,
+      [idCliente],
+    );
+
+    // 3) Textos libres donde se pudo escribir algo de la persona
+    await pasoAnonimizar(client, 'notas de los turnos',
+      `UPDATE app.reservas SET notas_cliente = NULL, notas_internas = NULL, updated_at = now()
+        WHERE id_cliente = $1 AND (notas_cliente IS NOT NULL OR notas_internas IS NOT NULL)`,
+      [idCliente], pendientes);
+    await pasoAnonimizar(client, 'observaciones de los turnos',
+      `UPDATE app.reserva_observaciones o SET detalle = $2
+         FROM app.reservas r
+        WHERE r.id_reserva = o.id_reserva AND r.id_cliente = $1`,
+      [idCliente, TEXTO_ANONIMIZADO], pendientes);
+    await pasoAnonimizar(client, 'casos',
+      `UPDATE app.casos_servicio SET asunto = 'Caso anonimizado', descripcion = $2, updated_at = now()
+        WHERE id_cliente = $1`,
+      [idCliente, TEXTO_ANONIMIZADO], pendientes);
+    await pasoAnonimizar(client, 'interacciones',
+      `UPDATE app.interacciones_crm SET asunto = 'Interacción anonimizada', detalle = $2
+        WHERE id_cliente = $1`,
+      [idCliente, TEXTO_ANONIMIZADO], pendientes);
+
+    // 4) No se le vuelve a sugerir repetir servicios
+    await pasoAnonimizar(client, 'servicios por repetir',
+      `UPDATE app.servicios_repetir SET estado = 'DESCARTADO'
+        WHERE id_cliente = $1 AND estado = 'PENDIENTE'`,
+      [idCliente], pendientes);
+
+    // 5) Correos de este cliente: se vacia el contenido y se oculta la direccion
+    if (c.email) {
+      await pasoAnonimizar(client, 'correos enviados',
+        `UPDATE app.correos_pendientes
+            SET html = '', texto = '', nombre_destinatario = NULL, enlace_baja = NULL,
+                destinatario = regexp_replace(destinatario, '^(.).*(@.*)$', '\\1***\\2'),
+                estado = CASE WHEN estado IN ('PENDIENTE', 'ENVIANDO') THEN 'ERROR' ELSE estado END,
+                ultimo_error = CASE WHEN estado IN ('PENDIENTE', 'ENVIANDO')
+                                    THEN 'Cancelado: cliente anonimizado' ELSE ultimo_error END,
+                actualizado_en = now()
+          WHERE lower(destinatario) = lower($1)`,
+        [c.email], pendientes);
+    }
+
+    // 6) Queda en la auditoria quien lo hizo y cuando, sin datos de la persona
+    await auditar(client, idEmpresa, 'CLIENTE_ANONIMIZADO', idCliente, idUsuario);
+
+    return { anonimizado: true, pendientes };
+  });
 }

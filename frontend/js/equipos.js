@@ -656,6 +656,9 @@ function pintarQR() {
 
   // Se usa innerHTML porque el SVG lo genera la libreria y no viene del usuario
   $('qr-svg').innerHTML = qr.createSvgTag({ cellSize: 6, margin: 0, scalable: true });
+  // Texto alternativo del QR para lectores de pantalla
+  $('qr-svg').setAttribute('role', 'img');
+  $('qr-svg').setAttribute('aria-label', 'Código QR que abre la hoja de servicio del equipo');
 
   // Se ponen el nombre, la serie y el enlace debajo del QR
   const e = equipoActual;

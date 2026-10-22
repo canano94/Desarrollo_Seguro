@@ -234,6 +234,7 @@ export async function listarServiciosConfig(idEmpresa) {
     // Consulta SQL para traer los servicios con el nombre de su sede
     const { rows: servicios } = await client.query(
       `SELECT s.id_servicio, s.nombre, s.duracion_minutos, s.precio, s.activo,
+              s.repetir_cada, s.repetir_unidad,
               p.nombre AS prestador
          FROM app.servicios s
          JOIN app.prestadores p ON p.id_prestador = s.id_prestador
@@ -256,6 +257,9 @@ export async function listarServiciosConfig(idEmpresa) {
       // El precio llega como texto desde PostgreSQL, por eso se pasa a numero
       precio: s.precio === null ? null : Number(s.precio),
       activo: s.activo,
+      // Cada cuanto se repite el servicio, null si no se repite
+      repetirCada: s.repetir_cada,
+      repetirUnidad: s.repetir_unidad,
       // Se usa filter para dejar los insumos del servicio y map para darles formato
       insumos: usos
         .filter((u) => String(u.id_servicio) === String(s.id_servicio))
@@ -285,6 +289,29 @@ export async function actualizarPrecio(idEmpresa, idServicio, precio) {
     return {
       idServicio: rows[0].id_servicio,
       precio: rows[0].precio === null ? null : Number(rows[0].precio),
+    };
+  });
+}
+
+// Se exporta la funcion actualizarRepetir para decir cada cuanto se repite un servicio
+// Solo cambia los turnos que se atiendan de aqui en adelante, los recordatorios ya creados quedan igual
+export async function actualizarRepetir(idEmpresa, idServicio, datos) {
+  return conEmpresa(idEmpresa, async (client) => {
+    // Consulta SQL para guardar cada cuanto se repite, con $ para evitar inyeccion SQL
+    const { rows } = await client.query(
+      `UPDATE app.servicios SET repetir_cada = $2, repetir_unidad = $3
+        WHERE id_servicio = $1
+        RETURNING id_servicio, repetir_cada, repetir_unidad`,
+      [idServicio, datos.cada, datos.unidad],
+    );
+    // Si no encuentra el servicio se lanza un error 404
+    if (rows.length === 0) {
+      throw new AppError(404, 'SERVICIO_NO_ENCONTRADO', 'Ese servicio no existe.');
+    }
+    return {
+      idServicio: rows[0].id_servicio,
+      repetirCada: rows[0].repetir_cada,
+      repetirUnidad: rows[0].repetir_unidad,
     };
   });
 }

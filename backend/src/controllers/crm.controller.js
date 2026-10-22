@@ -4,25 +4,32 @@ import * as crm from '../services/crm.service.js';
 // Funcion corta para saber si el usuario tiene un permiso
 const puede = (req, permiso) => req.usuario.permisos.includes(permiso);
 
+// Funcion que decide que casos puede ver el usuario segun sus permisos
+// Se usa en la lista y en el detalle, asi las dos aplican la misma regla
+function alcanceCasos(req) {
+  // Por defecto solo ve sus propios casos y el ambito va vacio
+  let alcance = 'propios';
+  let ambito = [];
+
+  // Segun los permisos se cambia el alcance: todos, por ambito o solo los asignados
+  if (puede(req, 'casos.ver_todos')) {
+    alcance = 'todos';
+  } else if (puede(req, 'casos.ver_ambito')) {
+    alcance = 'ambito';
+    // Si ve por ambito se toman los prestadores que tiene asignados
+    ambito = req.usuario.prestadores ?? [];
+  } else if (puede(req, 'casos.gestionar')) {
+    alcance = 'asignados';
+  }
+  return { alcance, ambito };
+}
+
 // Se exporta la funcion casos para usarla en las rutas
 // Trae los casos segun lo que el usuario puede ver
 export async function casos(req, res, next) {
   // Se usa try/catch para capturar el error y mandarlo al middleware
   try {
-    // Por defecto solo ve sus propios casos y el ambito va vacio
-    let alcance = 'propios';
-    let ambito = [];
-
-    // Segun los permisos se cambia el alcance: todos, por ambito o solo los asignados
-    if (puede(req, 'casos.ver_todos')) {
-      alcance = 'todos';
-    } else if (puede(req, 'casos.ver_ambito')) {
-      alcance = 'ambito';
-      // Si ve por ambito se toman los prestadores que tiene asignados
-      ambito = req.usuario.prestadores ?? [];
-    } else if (puede(req, 'casos.gestionar')) {
-      alcance = 'asignados';
-    }
+    const { alcance, ambito } = alcanceCasos(req);
 
     // Se devuelven los casos y el alcance para que el frontend sepa que se muestra
     res.json({
@@ -37,7 +44,13 @@ export async function casos(req, res, next) {
 // Funcion que trae el detalle de un caso segun su id
 export async function detalleCaso(req, res, next) {
   try {
-    res.json({ caso: await crm.detalleCaso(req.usuario.idEmpresa, req.params.idCaso) });
+    // Se le pasa el alcance para que nadie abra un caso que no veria en su lista, aunque tenga el id
+    const { alcance, ambito } = alcanceCasos(req);
+    res.json({
+      caso: await crm.detalleCaso(req.usuario.idEmpresa, req.params.idCaso, {
+        alcance, ambito, idMembresia: req.usuario.idMembresia,
+      }),
+    });
   } catch (error) { next(error); }
 }
 

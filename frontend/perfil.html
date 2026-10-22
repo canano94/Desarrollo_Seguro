@@ -8,9 +8,7 @@
   <link rel="icon" href="icons/favicon-32.png" sizes="32x32">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <title>Mi perfil · Agenda</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/fuentes.css">
   <link rel="stylesheet" href="css/estilos.css">
   <link rel="stylesheet" href="css/movil.css">
   <script src="js/pwa.js" defer></script>
@@ -102,6 +100,31 @@
         </form>
       </section>
 
+      <!-- Recordatorios push de los turnos, la maneja js/recordatorios.js -->
+      <section class="tarjeta" id="tarjeta-recordatorios" hidden>
+        <h2>Recordatorios de turnos</h2>
+        <p class="apoyo">Te avisamos en este dispositivo antes de cada turno confirmado, aunque la app esté cerrada. Actívalo en cada celular o computador donde quieras recibirlos.</p>
+
+        <div class="recordatorio-estado">
+          <span class="ficha" id="rec-estado">…</span>
+          <span class="pista" id="rec-dispositivos"></span>
+        </div>
+
+        <div class="campo recordatorio-tiempo">
+          <label for="rec-minutos">Avisarme</label>
+          <select id="rec-minutos" class="entrada"></select>
+        </div>
+
+        <p id="rec-ayuda" class="pista" hidden></p>
+        <p id="aviso-recordatorios" class="aviso" role="alert" hidden></p>
+
+        <div class="acciones fila-botones">
+          <button type="button" class="boton" id="rec-activar">Activar en este dispositivo</button>
+          <button type="button" class="boton boton--borde" id="rec-desactivar" hidden>Desactivar en este dispositivo</button>
+          <button type="button" class="boton boton--texto" id="rec-prueba" hidden>Enviar prueba</button>
+        </div>
+      </section>
+
       <section class="tarjeta">
         <h2>Contraseña</h2>
         <p class="apoyo">Al cambiarla se cierran todas tus sesiones, incluida esta.</p>
@@ -127,9 +150,38 @@
         </form>
       </section>
 
+      <!-- Eliminar la cuenta (derecho de supresion). Es tan facil como crearla, sin rodeos -->
+      <section class="tarjeta tarjeta--peligro" aria-labelledby="titulo-eliminar">
+        <h2 id="titulo-eliminar">Eliminar mi cuenta</h2>
+        <p class="apoyo">
+          Se borran tu nombre, correo, teléfono y documento, y se cierran todas tus sesiones.
+          Es inmediato y no se puede deshacer.
+        </p>
+        <ul class="lista-simple">
+          <li>Dejarás de tener acceso a todas tus empresas.</li>
+          <li>Los turnos y casos en los que participaste se conservan, pero sin tu nombre.</li>
+          <li>Si eres cliente de una empresa, ella conserva su ficha de cliente. Para borrarla, pídeselo a esa empresa.</li>
+        </ul>
+
+        <form id="form-eliminar" novalidate>
+          <div class="campo">
+            <label for="passwordEliminar">Escribe tu contraseña para confirmar</label>
+            <input id="passwordEliminar" name="passwordEliminar" type="password" autocomplete="current-password" required>
+          </div>
+
+          <p id="aviso-eliminar" class="aviso" role="alert" hidden></p>
+
+          <div class="acciones">
+            <button type="submit" class="boton boton--peligro" id="btn-eliminar">Eliminar mi cuenta</button>
+          </div>
+        </form>
+      </section>
+
     </main>
   </div>
 
   <script type="module" src="js/perfil.js"></script>
+  <script type="module" src="js/recordatorios.js"></script>
+  <script type="module" src="js/pie.js"></script>
 </body>
 </html>

@@ -20,10 +20,22 @@ import {
   seleccionEmpresaSchema,
   cambioPasswordSchema,
   actualizarPerfilSchema,
+  aceptarTerminosSchema,
+  eliminarCuentaSchema,
 } from '../validators/auth.schemas.js';
 
 // Se crea el router de autenticacion
 const router = Router();
+
+// Limite para eliminar la cuenta: maximo 5 intentos cada 15 minutos por IP
+// Como pide la contraseña, sin limite se podria usar para adivinarla
+const limiteEliminar = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: { codigo: 'DEMASIADOS_INTENTOS', mensaje: 'Demasiados intentos. Espera unos minutos.' } },
+});
 
 // Limite para el login: maximo 10 intentos cada 15 minutos
 // Sirve para frenar ataques de fuerza bruta a las contraseñas
@@ -63,10 +75,14 @@ router.post('/empresa', validar(seleccionEmpresaSchema), ctrl.seleccionarEmpresa
 // Rutas del perfil, todas piden estar autenticado
 router.get('/perfil', autenticar, ctrl.perfil);
 router.patch('/perfil', autenticar, validar(actualizarPerfilSchema), ctrl.actualizarPerfil);
+// Ruta para eliminar la propia cuenta, pide la contraseña y tiene limite de intentos
+router.delete('/perfil', limiteEliminar, autenticar, validar(eliminarCuentaSchema), ctrl.eliminarCuenta);
 // Ruta para cambiar la contraseña, valida la actual y la nueva
 router.post('/password', autenticar, validar(cambioPasswordSchema), ctrl.cambiarPassword);
 // Ruta para cerrar la sesion en todos los dispositivos
 router.post('/logout-todos', autenticar, ctrl.logoutTodos);
+// Ruta para aceptar los terminos y la politica vigentes, no pide haberlos aceptado antes
+router.post('/aceptar-terminos', autenticar, validar(aceptarTerminosSchema), ctrl.aceptarTerminos);
 
 // Ruta de prueba que solo deja pasar al rol ADMIN_EMPRESA
 router.get('/solo-admin', autenticar, exigirEmpresaActiva,

@@ -150,3 +150,13 @@ export const actualizarMiembroAgendaSchema = z
   .refine((d) => Object.keys(d).length > 0, {
     message: 'Debes enviar al menos un campo para actualizar.',
   });
+// Se exporta validarParamNumero para los ids que son numeros (por ejemplo el del recordatorio)
+// Se usa una regex y no Number() porque Number('1e3') tambien da un entero y no es un id valido
+export const validarParamNumero = (nombre) => (req, _res, next) => {
+  if (!/^[1-9]\d{0,15}$/.test(String(req.params[nombre]))) {
+    return next(Object.assign(new Error(`El parámetro ${nombre} no es válido.`), {
+      status: 400, codigo: 'PARAMETRO_INVALIDO',
+    }));
+  }
+  return next();
+};

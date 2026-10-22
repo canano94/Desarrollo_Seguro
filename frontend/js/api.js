@@ -19,6 +19,23 @@ export function debeCambiarPassword() {
   return sesion?.debeCambiarPassword === true;
 }
 
+// Funcion que dice si al usuario le falta aceptar los terminos y la politica vigentes
+export function requiereAceptar() {
+  return sesion?.requiereAceptar === true;
+}
+
+// Paginas donde no se manda a aceptar los terminos: la propia pantalla de aceptar,
+// la de cambiar la contraseña (va primero) y las paginas legales, que se deben poder leer
+const PAGINAS_SIN_ACEPTAR = [
+  'aceptar.html', 'cambiar-password.html',
+  'privacidad.html', 'terminos.html', 'cookies.html', 'licencias.html',
+];
+
+// Funcion que dice si la pagina actual esta en la lista de arriba
+function paginaSinAceptar() {
+  return PAGINAS_SIN_ACEPTAR.some((p) => location.pathname.endsWith(`/${p}`));
+}
+
 // Funcion que trae la empresa que el usuario eligio la ultima vez
 export function empresaRecordada() {
   return sessionStorage.getItem(CLAVE_EMPRESA);
@@ -88,12 +105,21 @@ function guardarSesion(datos) {
   // Se revisa si el usuario debe cambiar la contraseña, venga donde venga ese dato
   datos.debeCambiarPassword =
     datos.debeCambiarPassword ?? datos.usuario?.debeCambiarPassword ?? false;
+  datos.requiereAceptar = datos.requiereAceptar === true;
 
   sesion = datos;
 
   // Si hay empresa activa se guarda en sessionStorage para recordarla al recargar
   if (datos.empresaActiva) {
     sessionStorage.setItem(CLAVE_EMPRESA, datos.empresaActiva.idEmpresa);
+  }
+
+  // Si le falta aceptar los terminos se manda a la pantalla de aceptar, desde cualquier pagina
+  // Va despues del cambio de contraseña y solo cuando ya hay token (si tiene que elegir empresa, primero elige)
+  if (datos.requiereAceptar && datos.accessToken && !datos.debeCambiarPassword && !paginaSinAceptar()) {
+    location.replace('aceptar.html');
+    // Se devuelve una promesa que nunca termina para que la pagina no siga cargando datos mientras se va
+    return new Promise(() => {});
   }
   return datos;
 }
@@ -164,8 +190,26 @@ export async function restaurarSesion() {
   }
 }
 
+// Funcion que borra la suscripcion push de este navegador, en el servidor y en el navegador
+// Se usa try/catch porque si falla no debe impedir que la persona cierre sesion
+async function quitarRecordatoriosDeEsteDispositivo() {
+  try {
+    if (!('serviceWorker' in navigator) || !accessToken) return;
+    const registro = await navigator.serviceWorker.getRegistration();
+    const suscripcion = await registro?.pushManager?.getSubscription();
+    if (!suscripcion) return;
+    await llamar('/push/suscripcion', { metodo: 'DELETE', cuerpo: { endpoint: suscripcion.endpoint } });
+    await suscripcion.unsubscribe();
+  } catch {
+    // Si no se pudo no pasa nada, el servidor la reasigna cuando otra persona active los avisos
+  }
+}
+
 // Funcion para cerrar sesion, el servidor borra la cookie
 export async function salir() {
+  // Antes de cerrar la sesion se apagan los recordatorios de este dispositivo
+  // Asi, si otra persona usa este celular, no le llegan los turnos de quien salio
+  await quitarRecordatoriosDeEsteDispositivo();
   try {
     await llamar('/auth/logout', { metodo: 'POST', conToken: false });
   // En el finally se limpia el token y la sesion aunque falle la peticion
@@ -207,4 +251,21 @@ export async function cambiarPassword(passwordActual, passwordNueva) {
     metodo: 'POST',
     cuerpo: { passwordActual, passwordNueva },
   });
+}
+
+// Funcion para guardar que el usuario acepto los terminos y la politica vigentes
+// Despues se renueva el token para que ya no traiga la marca de pendiente
+export async function aceptarTerminos() {
+  await pedir('/auth/aceptar-terminos', { metodo: 'POST', cuerpo: { acepto: true } });
+  return refrescar();
+}
+
+// Funcion para eliminar la cuenta del usuario, pide la contraseña
+// Primero se apagan los avisos push de este navegador y al final se limpia la sesion local
+export async function eliminarCuenta(password) {
+  await quitarRecordatoriosDeEsteDispositivo();
+  await pedir('/auth/perfil', { metodo: 'DELETE', cuerpo: { password } });
+  accessToken = null;
+  sesion = null;
+  sessionStorage.removeItem(CLAVE_EMPRESA);
 }

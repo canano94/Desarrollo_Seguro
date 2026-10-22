@@ -17,6 +17,7 @@ import {
   actualizarPrestadorSchema,
   actualizarServicioSchema,
   actualizarMiembroAgendaSchema,
+  validarParamNumero,
 } from '../validators/agenda.schemas.js';
 // Se importan los validadores del id en la URL y de la query
 import { validarParamUuid, validarConsulta } from '../validators/admin.schemas.js';
@@ -119,6 +120,16 @@ router.patch('/miembros/:idMembresia',
   validarParamUuid('idMembresia'),
   validar(actualizarMiembroAgendaSchema),
   ctrl.actualizarMiembro);
+
+// Ruta para ver los servicios que toca repetir
+// El personal ve los de sus sedes y el cliente solo los suyos, eso lo decide el controlador
+router.get('/repetir', ctrl.porRepetir);
+
+// Ruta para descartar un recordatorio de repetir, por ejemplo si el cliente no lo quiere hacer
+router.patch('/repetir/:idRepetir/descartar',
+  exigirPermisos('reservas.aprobar'),
+  validarParamNumero('idRepetir'),
+  ctrl.descartarRepetir);
 
 // Se exporta el router para montarlo en la app
 export default router;

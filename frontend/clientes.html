@@ -8,11 +8,10 @@
   <link rel="icon" href="icons/favicon-32.png" sizes="32x32">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <title>Clientes · Agenda</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/fuentes.css">
   <link rel="stylesheet" href="css/estilos.css">
   <link rel="stylesheet" href="css/movil.css">
+  <link rel="stylesheet" href="js/vendor/leaflet/leaflet.css">
 </head>
 <body>
   <div id="cargando" class="cargando">Cargando…</div>
@@ -92,6 +91,30 @@
                 <input id="nc-ciudad" type="text" maxlength="80" autocomplete="off">
               </div>
             </div>
+
+            <!-- Pin en el mapa (opcional) -->
+            <fieldset class="grupo ubicacion-editar">
+              <legend>Ubicación en el mapa (opcional)</legend>
+              <p class="pista">Busca la dirección o toca el mapa para poner el pin. Puedes arrastrarlo para ajustarlo.</p>
+              <div class="fila-botones">
+                <button type="button" class="boton boton--borde boton--mini" id="nc-buscar-mapa">Buscar la dirección</button>
+                <button type="button" class="boton boton--borde boton--mini" id="nc-mi-ubicacion">Usar mi ubicación</button>
+                <button type="button" class="boton boton--texto boton--mini" id="nc-quitar-pin">Quitar pin</button>
+              </div>
+              <ul id="nc-lugares" class="lista-lugares" hidden></ul>
+              <div id="nc-mapa" class="mapa" role="region" aria-label="Mapa para marcar la ubicación del cliente nuevo"></div>
+              <p class="pista mono" id="nc-coordenadas"></p>
+            </fieldset>
+
+            <!-- Autorizacion de datos del cliente (Ley 1581 de 2012), no viene marcada -->
+            <label class="casilla casilla--bloque" for="nc-autorizado">
+              <input id="nc-autorizado" type="checkbox" aria-describedby="nc-autorizado-pista">
+              <span>El cliente autorizó el tratamiento de sus datos personales.</span>
+            </label>
+            <p class="pista" id="nc-autorizado-pista">
+              Si aún no la tienes puedes guardar igual y marcarla después desde su ficha.
+              La empresa debe contar con esa autorización (<a href="privacidad.html">política de datos</a>).
+            </p>
             <div class="fila-botones">
               <button type="submit" class="boton" id="nc-guardar">Crear cliente</button>
               <button type="button" class="boton boton--texto" id="nc-cancelar">Cancelar</button>
@@ -115,13 +138,26 @@
         <section class="tarjeta tarjeta--identidad">
           <h1 id="p-nombre"></h1>
           <p class="apoyo mono" id="p-contacto"></p>
+          <!-- Boton para llamar al cliente desde el celular -->
+          <p class="contacto-acciones" id="p-llamar" hidden></p>
 
           <dl class="datos">
             <div><dt>Documento</dt><dd id="p-documento"></dd></div>
             <div><dt>Dirección</dt><dd id="p-direccion"></dd></div>
             <div><dt>Cliente desde</dt><dd id="p-desde"></dd></div>
             <div><dt>Estado</dt><dd id="p-estado" class="fichas"></dd></div>
+            <div><dt>Autorización de datos</dt><dd id="p-autorizacion" class="autorizacion"></dd></div>
+            <div><dt>Recordatorios por correo</dt><dd id="p-recordatorios"></dd></div>
           </dl>
+
+          <!-- Ubicacion del cliente en el mapa -->
+          <div class="ubicacion" id="p-ubicacion" hidden>
+            <div id="p-mapa" class="mapa" role="region" aria-label="Ubicación del cliente en el mapa"></div>
+            <div class="fila-botones">
+              <a id="p-como-llegar" class="boton boton--borde boton--mini" target="_blank" rel="noopener">Cómo llegar</a>
+            </div>
+          </div>
+          <p class="pista" id="p-sin-ubicacion" hidden>Sin ubicación en el mapa. Usa «Editar ficha» para marcarla.</p>
 
           <!-- Indicadores: lo primero que quiere saber quien atiende -->
           <div class="indicadores">
@@ -143,6 +179,7 @@
             <button type="button" class="boton boton--borde" id="btn-editar-cliente" hidden>Editar ficha</button>
             <button type="button" class="boton boton--borde" id="btn-acceso-cliente" hidden>Dar acceso a la plataforma</button>
             <button type="button" class="boton boton--borde" id="btn-clave-cliente" hidden>Restablecer contraseña</button>
+            <button type="button" class="boton boton--texto boton--texto-peligro" id="btn-anonimizar-cliente" hidden>Anonimizar datos</button>
           </div>
 
           <!-- Editar ficha -->
@@ -182,6 +219,21 @@
                 <input id="ec-ciudad" type="text" maxlength="80">
               </div>
             </div>
+
+            <!-- Pin en el mapa -->
+            <fieldset class="grupo ubicacion-editar">
+              <legend>Ubicación en el mapa</legend>
+              <p class="pista">Busca la dirección o toca el mapa para poner el pin. Puedes arrastrarlo para ajustarlo.</p>
+              <div class="fila-botones">
+                <button type="button" class="boton boton--borde boton--mini" id="ec-buscar-mapa">Buscar la dirección</button>
+                <button type="button" class="boton boton--borde boton--mini" id="ec-mi-ubicacion">Usar mi ubicación</button>
+                <button type="button" class="boton boton--texto boton--mini" id="ec-quitar-pin">Quitar pin</button>
+              </div>
+              <ul id="ec-lugares" class="lista-lugares" hidden></ul>
+              <div id="ec-mapa" class="mapa" role="region" aria-label="Mapa para marcar la ubicación"></div>
+              <p class="pista mono" id="ec-coordenadas"></p>
+            </fieldset>
+
             <div class="fila-botones">
               <button type="submit" class="boton boton--mini">Guardar</button>
               <button type="button" class="boton boton--texto boton--mini" id="ec-cancelar">Cancelar</button>
@@ -239,9 +291,11 @@
     </main>
   </div>
 
-  <script src="env.js"></script>
+  <!-- Leaflet: libreria del mapa, va antes de clientes.js porque la usa -->
+  <script src="js/vendor/leaflet/leaflet.js"></script>
   <script type="module" src="js/menu.js"></script>
   <script type="module" src="js/clientes.js"></script>
   <script src="js/pwa.js" defer></script>
+  <script type="module" src="js/pie.js"></script>
 </body>
 </html>

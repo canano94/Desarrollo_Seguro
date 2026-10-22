@@ -4,6 +4,8 @@ import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 // Se importa env para leer el secreto y la duracion del token
 import { env } from '../config/env.js';
+// Se importa requiereAceptar para saber si le falta aceptar los terminos vigentes
+import { requiereAceptar } from '../config/legal.js';
 
 // Se exporta la funcion firmarAccessToken que crea el token de acceso del usuario
 export function firmarAccessToken({ usuario, contexto, rolesPlataforma = [] }) {
@@ -13,6 +15,8 @@ export function firmarAccessToken({ usuario, contexto, rolesPlataforma = [] }) {
     // La version del token sirve para invalidar los tokens viejos del usuario
     tv: usuario.token_version,
     dcp: usuario.debe_cambiar_password === true,
+    // rac: le falta aceptar los terminos y la politica vigentes
+    rac: requiereAceptar(usuario),
     plat: rolesPlataforma,
     // Datos de la empresa activa, roles, permisos, modulos y sedes, si no hay se ponen vacios
     mem: contexto?.id_membresia ?? null,

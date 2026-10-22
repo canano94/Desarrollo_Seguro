@@ -8,9 +8,7 @@
   <link rel="icon" href="icons/favicon-32.png" sizes="32x32">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <title>Agenda · Turnos</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/fuentes.css">
   <link rel="stylesheet" href="css/estilos.css">
   <link rel="stylesheet" href="css/movil.css">
   <script src="js/pwa.js" defer></script>
@@ -41,6 +39,8 @@
     </header>
 
     <main class="tablero tablero--ancho">
+      <!-- Titulo de la pagina para lectores de pantalla, en pantalla ya se ve por la pestaña -->
+      <h1 class="visualmente-oculto">Agenda</h1>
 
       <!-- Pestañas principales: Turnos -->
       <div class="pestanas pestanas--grandes" role="tablist">
@@ -59,6 +59,13 @@
         <div class="pestanas" role="tablist">
           <button type="button" class="pestana" role="tab" data-panel="t-calendario" aria-selected="true">Calendario</button>
         </div>
+
+        <!-- Servicios que toca volver a hacer, se llena con js/agenda.js (cargarRepetir) -->
+        <section class="tarjeta" id="repetir" hidden>
+          <h2 id="repetir-titulo">Servicios por repetir</h2>
+          <p class="apoyo" id="repetir-apoyo"></p>
+          <ul id="lista-repetir" class="lista-repetir"></ul>
+        </section>
 
         <!-- Calendario semanal -->
         <section class="tarjeta contenido-pestana" id="t-calendario">
@@ -94,6 +101,9 @@
               </div>
               <button type="button" class="boton boton--texto" id="dt-cerrar">Cerrar</button>
             </div>
+
+            <!-- Cliente del turno: link a su ficha y boton para llamarlo -->
+            <div class="fila-cliente" id="dt-cliente" hidden></div>
 
             <div class="fila-botones" id="dt-acciones"></div>
 
@@ -160,5 +170,6 @@
 
   <script type="module" src="js/menu.js"></script>
   <script type="module" src="js/agenda.js"></script>
+  <script type="module" src="js/pie.js"></script>
 </body>
 </html>

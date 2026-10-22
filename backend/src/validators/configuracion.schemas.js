@@ -84,6 +84,19 @@ export const precioServicioSchema = z
   .strict();
 
 // Esquema para la lista de insumos que gasta un servicio con su cantidad
+// Esquema para decir cada cuanto se repite un servicio
+// cada y unidad en null quiere decir que el servicio no se repite
+// Se usa refine para que lleguen los dos o ninguno
+export const repetirServicioSchema = z
+  .object({
+    cada: z.number().int('Escribe un número entero.').min(1, 'Mínimo 1.').max(365, 'Máximo 365.').nullable(),
+    unidad: z.enum(['DIAS', 'SEMANAS', 'MESES']).nullable(),
+  })
+  .strict()
+  .refine((d) => (d.cada === null) === (d.unidad === null), {
+    message: 'Escribe cada cuánto se repite y elige días, semanas o meses.',
+  });
+
 export const insumosServicioSchema = z
   .object({
     insumos: z
@@ -117,3 +130,48 @@ export function validarParamId(nombre) {
 
 // Esquema para la configuracion general, dice si la empresa usa precios
 export const generalSchema = z.object({ usaPrecios: z.boolean() }).strict();
+
+// Funcion que quita los caracteres de control, menos el salto de linea y el tabulador
+// eslint-disable-next-line no-control-regex
+const sinControl = (v) => v.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
+
+// Esquema de zod para guardar un aviso por correo
+export const eventoNotificacionSchema = z
+  .object({
+    activo: z.boolean(),
+    // El asunto va en un encabezado del correo, por eso no puede tener saltos de linea
+    asunto: z.string().trim().min(1, 'Escribe el asunto.').max(200)
+      .transform((v) => sinControl(v).replace(/[\r\n]+/g, ' ')),
+    // El mensaje si puede tener saltos de linea (parrafos)
+    mensaje: z.string().trim().min(1, 'Escribe el mensaje.').max(3000).transform(sinControl),
+  })
+  .partial({ asunto: true, mensaje: true })
+  .extend({ restaurar: z.boolean().optional() })
+  .strict()
+  // Se usa refine para que si no se esta restaurando lleguen el asunto y el mensaje
+  .refine((d) => d.restaurar || (d.asunto && d.mensaje), {
+    message: 'Escribe el asunto y el mensaje.',
+  });
+
+// Esquema para el remitente de la empresa
+// El nombre no puede tener saltos de linea ni < > porque va en el encabezado del correo
+// Se acepta texto vacio para volver a lo de por defecto
+export const remitenteSchema = z.object({
+  nombreRemitente: z.string().trim().max(70, 'Máximo 70 caracteres.')
+    .regex(/^[^<>\r\n\u0000-\u001F\u007F]*$/, 'El nombre no puede tener < > ni saltos de línea.'),
+  correoRespuesta: z.string().trim().toLowerCase().max(254)
+    .email('Escribe un correo válido.').or(z.literal('')),
+}).strict();
+
+// Esquema para el correo de prueba, solo llega el nombre del aviso
+export const pruebaNotificacionSchema = z.object({ evento: z.string().max(40) }).strict();
+
+// Se exporta validarEvento, el aviso viaja en la URL y solo se aceptan los que existen en EVENTOS
+export function validarEvento(eventos) {
+  return (req, _res, next) => {
+    if (!Object.hasOwn(eventos, req.params.evento)) {
+      return next(new AppError(404, 'EVENTO_NO_ENCONTRADO', 'Ese aviso no existe.'));
+    }
+    return next();
+  };
+}

@@ -8,9 +8,7 @@
   <link rel="icon" href="icons/favicon-32.png" sizes="32x32">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <title>Plataforma · Agenda</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/fuentes.css">
   <link rel="stylesheet" href="css/estilos.css">
   <link rel="stylesheet" href="css/movil.css">
   <script src="js/pwa.js" defer></script>
@@ -148,9 +146,9 @@
         </section>
 
         <section class="tarjeta contenido-pestana" id="p-miembros" hidden>
-          <div class="tabla-envoltura">
+          <div class="tabla-envoltura" tabindex="0" role="region" aria-label="Miembros de la empresa">
             <table class="tabla">
-              <thead><tr><th>Persona</th><th>Correo</th><th>Cargo</th><th>Rol</th><th>Estado</th><th></th></tr></thead>
+              <thead><tr><th>Persona</th><th>Correo</th><th>Cargo</th><th>Rol</th><th>Estado</th><th><span class="visualmente-oculto">Acciones</span></th></tr></thead>
               <tbody id="tabla-miembros"></tbody>
             </table>
           </div>
@@ -221,5 +219,6 @@
 
   <script type="module" src="js/admin.js"></script>
   
+  <script type="module" src="js/pie.js"></script>
 </body>
 </html>

@@ -1,5 +1,7 @@
 // Se importan de api.js las funciones de la sesion y pedir para llamar la API
 import { restaurarSesion, sesionActual, elegirEmpresa, pedir, salir } from './api.js';
+// Se importa filaCliente para mostrar el cliente del caso con link a su ficha y boton para llamar
+import { filaCliente } from './telefono.js';
 
 // Se toman los elementos de la pagina que se van a usar en el CRM
 const cargando = document.getElementById('cargando');
@@ -100,6 +102,9 @@ async function cargarCasos() {
 
     // Al hacer clic en la fila se abre el detalle del caso
     fila.addEventListener('click', () => abrirCaso(c.idCaso));
+    // Con tabindex y data-clic la fila tambien se abre con el teclado (Tab y Enter, ver accesibilidad.js)
+    fila.tabIndex = 0;
+    fila.dataset.clic = '';
     tablaCasos.append(fila);
   }
 
@@ -126,7 +131,18 @@ async function abrirCaso(idCaso) {
 
     document.getElementById('dc-asunto').textContent = caso.asunto;
     document.getElementById('dc-meta').textContent =
-      `${caso.numero} · ${caso.tipo} · ${caso.cliente} · radicado ${fecha(caso.creadoEn)}`;
+      `${caso.numero} · ${caso.tipo} · radicado ${fecha(caso.creadoEn)}`;
+
+    // Fila del cliente con link a su ficha y boton para llamarlo
+    // Si quien mira es el mismo cliente (radico su propio caso) no tiene sentido mostrarla
+    const verClientes = ['clientes.gestionar', 'reservas.aprobar', 'casos.gestionar',
+      'equipos.crear', 'equipos.gestionar'].some(puede);
+    const cajaCliente = document.getElementById('dc-cliente');
+    if (verClientes) {
+      filaCliente(cajaCliente, { idCliente: caso.idCliente, nombre: caso.cliente, telefono: caso.clienteTelefono });
+    } else {
+      cajaCliente.hidden = true;
+    }
     document.getElementById('dc-descripcion').textContent = caso.descripcion;
 
     // Se pinta el turno que tiene relacionado el caso, si tiene
@@ -537,6 +553,18 @@ async function cargarTodo() {
   const idReserva = params.get('reserva');
   const idCliente = params.get('cliente');
   const nombreCliente = params.get('nombre');
+  const idCaso = params.get('caso');
+
+  // Si llego un caso en la URL (por ejemplo desde la ficha del cliente) se abre su detalle
+  if (idCaso) {
+    // Se limpia la URL para que al recargar no se vuelva a abrir
+    history.replaceState({}, '', 'crm.html');
+    // Regex para revisar que sea un UUID antes de mandarlo al servidor
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idCaso)) {
+      await abrirCaso(idCaso);
+    }
+    return;
+  }
 
   const gestiona = !document.getElementById('campo-cliente-caso').hidden;
   // Si llego un turno o un cliente en la URL se abre el formulario ya lleno

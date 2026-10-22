@@ -32,6 +32,7 @@ export function autenticar(req, _res, next) {
       rolesPlataforma: payload.plat ?? [],
       tokenVersion: payload.tv,
       debeCambiarPassword: payload.dcp === true,
+      requiereAceptar: payload.rac === true,
     };
     return next();
   } catch (error) {
@@ -57,6 +58,16 @@ export function exigirPasswordDefinitiva(req, _res, next) {
         403,
         'DEBE_CAMBIAR_PASSWORD',
         'Debes cambiar tu contraseña temporal antes de continuar.',
+      ),
+    );
+  }
+  // Si le falta aceptar los terminos vigentes tampoco puede seguir
+  if (req.usuario?.requiereAceptar) {
+    return next(
+      new AppError(
+        403,
+        'DEBE_ACEPTAR_TERMINOS',
+        'Debes aceptar los términos y la política de privacidad antes de continuar.',
       ),
     );
   }

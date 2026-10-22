@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#101c26">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <title>Términos y privacidad · OmniGest</title>
+  <link rel="stylesheet" href="css/fuentes.css">
+  <link rel="stylesheet" href="css/estilos.css">
+  <link rel="stylesheet" href="css/movil.css">
+  <script src="js/pwa.js" defer></script>
+</head>
+<body class="pagina-acceso">
+  <a class="saltar" href="#form-aceptar">Saltar al formulario</a>
+  <main class="acceso">
+    <aside class="panel" aria-hidden="true">
+      <p class="panel__marca">OmniGest</p>
+      <p class="panel__pie">Tus datos se usan solo para prestar el servicio. No los vendemos ni hacemos publicidad con ellos.</p>
+    </aside>
+
+    <section class="formulario">
+      <header class="formulario__cabecera">
+        <h1>Antes de continuar</h1>
+        <p class="apoyo">
+          Para usar OmniGest necesitamos que leas y aceptes estos dos documentos.
+          Se abren en esta misma ventana y puedes volver cuando termines.
+        </p>
+      </header>
+
+      <ul class="lista-legal">
+        <li>
+          <a href="terminos.html">Términos y condiciones</a>
+          <span class="pista">Cómo funciona el servicio, qué está permitido y qué pasa si dejas de usarlo.</span>
+        </li>
+        <li>
+          <a href="privacidad.html">Política de tratamiento de datos personales</a>
+          <span class="pista">Qué datos guardamos, para qué, con quién los compartimos y cómo ejercer tus derechos.</span>
+        </li>
+      </ul>
+
+      <form id="form-aceptar" novalidate>
+        <label class="casilla casilla--bloque" for="acepto">
+          <input id="acepto" type="checkbox">
+          <span>He leído y acepto los términos y condiciones y la política de tratamiento de datos personales.</span>
+        </label>
+
+        <p id="aviso" class="aviso" role="alert" hidden></p>
+
+        <!-- Los dos botones tienen el mismo tamaño: aceptar no se destaca para presionar a nadie -->
+        <div class="fila-botones">
+          <button type="submit" class="boton" id="btn-aceptar">Aceptar y continuar</button>
+          <button type="button" class="boton boton--borde" id="btn-salir">No acepto, salir</button>
+        </div>
+      </form>
+
+      <p class="nota-pie" id="nota-version">
+        Versión 1.0. Puedes volver a leer estos documentos cuando quieras desde el pie de página.
+      </p>
+    </section>
+  </main>
+
+  <script type="module" src="js/aceptar.js"></script>
+  <script type="module" src="js/pie.js"></script>
+</body>
+</html>
