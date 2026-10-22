@@ -14,5 +14,7 @@ export class AppError extends Error {
 
 // Se exporta la funcion credencialesInvalidas que crea el error 401 del login
 // El mensaje no dice si fallo el correo o la contraseña para no dar pistas
+// Tambien se usa cuando la cuenta esta bloqueada, asi nadie puede saber que correos existen
 export const credencialesInvalidas = () =>
-  new AppError(401, 'CREDENCIALES_INVALIDAS', 'Correo o contraseña incorrectos.');
+  new AppError(401, 'CREDENCIALES_INVALIDAS',
+    'Correo o contraseña incorrectos. Si fallas varias veces seguidas, el acceso se bloquea unos minutos.');

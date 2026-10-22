@@ -45,6 +45,10 @@ export const env = {
     cookiePath: '/api/auth',
   },
 
+  // El registro publico (/api/auth/registro) esta apagado: las cuentas las crean los administradores
+  // Si algun dia se necesita, se prende con REGISTRO_PUBLICO=true
+  registroPublico: process.env.REGISTRO_PUBLICO === 'true',
+
   // Objeto con la configuracion de seguridad del login
   seguridad: {
     // Intentos fallidos antes de bloquear la cuenta y cuantos minutos queda bloqueada

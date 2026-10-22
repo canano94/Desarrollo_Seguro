@@ -220,13 +220,15 @@ export async function login({ email, password }, ctx) {
     throw credencialesInvalidas();
   }
 
-  // Si la cuenta esta bloqueada por intentos fallidos se lanza un error 423
+  // Si la cuenta esta bloqueada por intentos fallidos se responde igual que con datos incorrectos
+  // Antes se respondia 423 "cuenta bloqueada", y eso dejaba saber que el correo si existe
+  // (los correos que no existen nunca se bloquean). Tambien se gasta el mismo tiempo que bcrypt
   if (usuario.bloqueado_hasta && new Date(usuario.bloqueado_hasta) > new Date()) {
+    await quemarTiempo();
     await registrarIntento({
       email, idUsuario: usuario.id_usuario, exito: false, motivo: 'CUENTA_BLOQUEADA', ctx,
     });
-    throw new AppError(423, 'CUENTA_BLOQUEADA',
-      'La cuenta está bloqueada temporalmente por intentos fallidos.');
+    throw credencialesInvalidas();
   }
 
   // Se compara la contraseña escrita con el hash guardado

@@ -27,9 +27,7 @@ function limpiar(elemento) {
 function traducirError(error) {
   switch (error?.codigo) {
     case 'CREDENCIALES_INVALIDAS':
-      return 'Correo o contraseña incorrectos.';
-    case 'CUENTA_BLOQUEADA':
-      return 'La cuenta está bloqueada por intentos fallidos. Espera unos minutos.';
+      return 'Correo o contraseña incorrectos. Si fallas varias veces seguidas, el acceso se bloquea unos minutos.';
     case 'DEMASIADOS_INTENTOS':
       return 'Demasiados intentos seguidos. Vuelve a probar en un rato.';
     case 'DEBE_CAMBIAR_PASSWORD':

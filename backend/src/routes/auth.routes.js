@@ -4,6 +4,8 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 // Se importa el controlador de autenticacion
 import * as ctrl from '../controllers/auth.controller.js';
+// Se importa env para saber si el registro publico esta prendido
+import { env } from '../config/env.js';
 // Se importan los middlewares que revisan el token, el rol, el modulo y la empresa
 import {
   autenticar,
@@ -61,7 +63,12 @@ const limiteRegistro = rateLimit({
 });
 
 // Ruta para registrarse, primero pasa por el limite y luego valida los datos
-router.post('/registro', limiteRegistro, validar(registroSchema), ctrl.registrar);
+// Si el registro publico esta apagado responde 404, como si la ruta no existiera
+// Asi no se puede usar para averiguar que correos tienen cuenta (respondia "correo en uso")
+const registroPrendido = (_req, res, next) => (env.registroPublico
+  ? next()
+  : res.status(404).json({ error: { codigo: 'RUTA_NO_ENCONTRADA', mensaje: 'Recurso no encontrado.' } }));
+router.post('/registro', registroPrendido, limiteRegistro, validar(registroSchema), ctrl.registrar);
 // Ruta para iniciar sesion, con limite de intentos y validacion
 router.post('/login', limiteLogin, validar(loginSchema), ctrl.login);
 // Ruta para renovar el access token, usa el refresh token de la cookie
